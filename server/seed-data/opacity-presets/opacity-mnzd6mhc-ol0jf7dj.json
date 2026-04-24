@@ -1,0 +1,18 @@
+{
+  "id": "opacity-mnzd6mhc-ol0jf7dj",
+  "name": "Translucency 4",
+  "includedWithApp": true,
+  "opacity": {
+    "header": 70,
+    "quickActionsToolbar": 70,
+    "sidebar": 70,
+    "rowHeaderBackground": 70,
+    "row": 70,
+    "rowArt": 100,
+    "rowText": 100,
+    "card": 60,
+    "cardArt": 100,
+    "cardText": 100,
+    "styleBackgroundGradient": 0
+  }
+}

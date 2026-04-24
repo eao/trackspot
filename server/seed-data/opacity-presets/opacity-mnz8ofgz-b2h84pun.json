@@ -1,0 +1,18 @@
+{
+  "id": "opacity-mnz8ofgz-b2h84pun",
+  "name": "Translucency 1",
+  "includedWithApp": true,
+  "opacity": {
+    "header": 95,
+    "quickActionsToolbar": 95,
+    "sidebar": 95,
+    "rowHeaderBackground": 95,
+    "row": 95,
+    "rowArt": 100,
+    "rowText": 100,
+    "card": 90,
+    "cardArt": 100,
+    "cardText": 100,
+    "styleBackgroundGradient": 0
+  }
+}

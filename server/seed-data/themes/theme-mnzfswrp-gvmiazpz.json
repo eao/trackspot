@@ -1,0 +1,32 @@
+{
+  "id": "theme-mnzfswrp-gvmiazpz",
+  "name": "The Back Nine",
+  "description": "An august evening on the links. That's \"august\" as in \"uh-gust,\" not \"oggest.\"",
+  "previewImage": {
+    "fileName": "1776264510377-ojzf5p__The Back Nine.png"
+  },
+  "colorSchemePresetId": "masterful",
+  "primaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "Georgia.jpg"
+  },
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 10,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "opacity-mnz8ofgz-b2h84pun",
+  "includedWithApp": true
+}

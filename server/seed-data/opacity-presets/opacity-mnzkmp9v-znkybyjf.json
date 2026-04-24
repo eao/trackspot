@@ -1,0 +1,18 @@
+{
+  "id": "opacity-mnzkmp9v-znkybyjf",
+  "name": "Glass",
+  "includedWithApp": true,
+  "opacity": {
+    "header": 35,
+    "quickActionsToolbar": 35,
+    "sidebar": 45,
+    "rowHeaderBackground": 35,
+    "row": 35,
+    "rowArt": 75,
+    "rowText": 95,
+    "card": 25,
+    "cardArt": 75,
+    "cardText": 95,
+    "styleBackgroundGradient": 0
+  }
+}

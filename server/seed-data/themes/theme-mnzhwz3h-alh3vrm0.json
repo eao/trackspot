@@ -1,0 +1,32 @@
+{
+  "id": "theme-mnzhwz3h-alh3vrm0",
+  "name": "Depths",
+  "description": "Something something abyss, something something back.",
+  "previewImage": {
+    "fileName": "1776224011943-ulxyk0__Depths.png"
+  },
+  "colorSchemePresetId": "ocean",
+  "primaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "Murk.jpg"
+  },
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 25,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "opacity-mnzd6mhc-ol0jf7dj",
+  "includedWithApp": true
+}

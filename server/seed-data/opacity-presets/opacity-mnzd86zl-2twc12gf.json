@@ -1,0 +1,18 @@
+{
+  "id": "opacity-mnzd86zl-2twc12gf",
+  "name": "Translucency 5",
+  "includedWithApp": true,
+  "opacity": {
+    "header": 60,
+    "quickActionsToolbar": 60,
+    "sidebar": 60,
+    "rowHeaderBackground": 60,
+    "row": 60,
+    "rowArt": 100,
+    "rowText": 100,
+    "card": 50,
+    "cardArt": 100,
+    "cardText": 100,
+    "styleBackgroundGradient": 0
+  }
+}

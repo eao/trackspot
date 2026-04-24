@@ -1,0 +1,29 @@
+{
+  "id": "theme-mnzj7byk-sbep7amc",
+  "name": "Dark Times",
+  "description": "The \"Dark Times\" color scheme, but as a theme, so it can be more easily switched to.",
+  "previewImage": {
+    "fileName": "1776226174789-tog4ui__Dark Times.png"
+  },
+  "colorSchemePresetId": "dark-times",
+  "primaryBackgroundSelection": null,
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "default-opaque",
+  "includedWithApp": true
+}

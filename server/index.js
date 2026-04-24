@@ -71,6 +71,8 @@ const SECONDARY_PRESET_BACKGROUNDS_DIR = process.env.SECONDARY_PRESET_BACKGROUND
 const SECONDARY_PRESET_BACKGROUND_THUMBS_DIR = process.env.SECONDARY_PRESET_BACKGROUND_THUMBS_DIR || path.join(__dirname, '..', 'public', 'background-presets-secondary-thumbs');
 const THEME_PREVIEW_IMAGES_DIR = process.env.THEME_PREVIEW_IMAGES_DIR || path.join(DATA_DIR, 'theme-preview-images');
 const THEME_PREVIEW_IMAGES_THUMBS_DIR = process.env.THEME_PREVIEW_IMAGES_THUMBS_DIR || path.join(DATA_DIR, 'theme-preview-images-thumbs');
+const SEED_THEME_PREVIEW_IMAGES_DIR = path.join(__dirname, 'seed-data', 'theme-preview-images');
+const SEED_THEME_PREVIEW_IMAGES_THUMBS_DIR = path.join(__dirname, 'seed-data', 'theme-preview-images-thumbs');
 app.use('/images', express.static(path.join(IMAGES_DIR, '..', 'images')));
 app.use('/backgrounds/user', express.static(USER_BACKGROUNDS_DIR));
 app.use('/backgrounds/user-thumbnails', express.static(USER_BACKGROUND_THUMBS_DIR));
@@ -81,7 +83,9 @@ app.use('/backgrounds/secondary/user-thumbnails', express.static(SECONDARY_USER_
 app.use('/backgrounds/secondary/presets', express.static(SECONDARY_PRESET_BACKGROUNDS_DIR));
 app.use('/backgrounds/secondary/preset-thumbnails', express.static(SECONDARY_PRESET_BACKGROUND_THUMBS_DIR));
 app.use('/theme-previews', express.static(THEME_PREVIEW_IMAGES_DIR));
+app.use('/theme-previews', express.static(SEED_THEME_PREVIEW_IMAGES_DIR));
 app.use('/theme-previews-thumbs', express.static(THEME_PREVIEW_IMAGES_THUMBS_DIR));
+app.use('/theme-previews-thumbs', express.static(SEED_THEME_PREVIEW_IMAGES_THUMBS_DIR));
 
 // ---------------------------------------------------------------------------
 // API routes

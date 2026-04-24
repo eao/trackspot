@@ -1,0 +1,29 @@
+{
+  "id": "theme-mnzaquk9-yibvunah",
+  "name": "Basic Blue",
+  "description": "The default Bunan Blue color scheme with no bells and whistles like background image or translucent UI.",
+  "previewImage": {
+    "fileName": "1776211968822-emjqzs__Basic Blue.png"
+  },
+  "colorSchemePresetId": "bunan-blue",
+  "primaryBackgroundSelection": null,
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "default-opaque",
+  "includedWithApp": true
+}

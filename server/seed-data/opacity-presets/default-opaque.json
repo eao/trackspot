@@ -1,0 +1,18 @@
+{
+  "id": "default-opaque",
+  "name": "Default Opaque",
+  "includedWithApp": true,
+  "opacity": {
+    "header": 100,
+    "quickActionsToolbar": 100,
+    "sidebar": 100,
+    "rowHeaderBackground": 100,
+    "row": 100,
+    "rowArt": 100,
+    "rowText": 100,
+    "card": 100,
+    "cardArt": 100,
+    "cardText": 100,
+    "styleBackgroundGradient": 0
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "id": "theme-mnzmawck-4ai7apx6",
+  "name": "Sunset 2",
+  "description": "Dusk meets dawn. A variant of Sunset that sacrifices legibility for aesthetics.",
+  "previewImage": {
+    "fileName": "1776231380032-tfjuj8__Sunset 2.png"
+  },
+  "colorSchemePresetId": "trackspot-yoake",
+  "primaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "Kaatoniago.webp"
+  },
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "opacity-mnzl92mk-nycl207b",
+  "includedWithApp": true
+}

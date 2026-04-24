@@ -1,0 +1,32 @@
+{
+  "id": "theme-mnzk4zbw-yd642s6s",
+  "name": "Borealis Rosé",
+  "description": "An aurora with red hues.",
+  "previewImage": {
+    "fileName": "1776227744725-dvo0w4__Borealis RosÃ©.png"
+  },
+  "colorSchemePresetId": "slate-rose",
+  "primaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "Aurora 3.webp"
+  },
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "opacity-mnzd86zl-2twc12gf",
+  "includedWithApp": true
+}

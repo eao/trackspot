@@ -1,0 +1,32 @@
+{
+  "id": "theme-mnzkwag6-tp6bn2cd",
+  "name": "Borealis Tunic",
+  "description": "A multicolored aurora reminiscent of the Tunic OST cover art.",
+  "previewImage": {
+    "fileName": "1776229018847-u3b7vn__Borealis Tunic.png"
+  },
+  "colorSchemePresetId": "synthwave",
+  "primaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "Aurora 1.webp"
+  },
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "opacity-mnzkmp9v-znkybyjf",
+  "includedWithApp": true
+}

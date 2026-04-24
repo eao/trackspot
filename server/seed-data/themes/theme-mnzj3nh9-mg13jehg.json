@@ -1,0 +1,29 @@
+{
+  "id": "theme-mnzj3nh9-mg13jehg",
+  "name": "Found in the Archives",
+  "description": "The \"Found in the Archives\" Geocities color scheme, but as a theme, so it can be shown in the welcome screen.",
+  "previewImage": {
+    "fileName": "1776226003097-3irgtp__Found in the Archives.png"
+  },
+  "colorSchemePresetId": "found-in-the-archives",
+  "primaryBackgroundSelection": null,
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "default-opaque",
+  "includedWithApp": true
+}

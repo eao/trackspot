@@ -1,0 +1,32 @@
+{
+  "id": "theme-mnzlqbj5-jto0jd3v",
+  "name": "Sunset",
+  "description": "A song of crows and cats.",
+  "previewImage": {
+    "fileName": "1776231391730-rqbrw3__Sunset.png"
+  },
+  "colorSchemePresetId": "amber",
+  "primaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "Kaatoniago.webp"
+  },
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "opacity-mnzd5t5u-tsagb971",
+  "includedWithApp": true
+}

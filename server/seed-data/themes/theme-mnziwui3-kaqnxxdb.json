@@ -1,0 +1,32 @@
+{
+  "id": "theme-mnziwui3-kaqnxxdb",
+  "name": "Christmastime",
+  "description": "The most wonderful time of the year.",
+  "previewImage": {
+    "fileName": "1776225685607-4iys6r__Christmastime.png"
+  },
+  "colorSchemePresetId": "xmas-tannenbaum",
+  "primaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "Seasonal.jpg"
+  },
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 100,
+  "backgroundImageBlur": 15,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "opacity-mnz8ofgz-b2h84pun",
+  "includedWithApp": true
+}

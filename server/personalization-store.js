@@ -14,7 +14,11 @@ const OPACITY_PRESETS_DIR = process.env.OPACITY_PRESETS_DIR || path.join(DATA_DI
 const THEMES_DIR = process.env.THEMES_DIR || path.join(DATA_DIR, 'themes');
 const THEME_PREVIEW_IMAGES_DIR = process.env.THEME_PREVIEW_IMAGES_DIR || path.join(DATA_DIR, 'theme-preview-images');
 const THEME_PREVIEW_IMAGES_THUMBS_DIR = process.env.THEME_PREVIEW_IMAGES_THUMBS_DIR || path.join(DATA_DIR, 'theme-preview-images-thumbs');
-const OPACITY_PRESETS_SEED_SENTINEL = path.join(OPACITY_PRESETS_DIR, '.seeded');
+const SEED_DATA_DIR = path.join(__dirname, 'seed-data');
+const SEED_OPACITY_PRESETS_DIR = path.join(SEED_DATA_DIR, 'opacity-presets');
+const SEED_THEMES_DIR = path.join(SEED_DATA_DIR, 'themes');
+const SEED_THEME_PREVIEW_IMAGES_DIR = path.join(SEED_DATA_DIR, 'theme-preview-images');
+const SEED_THEME_PREVIEW_IMAGES_THUMBS_DIR = path.join(SEED_DATA_DIR, 'theme-preview-images-thumbs');
 
 [
   OPACITY_PRESETS_DIR,
@@ -86,17 +90,6 @@ const DEFAULT_OPACITY = {
   styleBackgroundGradient: 0,
 };
 
-const SEEDED_OPACITY_PRESETS = [
-  {
-    id: 'default-opaque',
-    name: 'Default Opaque',
-    includedWithApp: true,
-    opacity: OPACITY_PRESET_KEYS.reduce((result, key) => {
-      result[key] = DEFAULT_OPACITY[key];
-      return result;
-    }, {}),
-  },
-];
 const INCLUDED_WITH_APP_THEME_NAMES = new Set(['Basic Blue']);
 
 function createStoreError(status, message, extra = {}) {
@@ -214,29 +207,10 @@ function getThemeFilePath(themeId) {
   return path.join(THEMES_DIR, `${themeId}.json`);
 }
 
-function ensureSeededOpacityPresets() {
-  if (fs.existsSync(OPACITY_PRESETS_SEED_SENTINEL)) return;
-
-  if (listJsonFileNames(OPACITY_PRESETS_DIR).length === 0) {
-    SEEDED_OPACITY_PRESETS.forEach(preset => {
-      writeJsonFile(getOpacityPresetFilePath(preset.id), {
-        id: preset.id,
-        name: preset.name,
-        includedWithApp: !!preset.includedWithApp,
-        opacity: normalizeOpacityValues(preset.opacity),
-      });
-    });
-  }
-
-  fs.writeFileSync(OPACITY_PRESETS_SEED_SENTINEL, 'seeded\n');
-}
-
-function loadOpacityPresetRecords() {
-  ensureSeededOpacityPresets();
-
-  return listJsonFileNames(OPACITY_PRESETS_DIR)
+function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
+  return listJsonFileNames(directoryPath)
     .map(fileName => {
-      const filePath = path.join(OPACITY_PRESETS_DIR, fileName);
+      const filePath = path.join(directoryPath, fileName);
       const raw = readJsonFile(filePath, `opacity preset "${fileName}"`);
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
         throw createStoreError(500, `Opacity preset file "${fileName}" must contain a JSON object.`);
@@ -245,6 +219,8 @@ function loadOpacityPresetRecords() {
       const id = typeof raw.id === 'string' && raw.id.trim()
         ? raw.id.trim()
         : path.parse(fileName).name;
+      if (options.ignoredIds?.has(id)) return null;
+
       const name = typeof raw.name === 'string' ? raw.name.trim() : '';
       if (!name) {
         throw createStoreError(500, `Opacity preset file "${fileName}" is missing a non-empty "name".`);
@@ -253,11 +229,19 @@ function loadOpacityPresetRecords() {
       return {
         id,
         name,
-        includedWithApp: !!raw.includedWithApp,
+        includedWithApp: !!options.forceIncludedWithApp || !!raw.includedWithApp,
         opacity: normalizeOpacityValues(raw.opacity),
       };
     })
-    .sort(compareIncludedFirstByName);
+    .filter(Boolean);
+}
+
+function loadOpacityPresetRecords() {
+  const seedRecords = loadOpacityPresetRecordsFromDirectory(SEED_OPACITY_PRESETS_DIR, { forceIncludedWithApp: true });
+  const seedIds = new Set(seedRecords.map(preset => preset.id));
+  const userRecords = loadOpacityPresetRecordsFromDirectory(OPACITY_PRESETS_DIR, { ignoredIds: seedIds });
+
+  return [...seedRecords, ...userRecords].sort(compareIncludedFirstByName);
 }
 
 function findOpacityPresetById(presetId) {
@@ -353,20 +337,38 @@ function deleteThemePreviewAssets(theme) {
   }
 }
 
+function findExistingFilePath(fileName, directoryPaths) {
+  const safeFileName = ensureSafeStoredName(fileName);
+  if (!safeFileName) return null;
+
+  for (const directoryPath of directoryPaths) {
+    const filePath = path.join(directoryPath, safeFileName);
+    if (fs.existsSync(filePath)) return filePath;
+  }
+
+  return null;
+}
+
 function serializeThemePreview(fileName) {
   const safeFileName = ensureSafeStoredName(fileName);
   if (!safeFileName) return null;
 
-  const previewPath = path.join(THEME_PREVIEW_IMAGES_DIR, safeFileName);
-  if (!fs.existsSync(previewPath)) return null;
+  const previewPath = findExistingFilePath(safeFileName, [
+    THEME_PREVIEW_IMAGES_DIR,
+    SEED_THEME_PREVIEW_IMAGES_DIR,
+  ]);
+  if (!previewPath) return null;
 
   const thumbnailFileName = buildThumbnailFileName(safeFileName);
-  const thumbnailPath = path.join(THEME_PREVIEW_IMAGES_THUMBS_DIR, thumbnailFileName);
+  const thumbnailPath = findExistingFilePath(thumbnailFileName, [
+    THEME_PREVIEW_IMAGES_THUMBS_DIR,
+    SEED_THEME_PREVIEW_IMAGES_THUMBS_DIR,
+  ]);
 
   return {
     fileName: safeFileName,
     url: `/theme-previews/${encodeURIComponent(safeFileName)}`,
-    thumbnailUrl: fs.existsSync(thumbnailPath)
+    thumbnailUrl: thumbnailPath
       ? `/theme-previews-thumbs/${encodeURIComponent(thumbnailFileName)}`
       : null,
   };
@@ -376,7 +378,7 @@ function getColorSchemePresetMap() {
   return new Map(loadColorSchemePresets().map(preset => [preset.id, preset]));
 }
 
-function hydrateThemeRecord(rawTheme, fileName) {
+function hydrateThemeRecord(rawTheme, fileName, options = {}) {
   const colorSchemesById = getColorSchemePresetMap();
   const opacityPresetsById = new Map(loadOpacityPresetRecords().map(preset => [preset.id, preset]));
 
@@ -425,7 +427,7 @@ function hydrateThemeRecord(rawTheme, fileName) {
 
   const colorSchemePreset = colorSchemesById.get(colorSchemePresetId);
   const opacityPreset = opacityPresetsById.get(opacityPresetId);
-  const includedWithApp = !!rawTheme.includedWithApp || INCLUDED_WITH_APP_THEME_NAMES.has(name);
+  const includedWithApp = !!options.forceIncludedWithApp || !!rawTheme.includedWithApp || INCLUDED_WITH_APP_THEME_NAMES.has(name);
 
   return {
     valid: true,
@@ -458,14 +460,23 @@ function removeThemeFile(themeId) {
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
-function listThemes() {
+function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
   const hydratedThemes = [];
 
-  listJsonFileNames(THEMES_DIR).forEach(fileName => {
-    const filePath = path.join(THEMES_DIR, fileName);
+  listJsonFileNames(directoryPath).forEach(fileName => {
+    const filePath = path.join(directoryPath, fileName);
     const raw = readJsonFile(filePath, `theme "${fileName}"`);
-    const hydrated = hydrateThemeRecord(raw, fileName);
+    const rawId = typeof raw?.id === 'string' && raw.id.trim()
+      ? raw.id.trim()
+      : path.parse(fileName).name;
+    if (options.ignoredIds?.has(rawId)) return;
+
+    const hydrated = hydrateThemeRecord(raw, fileName, options);
     if (!hydrated.valid) {
+      if (options.forceIncludedWithApp) {
+        throw createStoreError(500, hydrated.reason);
+      }
+
       const invalidId = typeof raw?.id === 'string' && raw.id.trim()
         ? raw.id.trim()
         : path.parse(fileName).name;
@@ -476,6 +487,15 @@ function listThemes() {
 
     hydratedThemes.push(hydrated.theme);
   });
+
+  return hydratedThemes;
+}
+
+function listThemes() {
+  const seedThemes = loadThemeRecordsFromDirectory(SEED_THEMES_DIR, { forceIncludedWithApp: true });
+  const seedIds = new Set(seedThemes.map(theme => theme.id));
+  const userThemes = loadThemeRecordsFromDirectory(THEMES_DIR, { ignoredIds: seedIds });
+  const hydratedThemes = [...seedThemes, ...userThemes];
 
   const seenNames = new Map();
   hydratedThemes.forEach(theme => {
@@ -711,6 +731,10 @@ module.exports = {
   THEMES_DIR,
   THEME_PREVIEW_IMAGES_DIR,
   THEME_PREVIEW_IMAGES_THUMBS_DIR,
+  SEED_OPACITY_PRESETS_DIR,
+  SEED_THEMES_DIR,
+  SEED_THEME_PREVIEW_IMAGES_DIR,
+  SEED_THEME_PREVIEW_IMAGES_THUMBS_DIR,
   DEFAULT_BACKGROUND_DISPLAY,
   DEFAULT_SECONDARY_BACKGROUND_DISPLAY,
   DEFAULT_OPACITY,

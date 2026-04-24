@@ -1,0 +1,32 @@
+{
+  "id": "theme-mnzlcxv4-z8f18hri",
+  "name": "En Plein Air",
+  "description": "A nature theme.",
+  "previewImage": {
+    "fileName": "1776229795687-ku4o2k__En Plein Air.png"
+  },
+  "colorSchemePresetId": "noble-fir",
+  "primaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "Glade.webp"
+  },
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "opacity-mnzl92mk-nycl207b",
+  "includedWithApp": true
+}

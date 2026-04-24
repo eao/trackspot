@@ -1,0 +1,35 @@
+{
+  "id": "theme-mnze7vb4-dv4opkqu",
+  "name": "Christmas Eve",
+  "description": "Tiny tots with their eyes all aglow will find it hard to sleep tonight.",
+  "previewImage": {
+    "fileName": "1776217801785-gm28k5__Christmas Eve.png"
+  },
+  "colorSchemePresetId": "aggressive-blue",
+  "primaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "St. Nick.webp"
+  },
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "Spotty.png"
+  },
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "bottom",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 10,
+  "secondaryBackgroundImageBlur": 10,
+  "opacityPresetId": "opacity-mnzd5t5u-tsagb971",
+  "includedWithApp": true
+}

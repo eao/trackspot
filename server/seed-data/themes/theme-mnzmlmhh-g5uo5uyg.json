@@ -1,0 +1,29 @@
+{
+  "id": "theme-mnzmlmhh-g5uo5uyg",
+  "name": "We Sports",
+  "description": "The \"We Sports\" color scheme, but as a theme, so it can be shown in the welcome screen.",
+  "previewImage": {
+    "fileName": "1776231880464-ya1j2e__We Sports.png"
+  },
+  "colorSchemePresetId": "we-sports",
+  "primaryBackgroundSelection": null,
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 45,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "default-opaque",
+  "includedWithApp": true
+}

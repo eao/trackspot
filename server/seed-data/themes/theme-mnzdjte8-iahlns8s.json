@@ -1,0 +1,32 @@
+{
+  "id": "theme-mnzdjte8-iahlns8s",
+  "name": "Borealis Blue",
+  "description": "High translucency electric blue, plus aurora borealis, localized entirely beneath your albums.",
+  "previewImage": {
+    "fileName": "1776216679561-73whd6__Borealis.png"
+  },
+  "colorSchemePresetId": "aggressive-blue",
+  "primaryBackgroundSelection": {
+    "kind": "preset",
+    "id": "Aurora 2.jpg"
+  },
+  "primaryBackgroundDisplay": {
+    "positionX": "center",
+    "positionY": "center",
+    "fill": "cover",
+    "customScale": 0.7
+  },
+  "secondaryBackgroundSelection": null,
+  "secondaryBackgroundDisplay": {
+    "positionX": "right",
+    "positionY": "top",
+    "fill": "custom-scale",
+    "customScale": 0.7
+  },
+  "backgroundImageOpacity": 100,
+  "backgroundImageBlur": 0,
+  "secondaryBackgroundImageOpacity": 100,
+  "secondaryBackgroundImageBlur": 0,
+  "opacityPresetId": "opacity-mnzd6mhc-ol0jf7dj",
+  "includedWithApp": true
+}

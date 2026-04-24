@@ -1,0 +1,18 @@
+{
+  "id": "opacity-mnzl92mk-nycl207b",
+  "name": "Translucency 2.5",
+  "includedWithApp": true,
+  "opacity": {
+    "header": 85,
+    "quickActionsToolbar": 85,
+    "sidebar": 85,
+    "rowHeaderBackground": 85,
+    "row": 85,
+    "rowArt": 100,
+    "rowText": 100,
+    "card": 75,
+    "cardArt": 100,
+    "cardText": 100,
+    "styleBackgroundGradient": 0
+  }
+}
