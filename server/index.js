@@ -139,5 +139,5 @@ app.get('*path', (req, res) => {
 // ---------------------------------------------------------------------------
 
 app.listen(PORT, () => {
-  console.log(`Album tracker running on port ${PORT}`);
+  console.log(`Trackspot running on port ${PORT}`);
 });

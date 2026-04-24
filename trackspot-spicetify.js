@@ -1934,8 +1934,8 @@ function createLibraryBackfillUiState() {
 
 let libraryBackfillUiState = createLibraryBackfillUiState();
 
-const SUBTLE_ACTIONS_WRAP_ID = 'album-tracker-subtle-actions-wrap';
-const CORNER_ACTIONS_WRAP_ID = 'album-tracker-corner-actions-wrap';
+const SUBTLE_ACTIONS_WRAP_ID = 'trackspot-subtle-actions-wrap';
+const CORNER_ACTIONS_WRAP_ID = 'trackspot-corner-actions-wrap';
 const LOG_MODAL_ID = 'trackspot-log-modal';
 const CONFIRM_MODAL_ID = 'trackspot-confirm-modal';
 const WELCOME_TOUR_MODAL_ID = 'trackspot-welcome-tour-modal';

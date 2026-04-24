@@ -185,7 +185,7 @@ router.get('/download', async (req, res) => {
     const csv  = generateCsvContent(rows);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition',
-      `attachment; filename="album-tracker-backup-${stamp}.zip"`);
+      `attachment; filename="trackspot-backup-${stamp}.zip"`);
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.on('error', err => { throw err; });
     archive.pipe(res);
@@ -212,7 +212,7 @@ router.get('/download-essential', async (_req, res) => {
     const manualRows = rows.filter(r => r.source === 'manual');
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition',
-      `attachment; filename="album-tracker-backup-essential-${stamp}.zip"`);
+      `attachment; filename="trackspot-backup-essential-${stamp}.zip"`);
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.on('error', err => { throw err; });
     archive.pipe(res);
@@ -244,7 +244,7 @@ router.get('/download-db', async (req, res) => {
     const csv  = generateCsvContent(rows);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition',
-      `attachment; filename="album-tracker-backup-db-${stamp}.zip"`);
+      `attachment; filename="trackspot-backup-db-${stamp}.zip"`);
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.on('error', err => { throw err; });
     archive.pipe(res);
@@ -267,7 +267,7 @@ router.get('/export-csv', (req, res) => {
   const csv   = generateCsvContent(rows);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition',
-    `attachment; filename="album-tracker-${stamp}.csv"`);
+    `attachment; filename="trackspot-${stamp}.csv"`);
   res.end(Buffer.from(csv, 'utf-8'));
 });
 
