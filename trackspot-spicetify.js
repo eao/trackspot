@@ -4806,6 +4806,7 @@ function openWelcomeTour() {
       title: 'Settings and replay',
       buildContent: (content) => {
         content.appendChild(createWelcomeTourParagraph(`You can edit the extension settings from your profile picture menu via "${APP_NAME} settings".`));
+        content.appendChild(createWelcomeTourParagraph(`This is where you can configure your ${APP_NAME} server URL(s). It is set up for localhost by default, so you will need to change this if you're running ${APP_NAME} somewhere besides this very machine with default settings.`));
         content.appendChild(createWelcomeTourMenuImage());
         content.appendChild(createWelcomeTourParagraph('The settings modal also includes a "Play welcome tour" button if you ever want to revisit this walkthrough.'));
       },
