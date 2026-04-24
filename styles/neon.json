@@ -1,0 +1,24 @@
+{
+    "id":  "neon",
+    "name":  "Neon",
+    "description":  "A dark night in a city that knows how to keep its secrets.",
+    "vars":  {
+                 "--bg-base":  "#0a0a0f",
+                 "--bg-surface":  "#111118",
+                 "--bg-elevated":  "#1a1a25",
+                 "--bg-hover":  "#242430",
+                 "--modal-overlay-scrim":  "rgba(5, 5, 10, 0.8)",
+                 "--accent":  "#ff3c8e",
+                 "--accent-hover":  "#ff6aaa",
+                 "--accent-dim":  "#5a1535",
+                 "--text-primary":  "#eae8f0",
+                 "--text-secondary":  "#a0a0be",
+                 "--text-muted":  "#666688",
+                 "--border":  "#2a2a40",
+                 "--border-focus":  "#00e5ff",
+                 "--danger":  "#ff3c5e",
+                 "--danger-hover":  "#ff6a80",
+                 "--success":  "#00e5a0"
+             },
+    "css":  ".header { border-bottom: 1px solid #ff3c8e; box-shadow: 0 1px 12px rgba(255, 60, 142, 0.2); }\na, .artist-link { text-shadow: 0 0 4px rgba(0, 229, 255, 0.3); }\n.grid-card { border: 1px solid rgba(255, 60, 142, 0.1); }\n.grid-card:hover { border-color: rgba(255, 60, 142, 0.35); box-shadow: 0 0 16px rgba(255, 60, 142, 0.12), 0 0 24px rgba(0, 229, 255, 0.06); }"
+}

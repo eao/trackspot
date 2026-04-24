@@ -1,0 +1,23 @@
+{
+  "id": "masterful",
+  "name": "Masterful",
+  "description": "This started off being inspired by VNDB's Saya no Uta skin, but ended up reminding me more of Rory's back-to-back.",
+  "vars": {
+    "--bg-base": "#180c10",
+    "--bg-surface": "#1e2822",
+    "--bg-elevated": "#273430",
+    "--bg-hover": "#30403a",
+    "--modal-overlay-scrim": "rgba(24, 12, 16, 0.72)",
+    "--accent": "#e8b430",
+    "--accent-hover": "#f0c850",
+    "--accent-dim": "#4a3215",
+    "--text-primary": "#e8ddd0",
+    "--text-secondary": "#c49870",
+    "--text-muted": "#907a5e",
+    "--border": "#3a4838",
+    "--border-focus": "#e8b430",
+    "--danger": "#c84535",
+    "--danger-hover": "#e06550",
+    "--success": "#6aaa78"
+  }
+}

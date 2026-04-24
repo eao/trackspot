@@ -1,0 +1,24 @@
+{
+    "id":  "times",
+    "name":  "Times",
+    "description":  "Not quite as pink as the FT.",
+    "vars":  {
+                 "--bg-base":  "#f5f0e8",
+                 "--bg-surface":  "#fffdf7",
+                 "--bg-elevated":  "#f0ebe1",
+                 "--bg-hover":  "#e6dfcf",
+                 "--modal-overlay-scrim":  "rgba(0, 0, 0, 0.35)",
+                 "--accent":  "#8b5e3c",
+                 "--accent-hover":  "#a67350",
+                 "--accent-dim":  "#e8d8c4",
+                 "--text-primary":  "#2c2418",
+                 "--text-secondary":  "#564a3d",
+                 "--text-muted":  "#988878",
+                 "--border":  "#d4c9b5",
+                 "--border-focus":  "#8b5e3c",
+                 "--danger":  "#b83030",
+                 "--danger-hover":  "#d05050",
+                 "--success":  "#3a7a4c"
+             },
+    "css":  "body { font-family: \u0027Georgia\u0027, \u0027Times New Roman\u0027, serif; }\ninput, select, textarea, button { font-family: \u0027Georgia\u0027, \u0027Times New Roman\u0027, serif; }\n.header-title { font-weight: 400; }\n.album-row-header { font-size: 0.55rem; }"
+}

@@ -1,0 +1,24 @@
+{
+    "id":  "dark-times",
+    "name":  "Dark Times",
+    "description":  "Even the got durnt news is in dark mode these days.",
+    "vars":  {
+                 "--bg-base":  "#0f1318",
+                 "--bg-surface":  "#171c24",
+                 "--bg-elevated":  "#1f2530",
+                 "--bg-hover":  "#282f3c",
+                 "--modal-overlay-scrim":  "rgba(0, 0, 0, 0.7)",
+                 "--accent":  "#c9a96e",
+                 "--accent-hover":  "#dcc08a",
+                 "--accent-dim":  "#4a3820",
+                 "--text-primary":  "#ddd5c4",
+                 "--text-secondary":  "#aa9f8f",
+                 "--text-muted":  "#7a6e58",
+                 "--border":  "#2e3440",
+                 "--border-focus":  "#c9a96e",
+                 "--danger":  "#bf4040",
+                 "--danger-hover":  "#d86060",
+                 "--success":  "#5a9a68"
+             },
+    "css":  "body { font-family: \u0027Georgia\u0027, \u0027Times New Roman\u0027, serif; }\ninput, select, textarea, button { font-family: \u0027Georgia\u0027, \u0027Times New Roman\u0027, serif; }\n.header-title { font-weight: 400; }\n.album-row-header { font-size: 0.55rem; }"
+}

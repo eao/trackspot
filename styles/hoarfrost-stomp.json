@@ -1,0 +1,24 @@
+{
+    "id":  "hoarfrost-stomp",
+    "name":  "Hoarfrost Stomp",
+    "description":  "For those who still use light mode.",
+    "vars":  {
+                 "--bg-base":  "#eef2f7",
+                 "--bg-surface":  "#ffffff",
+                 "--bg-elevated":  "#e4eaf2",
+                 "--bg-hover":  "#d6dfe9",
+                 "--modal-overlay-scrim":  "rgba(100, 120, 140, 0.35)",
+                 "--accent":  "#2563eb",
+                 "--accent-hover":  "#3b82f6",
+                 "--accent-dim":  "#dbeafe",
+                 "--text-primary":  "#1e293b",
+                 "--text-secondary":  "#4f5e74",
+                 "--text-muted":  "#7888a0",
+                 "--border":  "#c8d4e0",
+                 "--border-focus":  "#2563eb",
+                 "--danger":  "#dc2626",
+                 "--danger-hover":  "#ef4444",
+                 "--success":  "#16a34a"
+             },
+    "css":  ".grid-card { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04); }\n.grid-card:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), 0 8px 24px rgba(0, 0, 0, 0.06); }"
+}

@@ -1,0 +1,243 @@
+const fs = require('fs');
+const path = require('path');
+const { DATA_DIR } = require('./db');
+
+const USER_BACKGROUNDS_DIR = process.env.USER_BACKGROUNDS_DIR || path.join(DATA_DIR, 'backgrounds-user');
+const USER_BACKGROUND_THUMBS_DIR = process.env.USER_BACKGROUND_THUMBS_DIR || path.join(DATA_DIR, 'backgrounds-user-thumbs');
+const PRESET_BACKGROUNDS_DIR = process.env.PRESET_BACKGROUNDS_DIR || path.join(__dirname, '..', 'public', 'background-presets');
+const PRESET_BACKGROUND_THUMBS_DIR = process.env.PRESET_BACKGROUND_THUMBS_DIR || path.join(__dirname, '..', 'public', 'background-presets-thumbs');
+const SECONDARY_USER_BACKGROUNDS_DIR = process.env.SECONDARY_USER_BACKGROUNDS_DIR || path.join(DATA_DIR, 'backgrounds-user-secondary');
+const SECONDARY_USER_BACKGROUND_THUMBS_DIR = process.env.SECONDARY_USER_BACKGROUND_THUMBS_DIR || path.join(DATA_DIR, 'backgrounds-user-secondary-thumbs');
+const SECONDARY_PRESET_BACKGROUNDS_DIR = process.env.SECONDARY_PRESET_BACKGROUNDS_DIR || path.join(__dirname, '..', 'public', 'background-presets-secondary');
+const SECONDARY_PRESET_BACKGROUND_THUMBS_DIR = process.env.SECONDARY_PRESET_BACKGROUND_THUMBS_DIR || path.join(__dirname, '..', 'public', 'background-presets-secondary-thumbs');
+
+const ALLOWED_IMAGE_TYPES = new Map([
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
+  ['image/webp', '.webp'],
+  ['image/gif', '.gif'],
+]);
+
+[
+  USER_BACKGROUNDS_DIR,
+  USER_BACKGROUND_THUMBS_DIR,
+  PRESET_BACKGROUNDS_DIR,
+  PRESET_BACKGROUND_THUMBS_DIR,
+  SECONDARY_USER_BACKGROUNDS_DIR,
+  SECONDARY_USER_BACKGROUND_THUMBS_DIR,
+  SECONDARY_PRESET_BACKGROUNDS_DIR,
+  SECONDARY_PRESET_BACKGROUND_THUMBS_DIR,
+].forEach(directoryPath => {
+  fs.mkdirSync(directoryPath, { recursive: true });
+});
+
+const BACKGROUND_SLOT_CONFIGS = {
+  primary: {
+    key: 'primary',
+    userDir: USER_BACKGROUNDS_DIR,
+    userThumbDir: USER_BACKGROUND_THUMBS_DIR,
+    presetDir: PRESET_BACKGROUNDS_DIR,
+    presetThumbDir: PRESET_BACKGROUND_THUMBS_DIR,
+    userBaseUrl: '/backgrounds/user',
+    userThumbBaseUrl: '/backgrounds/user-thumbnails',
+    presetBaseUrl: '/backgrounds/presets',
+    presetThumbBaseUrl: '/backgrounds/preset-thumbnails',
+  },
+  secondary: {
+    key: 'secondary',
+    userDir: SECONDARY_USER_BACKGROUNDS_DIR,
+    userThumbDir: SECONDARY_USER_BACKGROUND_THUMBS_DIR,
+    presetDir: SECONDARY_PRESET_BACKGROUNDS_DIR,
+    presetThumbDir: SECONDARY_PRESET_BACKGROUND_THUMBS_DIR,
+    userBaseUrl: '/backgrounds/secondary/user',
+    userThumbBaseUrl: '/backgrounds/secondary/user-thumbnails',
+    presetBaseUrl: '/backgrounds/secondary/presets',
+    presetThumbBaseUrl: '/backgrounds/secondary/preset-thumbnails',
+  },
+};
+
+function sanitizeFileNamePart(value) {
+  return String(value)
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function humanizeFileLabel(fileName) {
+  const parsed = path.parse(fileName);
+  return parsed.name
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || fileName;
+}
+
+function buildUserBackgroundName(originalName, mimeType) {
+  const parsed = path.parse(originalName || 'background');
+  const ext = ALLOWED_IMAGE_TYPES.get(mimeType) || parsed.ext || '.jpg';
+  const safeBase = sanitizeFileNamePart(parsed.name || 'Background') || 'Background';
+  const uniquePrefix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${uniquePrefix}__${safeBase}${ext.toLowerCase()}`;
+}
+
+function ensureSafeStoredName(storedName) {
+  if (!storedName) return null;
+  const safeName = path.basename(storedName);
+  if (safeName !== storedName) return null;
+  return safeName;
+}
+
+function buildThumbnailFileName(fileName) {
+  return `${path.parse(fileName).name}.jpg`;
+}
+
+function compareImageRecords(left, right) {
+  return left.name.localeCompare(right.name, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  }) || left.fileName.localeCompare(right.fileName, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+function listStoredImages(directoryPath) {
+  if (!fs.existsSync(directoryPath)) return [];
+
+  return fs.readdirSync(directoryPath, { withFileTypes: true })
+    .filter(entry => entry.isFile())
+    .filter(entry => /\.(jpe?g|png|webp|gif)$/i.test(entry.name))
+    .map(entry => entry.name);
+}
+
+function buildImageRecord({ kind, fileName, baseUrl, thumbnailDir, thumbnailBaseUrl, canDelete }) {
+  const nameParts = fileName.split('__');
+  const labelSource = kind === 'user' && nameParts.length > 1
+    ? nameParts.slice(1).join('__')
+    : fileName;
+  const thumbnailFileName = buildThumbnailFileName(fileName);
+  const thumbnailPath = thumbnailDir ? path.join(thumbnailDir, thumbnailFileName) : null;
+  const thumbnailUrl = thumbnailPath && fs.existsSync(thumbnailPath)
+    ? `${thumbnailBaseUrl}/${encodeURIComponent(thumbnailFileName)}`
+    : null;
+
+  return {
+    id: fileName,
+    kind,
+    name: humanizeFileLabel(labelSource),
+    fileName,
+    url: `${baseUrl}/${encodeURIComponent(fileName)}`,
+    thumbnailUrl,
+    canDelete,
+  };
+}
+
+function listImageRecords(directoryPath, options) {
+  return listStoredImages(directoryPath)
+    .map(fileName => buildImageRecord({ ...options, fileName }))
+    .sort(compareImageRecords);
+}
+
+function getBackgroundSlotConfig(slotKey = 'primary') {
+  return BACKGROUND_SLOT_CONFIGS[slotKey] ?? BACKGROUND_SLOT_CONFIGS.primary;
+}
+
+function syncPresetThumbnailFiles(presetDir = PRESET_BACKGROUNDS_DIR, thumbnailDir = PRESET_BACKGROUND_THUMBS_DIR) {
+  fs.mkdirSync(thumbnailDir, { recursive: true });
+
+  const presetFileNames = listStoredImages(presetDir);
+  const expectedThumbnails = new Map(
+    presetFileNames.map(fileName => [buildThumbnailFileName(fileName), fileName]),
+  );
+
+  fs.readdirSync(thumbnailDir, { withFileTypes: true })
+    .filter(entry => entry.isFile())
+    .filter(entry => /\.jpe?g$/i.test(entry.name))
+    .forEach(entry => {
+      const sourceFileName = expectedThumbnails.get(entry.name);
+      const thumbnailPath = path.join(thumbnailDir, entry.name);
+
+      if (!sourceFileName) {
+        fs.unlinkSync(thumbnailPath);
+        return;
+      }
+
+      const sourcePath = path.join(presetDir, sourceFileName);
+      const sourceStats = fs.statSync(sourcePath);
+      const thumbnailStats = fs.statSync(thumbnailPath);
+
+      if (thumbnailStats.mtimeMs < sourceStats.mtimeMs) {
+        fs.unlinkSync(thumbnailPath);
+      }
+    });
+}
+
+function listBackgroundLibrary(slotKey = 'primary') {
+  const slotConfig = getBackgroundSlotConfig(slotKey);
+  syncPresetThumbnailFiles(slotConfig.presetDir, slotConfig.presetThumbDir);
+
+  return {
+    userImages: listImageRecords(slotConfig.userDir, {
+      kind: 'user',
+      baseUrl: slotConfig.userBaseUrl,
+      thumbnailDir: slotConfig.userThumbDir,
+      thumbnailBaseUrl: slotConfig.userThumbBaseUrl,
+      canDelete: true,
+    }),
+    presetImages: listImageRecords(slotConfig.presetDir, {
+      kind: 'preset',
+      baseUrl: slotConfig.presetBaseUrl,
+      thumbnailDir: slotConfig.presetThumbDir,
+      thumbnailBaseUrl: slotConfig.presetThumbBaseUrl,
+      canDelete: false,
+    }),
+  };
+}
+
+function getBackgroundImageRecord(slotKey = 'primary', selection = null) {
+  const kind = selection?.kind === 'preset' ? 'preset' : selection?.kind === 'user' ? 'user' : null;
+  const safeName = ensureSafeStoredName(selection?.id || selection?.fileName);
+  if (!kind || !safeName) return null;
+
+  const slotConfig = getBackgroundSlotConfig(slotKey);
+  const baseUrl = kind === 'preset' ? slotConfig.presetBaseUrl : slotConfig.userBaseUrl;
+  const thumbnailDir = kind === 'preset' ? slotConfig.presetThumbDir : slotConfig.userThumbDir;
+  const thumbnailBaseUrl = kind === 'preset' ? slotConfig.presetThumbBaseUrl : slotConfig.userThumbBaseUrl;
+  const directoryPath = kind === 'preset' ? slotConfig.presetDir : slotConfig.userDir;
+  const targetPath = path.join(directoryPath, safeName);
+  if (!fs.existsSync(targetPath)) return null;
+
+  return buildImageRecord({
+    kind,
+    fileName: safeName,
+    baseUrl,
+    thumbnailDir,
+    thumbnailBaseUrl,
+    canDelete: kind === 'user',
+  });
+}
+
+module.exports = {
+  USER_BACKGROUNDS_DIR,
+  USER_BACKGROUND_THUMBS_DIR,
+  PRESET_BACKGROUNDS_DIR,
+  PRESET_BACKGROUND_THUMBS_DIR,
+  SECONDARY_USER_BACKGROUNDS_DIR,
+  SECONDARY_USER_BACKGROUND_THUMBS_DIR,
+  SECONDARY_PRESET_BACKGROUNDS_DIR,
+  SECONDARY_PRESET_BACKGROUND_THUMBS_DIR,
+  BACKGROUND_SLOT_CONFIGS,
+  ALLOWED_IMAGE_TYPES,
+  sanitizeFileNamePart,
+  humanizeFileLabel,
+  buildUserBackgroundName,
+  ensureSafeStoredName,
+  buildThumbnailFileName,
+  compareImageRecords,
+  listStoredImages,
+  buildImageRecord,
+  listImageRecords,
+  getBackgroundSlotConfig,
+  syncPresetThumbnailFiles,
+  listBackgroundLibrary,
+  getBackgroundImageRecord,
+};

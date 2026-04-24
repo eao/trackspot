@@ -1,0 +1,24 @@
+{
+    "id":  "aggressive-blue",
+    "name":  "Aggressive Blue",
+    "description":  "A more aggressive, deeper blue than the default.",
+    "vars":  {
+                 "--bg-base":  "#04050a",
+                 "--bg-surface":  "rgba(10, 18, 40, 1.00)",
+                 "--bg-elevated":  "rgba(15, 25, 55, 1.00)",
+                 "--bg-hover":  "rgba(25, 35, 70, 1.00)",
+                 "--modal-overlay-scrim":  "rgba(0, 0, 0, 0.65)",
+                 "--accent":  "#c0f0ff",
+                 "--accent-hover":  "#ffffff",
+                 "--accent-dim":  "#1a3050",
+                 "--text-primary":  "#e0f0ff",
+                 "--text-secondary":  "#82aad4",
+                 "--text-muted":  "#4e6e90",
+                 "--border":  "#2a3a5a",
+                 "--border-focus":  "#c0f0ff",
+                 "--danger":  "#ff4080",
+                 "--danger-hover":  "#ff70a0",
+                 "--success":  "#40ffc0"
+             },
+    "css":  "body { background-color: #080b14 !important; background-image: linear-gradient(to bottom, color-mix(in srgb, #0a1128 var(--ts-opacity-style-background-gradient), transparent) 0%, color-mix(in srgb, #080b14 var(--ts-opacity-style-background-gradient), transparent) 60%, color-mix(in srgb, #080b14 var(--ts-opacity-style-background-gradient), transparent) 100%) !important; background-repeat: no-repeat !important; background-position: top center !important; background-size: 100% 100vh !important; }"
+}

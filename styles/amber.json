@@ -1,0 +1,24 @@
+{
+    "id":  "amber",
+    "name":  "Amber",
+    "description":  "Really, it's more brown with amber accents, but...",
+    "vars":  {
+                 "--bg-base":  "#14110d",
+                 "--bg-surface":  "#241c14",
+                 "--bg-elevated":  "#302418",
+                 "--bg-hover":  "#3c2d1f",
+                 "--modal-overlay-scrim":  "rgba(0, 0, 0, 0.68)",
+                 "--accent":  "#f0a54a",
+                 "--accent-hover":  "#f5b96a",
+                 "--accent-dim":  "#5b3c12",
+                 "--text-primary":  "#f4eadb",
+                 "--text-secondary":  "#d1bea0",
+                 "--text-muted":  "#8d7b5f",
+                 "--border":  "#4a3927",
+                 "--border-focus":  "#f0a54a",
+                 "--danger":  "#d65b5b",
+                 "--danger-hover":  "#f08a8a",
+                 "--success":  "#58b07d"
+             },
+    "css":  "body { background-color: #14110d !important; background-image: linear-gradient(to bottom, color-mix(in srgb, #1d1610 var(--ts-opacity-style-background-gradient), transparent) 0%, color-mix(in srgb, #14110d var(--ts-opacity-style-background-gradient), transparent) 60%, color-mix(in srgb, #14110d var(--ts-opacity-style-background-gradient), transparent) 100%) !important; background-repeat: no-repeat !important; background-position: top center !important; background-size: 100% 100vh !important; }"
+}

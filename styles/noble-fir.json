@@ -1,0 +1,24 @@
+{
+    "id":  "noble-fir",
+    "name":  "Noble Fir",
+    "description":  "In a Christmas tree farm.",
+    "vars":  {
+                 "--bg-base":  "#0d1513",
+                 "--bg-surface":  "#15211d",
+                 "--bg-elevated":  "#1c2d27",
+                 "--bg-hover":  "#254034",
+                 "--modal-overlay-scrim":  "rgba(0, 0, 0, 0.68)",
+                 "--accent":  "#5cc49a",
+                 "--accent-hover":  "#7bd1ae",
+                 "--accent-dim":  "#1a5b44",
+                 "--text-primary":  "#e4f1eb",
+                 "--text-secondary":  "#a2c3b5",
+                 "--text-muted":  "#587567",
+                 "--border":  "#305244",
+                 "--border-focus":  "#5cc49a",
+                 "--danger":  "#d65d67",
+                 "--danger-hover":  "#f08d96",
+                 "--success":  "#56c08d"
+             },
+    "css":  "body { background-color: #0b1311 !important; background-image: linear-gradient(to bottom, color-mix(in srgb, #121b17 var(--ts-opacity-style-background-gradient), transparent) 0%, color-mix(in srgb, #0b1311 var(--ts-opacity-style-background-gradient), transparent) 60%, color-mix(in srgb, #0b1311 var(--ts-opacity-style-background-gradient), transparent) 100%) !important; background-repeat: no-repeat !important; background-position: top center !important; background-size: 100% 100vh !important; }"
+}

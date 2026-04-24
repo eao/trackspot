@@ -1,0 +1,24 @@
+{
+    "id":  "blueprints",
+    "name":  "Blueprints",
+    "description":  "I can't draft the ******* boiler room.",
+    "vars":  {
+                 "--bg-base":  "#0a1628",
+                 "--bg-surface":  "#0f1e38",
+                 "--bg-elevated":  "#152848",
+                 "--bg-hover":  "#1c3258",
+                 "--modal-overlay-scrim":  "rgba(5, 10, 22, 0.8)",
+                 "--accent":  "#e8e8ff",
+                 "--accent-hover":  "#ffffff",
+                 "--accent-dim":  "#1a3060",
+                 "--text-primary":  "#c8d8f8",
+                 "--text-secondary":  "#88a3cd",
+                 "--text-muted":  "#587898",
+                 "--border":  "#1e3a60",
+                 "--border-focus":  "#e8e8ff",
+                 "--danger":  "#ff6868",
+                 "--danger-hover":  "#ff9090",
+                 "--success":  "#68d8a8"
+             },
+    "css":  "body {\n  font-family: \u0027Courier New\u0027, \u0027Consolas\u0027, \u0027Liberation Mono\u0027, monospace;\n  background-image: url(\"data:image/svg+xml,%3Csvg width=\u002748\u0027 height=\u002748\u0027 xmlns=\u0027http://www.w3.org/2000/svg\u0027%3E%3Crect width=\u002748\u0027 height=\u002748\u0027 fill=\u0027none\u0027/%3E%3Cpath d=\u0027M 48 0 L 0 0 0 48\u0027 fill=\u0027none\u0027 stroke=\u0027%231a3560\u0027 stroke-width=\u00270.5\u0027/%3E%3C/svg%3E\") !important;\n}\ninput, select, textarea, button { font-family: \u0027Courier New\u0027, \u0027Consolas\u0027, \u0027Liberation Mono\u0027, monospace; }\n.header { text-transform: uppercase; letter-spacing: 0.12em; border-bottom: 1px solid #3a5a88 !important; }\n.grid-card { border: 1px solid #1e3a60 !important; }\n.grid-card:hover { border-color: #4a6a98 !important; }\n.sidebar { border-right: 1px solid #1e3a60 !important; }\ntable th { text-transform: uppercase; letter-spacing: 0.08em; }"
+}

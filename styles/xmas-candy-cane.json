@@ -1,0 +1,24 @@
+{
+    "id": "xmas-candy-cane",
+    "name": "Candy Cane",
+    "description": "The best way to ingest peppermint?",
+    "vars": {
+        "--bg-base": "#FFF5F5",
+        "--bg-surface": "#FFFFFF",
+        "--bg-elevated": "#FFF0F0",
+        "--bg-hover": "#FFE0E0",
+        "--modal-overlay-scrim": "rgba(100, 10, 20, 0.45)",
+        "--accent": "#C41E3A",
+        "--accent-hover": "#E02848",
+        "--accent-dim": "#FCDCE2",
+        "--text-primary": "#3B0A14",
+        "--text-secondary": "#7A2030",
+        "--text-muted": "#B87080",
+        "--border": "#F0C0C8",
+        "--border-focus": "#C41E3A",
+        "--danger": "#A01020",
+        "--danger-hover": "#CC2840",
+        "--success": "#2E8B57"
+    },
+    "css": "body {\n  background-color: #FFF5F5 !important;\n  background-image:\n    repeating-linear-gradient(\n      135deg,\n      rgba(196, 30, 58, 0.06),\n      rgba(196, 30, 58, 0.06) 20px,\n      #FFFFFF 20px,\n      #FFFFFF 40px\n    ) !important;\n  background-attachment: fixed !important;\n}\n.album-row:nth-child(odd) {\n  background: color-mix(in srgb, #FFFFFF var(--ts-row-surface-opacity, var(--ts-opacity-row)), transparent) !important;\n  border-color: color-mix(in srgb, #F0C0C8 var(--ts-row-surface-opacity, var(--ts-opacity-row)), transparent) !important;\n}\n.album-row:nth-child(even) {\n  background: color-mix(in srgb, #FCDCE2 var(--ts-row-surface-opacity, var(--ts-opacity-row)), transparent) !important;\n  border-color: color-mix(in srgb, #E8A0B0 var(--ts-row-surface-opacity, var(--ts-opacity-row)), transparent) !important;\n}\n.album-row:nth-child(odd):hover {\n  background: color-mix(in srgb, #FFFFFF var(--ts-opacity-row), transparent) !important;\n  border-color: color-mix(in srgb, #C41E3A var(--ts-opacity-row), transparent) !important;\n  box-shadow: 0 0 0 2.5px rgba(196, 30, 58, 1.0) !important;\n}\n.album-row:nth-child(even):hover {\n  background: color-mix(in srgb, #F5C0CC var(--ts-opacity-row), transparent) !important;\n}\n.album-row.album-row-header, .album-row.album-row-header:hover {\n  background: color-mix(in srgb, #C41E3A var(--ts-row-surface-opacity, var(--ts-opacity-row-header-background)), transparent) !important;\n  border-color: color-mix(in srgb, #A01830 var(--ts-row-surface-opacity, var(--ts-opacity-row-header-background)), transparent) !important;\n  color: #FFFFFF !important;\n  box-shadow: none !important;\n}\n.album-row.album-row-header .row-cell { color: #FFFFFF !important; }\n.album-row.album-row-header .album-row-header-separator { color: #FFFFFF !important; }\n.album-row.album-row-header .sort-indicator { color: #FFFFFF !important; }\n.header {\n  background: color-mix(in srgb, #C41E3A var(--ts-opacity-header), transparent) !important;\n  border-bottom: 2px solid color-mix(in srgb, #A01830 var(--ts-opacity-header), transparent) !important;\n  color: #FFFFFF;\n}\n.header input, .header select { color: #3B0A14 !important; }\n.header-title, .header .search-input::placeholder { color: #FFFFFF !important; }\n.header-tooltip { background: #FFFFFF !important; }\n.header-tooltip::after { border-right-color: #FFFFFF !important; }\n.sidebar {\n  background: #FFFFFF !important;\n  border-right: 2px solid #F0C0C8 !important;\n}\n.album-card {\n  border: 1.5px solid color-mix(in srgb, #F0C0C8 var(--ts-opacity-card), transparent) !important;\n  border-radius: 12px !important;\n}\n.album-card:hover {\n  border-color: color-mix(in srgb, #C41E3A var(--ts-opacity-card), transparent) !important;\n  box-shadow: 0 4px 16px rgba(196, 30, 58, 0.15);\n}\n.modal {\n  border: 2px solid #E8A0B0 !important;\n  border-radius: 14px !important;\n}\na, .artist-link { color: #C41E3A !important; }\na:hover, .artist-link:hover { color: #E02848 !important; }\n::selection { background: #C41E3A; color: #FFFFFF; }"
+}

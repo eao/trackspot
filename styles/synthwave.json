@@ -1,0 +1,24 @@
+{
+    "id":  "synthwave",
+    "name":  "Synthwave",
+    "description":  "Surely you're not actually going to use this. It's so... purple.",
+    "vars":  {
+                 "--bg-base":  "#0e0520",
+                 "--bg-surface":  "#1a0a3e",
+                 "--bg-elevated":  "#2b1065",
+                 "--bg-hover":  "#3a1880",
+                 "--modal-overlay-scrim":  "rgba(10, 2, 30, 0.8)",
+                 "--accent":  "#ff2a6d",
+                 "--accent-hover":  "#ff6b9d",
+                 "--accent-dim":  "#6e1040",
+                 "--text-primary":  "#f0e0ff",
+                 "--text-secondary":  "#d0b0f4",
+                 "--text-muted":  "#7e60a0",
+                 "--border":  "#4a2080",
+                 "--border-focus":  "#00f0ff",
+                 "--danger":  "#ff4848",
+                 "--danger-hover":  "#ff7878",
+                 "--success":  "#05ffa1"
+             },
+    "css":  "body { text-shadow: 0 0 8px rgba(255, 42, 109, 0.15); }\n.header { border-bottom: 2px solid #ff2a6d; box-shadow: 0 2px 20px rgba(255, 42, 109, 0.25); }\na, .artist-link { text-shadow: 0 0 6px rgba(0, 240, 255, 0.4); }\n.grid-card { box-shadow: 0 0 15px rgba(255, 42, 109, 0.15), 0 0 30px rgba(0, 240, 255, 0.08); }\n.grid-card:hover { box-shadow: 0 0 20px rgba(255, 42, 109, 0.3), 0 0 40px rgba(0, 240, 255, 0.15); }"
+}

@@ -1,0 +1,24 @@
+{
+    "id":  "dark-umber",
+    "name":  "Dark Umber",
+    "description":  "It's like a darker version of Amber, so Dark Amber. Uh, Dark Umber.",
+    "vars":  {
+                 "--bg-base":  "#151210",
+                 "--bg-surface":  "#1f1b17",
+                 "--bg-elevated":  "#2a2520",
+                 "--bg-hover":  "#36302a",
+                 "--modal-overlay-scrim":  "rgba(10, 8, 6, 0.72)",
+                 "--accent":  "#c4a67a",
+                 "--accent-hover":  "#d8be96",
+                 "--accent-dim":  "#4a3a24",
+                 "--text-primary":  "#d4c8b4",
+                 "--text-secondary":  "#ada18f",
+                 "--text-muted":  "#787060",
+                 "--border":  "#3a342c",
+                 "--border-focus":  "#c4a67a",
+                 "--danger":  "#b85c50",
+                 "--danger-hover":  "#d07868",
+                 "--success":  "#7a9e6a"
+             },
+    "css":  "body { background-color: #13100e !important; background-image: linear-gradient(to bottom, color-mix(in srgb, #1a1510 var(--ts-opacity-style-background-gradient), transparent) 0%, color-mix(in srgb, #13100e var(--ts-opacity-style-background-gradient), transparent) 60%, color-mix(in srgb, #13100e var(--ts-opacity-style-background-gradient), transparent) 100%) !important; background-repeat: no-repeat !important; background-position: top center !important; background-size: 100% 100vh !important; }"
+}

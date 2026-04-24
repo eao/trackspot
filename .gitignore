@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Environment variables and local secrets
+.env
+
+# Runtime database, uploads, and user-created local state
+data/
+
+# Local agent/tooling state
+.claude/
+
+# Local reference material and scratch files
+_local/

@@ -1,0 +1,24 @@
+{
+  "id": "trackspot-yoake",
+  "name": "Trackspot Yoake",
+  "description": "Tawny, dawn-y colors, as inspired by Jisho 夜明け, a classic userstyle for jisho.org by wekateka.",
+  "vars": {
+    "--bg-base": "#2a1b1b",
+    "--bg-surface": "#332222",
+    "--bg-elevated": "#382820",
+    "--bg-hover": "#4e3530",
+    "--modal-overlay-scrim": "rgba(42, 27, 27, 0.75)",
+    "--accent": "#ef7d6c",
+    "--accent-hover": "#f5a090",
+    "--accent-dim": "#5a2a20",
+    "--text-primary": "#efb26c",
+    "--text-secondary": "#be8a54",
+    "--text-muted": "#886848",
+    "--border": "#863b2f",
+    "--border-focus": "#ef7d6c",
+    "--danger": "#cc3333",
+    "--danger-hover": "#e86060",
+    "--success": "#58964a"
+  },
+  "css": ".header-title { position: relative; }\n.header-title::after {\n  content: '夜明け';\n  position: absolute;\n  left: 4.90em;\n  top: 1.54em;\n  font-size: 11px;\n  font-weight: 800;\n  color: #813a2d;\n  letter-spacing: 0.00em;\n  white-space: nowrap;\n  pointer-events: none;\n}"
+}

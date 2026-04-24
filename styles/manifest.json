@@ -1,0 +1,114 @@
+{
+"themes": [
+{
+"id": "bunan-blue",
+"file": "bunan-blue.json",
+"enabled": true
+},
+{
+"id": "aggressive-blue",
+"file": "aggressive-blue.json",
+"enabled": true
+},
+{
+"id": "ocean",
+"file": "ocean.json",
+"enabled": true
+},
+{
+"id": "noble-fir",
+"file": "noble-fir.json",
+"enabled": true
+},
+{
+"id": "amber",
+"file": "amber.json",
+"enabled": true
+},
+{
+"id": "dark-umber",
+"file": "dark-umber.json",
+"enabled": true
+},
+{
+"id": "charcoal",
+"file": "charcoal.json",
+"enabled": true
+},
+{
+"id": "slate-rose",
+"file": "slate-rose.json",
+"enabled": true
+},
+{
+"id": "neon",
+"file": "neon.json",
+"enabled": true
+},
+{
+"id": "synthwave",
+"file": "synthwave.json",
+"enabled": true
+},
+{
+"id": "hoarfrost-stomp",
+"file": "hoarfrost-stomp.json",
+"enabled": true
+},
+{
+"id": "times",
+"file": "times.json",
+"enabled": true
+},
+{
+"id": "dark-times",
+"file": "dark-times.json",
+"enabled": true
+},
+{
+"id": "blueprints",
+"file": "blueprints.json",
+"enabled": true
+},
+{
+"id": "terminal",
+"file": "terminal.json",
+"enabled": true
+},
+{
+"id": "we-sports",
+"file": "we-sports.json",
+"enabled": true
+},
+{
+"id": "found-in-the-archives",
+"file": "found-in-the-archives.json",
+"enabled": true
+},
+{
+"id": "trackspot-yoake",
+"file": "trackspot-yoake.json",
+"enabled": true
+},
+{
+"id": "masterful",
+"file": "masterful.json",
+"enabled": true
+},
+{
+"id": "xmas-candy-cane",
+"file": "xmas-candy-cane.json",
+"enabled": true
+},
+{
+"id": "xmas-tannenbaum",
+"file": "xmas-tannenbaum.json",
+"enabled": true
+},
+{
+"id": "xmas-hearth",
+"file": "xmas-hearth.json",
+"enabled": true
+}
+]
+}

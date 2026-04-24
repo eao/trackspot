@@ -1,0 +1,24 @@
+{
+    "id":  "ocean",
+    "name":  "Ocean",
+    "description":  "Ocean colors. Has a secret gradient.",
+    "vars":  {
+                 "--bg-base":  "#0a1014",
+                 "--bg-surface":  "#0f1a20",
+                 "--bg-elevated":  "#16242c",
+                 "--bg-hover":  "#1e3038",
+                 "--modal-overlay-scrim":  "rgba(0, 0, 0, 0.7)",
+                 "--accent":  "#5cb8b2",
+                 "--accent-hover":  "#7ed0ca",
+                 "--accent-dim":  "#1a4a48",
+                 "--text-primary":  "#d8e8e6",
+                 "--text-secondary":  "#96b8b4",
+                 "--text-muted":  "#587a76",
+                 "--border":  "#243a3e",
+                 "--border-focus":  "#5cb8b2",
+                 "--danger":  "#d06060",
+                 "--danger-hover":  "#f08080",
+                 "--success":  "#48b880"
+             },
+    "css":  "body { background-color: #05090c !important; background-image: linear-gradient(to bottom, color-mix(in srgb, #07151a var(--ts-opacity-style-background-gradient), transparent) 0%, color-mix(in srgb, #0a1014 var(--ts-opacity-style-background-gradient), transparent) 60%, color-mix(in srgb, #05090c var(--ts-opacity-style-background-gradient), transparent) 100%) !important; background-repeat: no-repeat !important; background-position: top center !important; background-size: 100% 100vh !important; }"
+}

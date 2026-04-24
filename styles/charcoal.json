@@ -1,0 +1,24 @@
+{
+    "id":  "charcoal",
+    "name":  "Charcoal",
+    "description":  "Monochrome dark greys.",
+    "vars":  {
+                 "--bg-base":  "#111111",
+                 "--bg-surface":  "#1a1a1a",
+                 "--bg-elevated":  "#242424",
+                 "--bg-hover":  "#2e2e2e",
+                 "--modal-overlay-scrim":  "rgba(0, 0, 0, 0.7)",
+                 "--accent":  "#a0a0a0",
+                 "--accent-hover":  "#c0c0c0",
+                 "--accent-dim":  "#3a3a3a",
+                 "--text-primary":  "#e0e0e0",
+                 "--text-secondary":  "#a8a8a8",
+                 "--text-muted":  "#707070",
+                 "--border":  "#333333",
+                 "--border-focus":  "#a0a0a0",
+                 "--danger":  "#d45050",
+                 "--danger-hover":  "#f07070",
+                 "--success":  "#50b070"
+             },
+    "css":  "body { background-color: #111111 !important; background-image: linear-gradient(to bottom, color-mix(in srgb, #161616 var(--ts-opacity-style-background-gradient), transparent) 0%, color-mix(in srgb, #111111 var(--ts-opacity-style-background-gradient), transparent) 60%, color-mix(in srgb, #111111 var(--ts-opacity-style-background-gradient), transparent) 100%) !important; background-repeat: no-repeat !important; background-position: top center !important; background-size: 100% 100vh !important; }"
+}

@@ -1,0 +1,36 @@
+{
+  "name": "trackspot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "db:export-json": "node scripts/export-db-json.js",
+    "styles:sync": "node scripts/sync-color-scheme-presets.js",
+    "pretest": "npm run styles:sync",
+    "lint": "eslint public/js tests",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run lint && npm run test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "adm-zip": "^0.5.17",
+    "archiver": "^7.0.1",
+    "better-sqlite3": "^12.8.0",
+    "csv-parse": "^6.2.1",
+    "dotenv": "^17.4.0",
+    "express": "^5.2.1",
+    "html-to-image": "^1.11.13",
+    "multer": "^2.1.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.0",
+    "globals": "^17.4.0",
+    "jsdom": "^29.0.2",
+    "vitest": "^4.1.3"
+  }
+}

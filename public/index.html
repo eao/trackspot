@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trackspot</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="page-collection">
+  <script>
+    var _v=localStorage.getItem('ts_uButtonsEnabledList');if(_v==='1') document.body.classList.add('u-buttons-enabled');
+    var _qav=localStorage.getItem('ts_quickActionsVisibility');if(_qav==='hover') document.body.classList.add('u-buttons-hover-only');
+    var _s=localStorage.getItem('ts_sidebarCollapsedList');if(_s==='1') document.body.classList.add('sidebar-collapsed');
+    var _r=localStorage.getItem('ts_reserveSidebarSpace');if(_r==='1') document.body.classList.add('reserve-sidebar-space');
+    var _ap=localStorage.getItem('ts_accentPeriod');if(_ap!=='0') document.body.classList.add('accent-period-enabled');
+    var _po={};try{_po=JSON.parse(localStorage.getItem('ts_personalizationOpacity')||'{}')||{};}catch(_e){}
+    var _pbs=null;try{_pbs=JSON.parse(localStorage.getItem('ts_backgroundImageSelection')||'null');}catch(_e2){}
+    var _pbd={};try{_pbd=JSON.parse(localStorage.getItem('ts_backgroundImageDisplay')||'{}')||{};}catch(_e3){}
+    var _sbs=null;try{_sbs=JSON.parse(localStorage.getItem('ts_secondaryBackgroundImageSelection')||'null');}catch(_e4){}
+    var _sbd={};try{_sbd=JSON.parse(localStorage.getItem('ts_secondaryBackgroundImageDisplay')||'{}')||{};}catch(_e5){}
+    var _pom={
+      backgroundImage:{cssVar:'--ts-opacity-background-image',defaultValue:45},
+      backgroundImageBlur:{cssVar:'--ts-background-image-blur',defaultValue:0,valueType:'blur',maxBlurPx:24,scaleCssVar:'--ts-background-image-blur-scale'},
+      secondaryBackgroundImage:{cssVar:'--ts-opacity-secondary-background-image',defaultValue:100},
+      secondaryBackgroundImageBlur:{cssVar:'--ts-secondary-background-image-blur',defaultValue:0,valueType:'blur',maxBlurPx:24,scaleCssVar:'--ts-secondary-background-image-blur-scale'},
+      header:{cssVar:'--ts-opacity-header',defaultValue:100},
+      quickActionsToolbar:{cssVar:'--ts-opacity-quick-actions-toolbar',defaultValue:100},
+      sidebar:{cssVar:'--ts-opacity-sidebar',defaultValue:100},
+      rowHeaderBackground:{cssVar:'--ts-opacity-row-header-background',defaultValue:100},
+      row:{cssVar:'--ts-opacity-row',defaultValue:100},
+      rowArt:{cssVar:'--ts-opacity-row-art',defaultValue:100},
+      rowText:{cssVar:'--ts-opacity-row-text',defaultValue:100},
+      card:{cssVar:'--ts-opacity-card',defaultValue:100},
+      cardArt:{cssVar:'--ts-opacity-card-art',defaultValue:100},
+      cardText:{cssVar:'--ts-opacity-card-text',defaultValue:100},
+      styleBackgroundGradient:{cssVar:'--ts-opacity-style-background-gradient',defaultValue:0}
+    };
+    function _tsBlurPx(_value,_max){return Math.round((_value/100)*_max*100)/100;}
+    function _tsBlurScale(_blurPx){return Math.round((1+(_blurPx/400))*1000)/1000;}
+    function _tsNormalizeScale(_value){
+      var _parsed=typeof _value==='number'?_value:parseFloat(String(_value));
+      if(!Number.isFinite(_parsed)) return 1;
+      _parsed=Number(_parsed.toFixed(5));
+      if(_parsed<0.05) return 0.05;
+      if(_parsed>5) return 5;
+      return _parsed;
+    }
+    function _tsNormalizeDim(_value){
+      var _parsed=typeof _value==='number'?_value:parseInt(String(_value),10);
+      if(!Number.isFinite(_parsed)||_parsed<=0) return null;
+      return Math.round(_parsed);
+    }
+    function _tsFormatPx(_value){return Number(_value.toFixed(5)).toString()+'px';}
+    function _tsResolveBgSize(_fill,_scale,_selection){
+      if(_fill==='fit-height') return 'auto 100%';
+      if(_fill==='fit-width') return '100% auto';
+      if(_fill==='original-size') return 'auto';
+      if(_fill==='custom-scale'){
+        var _w=_tsNormalizeDim(_selection&&_selection.naturalWidth);
+        var _h=_tsNormalizeDim(_selection&&_selection.naturalHeight);
+        if(!_w||!_h) return 'auto';
+        var _safeScale=_tsNormalizeScale(_scale);
+        return _tsFormatPx(_w*_safeScale)+' '+_tsFormatPx(_h*_safeScale);
+      }
+      return 'cover';
+    }
+    Object.keys(_pom).forEach(function(_k){
+      var _config=_pom[_k];
+      var _val=parseInt(_po[_k],10);
+      if(!Number.isInteger(_val)||_val<0||_val>100) _val=_config.defaultValue;
+      if(_config.valueType==='blur'){
+        var _blurPx=_tsBlurPx(_val,_config.maxBlurPx||24);
+        document.documentElement.style.setProperty(_config.cssVar, _blurPx+'px');
+        if(_config.scaleCssVar) document.documentElement.style.setProperty(_config.scaleCssVar, String(_tsBlurScale(_blurPx)));
+        return;
+      }
+      document.documentElement.style.setProperty(_config.cssVar, _val+'%');
+      document.documentElement.style.setProperty(_config.cssVar+'-alpha', String(_val/100));
+    });
+    var _bgUrl=_pbs&&typeof _pbs.url==='string'?_pbs.url:'';
+    document.documentElement.style.setProperty('--ts-background-image-url', _bgUrl ? 'url(' + JSON.stringify(_bgUrl) + ')' : 'none');
+    var _bgx=_pbd.positionX==='left'||_pbd.positionX==='right'?_pbd.positionX:'center';
+    var _bgy=_pbd.positionY==='top'||_pbd.positionY==='bottom'?_pbd.positionY:'center';
+    var _bgf=_pbd.fill==='fit-height'||_pbd.fill==='fit-width'||_pbd.fill==='original-size'||_pbd.fill==='custom-scale'?_pbd.fill:'cover';
+    var _bgScale=_tsNormalizeScale(_pbd.customScale);
+    document.documentElement.style.setProperty('--ts-background-position-x', _bgx);
+    document.documentElement.style.setProperty('--ts-background-position-y', _bgy);
+    document.documentElement.style.setProperty('--ts-background-size', _tsResolveBgSize(_bgf,_bgScale,_pbs));
+    var _sbgUrl=_sbs&&typeof _sbs.url==='string'?_sbs.url:'';
+    document.documentElement.style.setProperty('--ts-secondary-background-image-url', _sbgUrl ? 'url(' + JSON.stringify(_sbgUrl) + ')' : 'none');
+    var _sbgx=_sbd.positionX==='left'||_sbd.positionX==='center'?_sbd.positionX:'right';
+    var _sbgy=_sbd.positionY==='center'||_sbd.positionY==='bottom'?_sbd.positionY:'top';
+    var _sbgf=_sbd.fill==='cover'||_sbd.fill==='fit-height'||_sbd.fill==='fit-width'||_sbd.fill==='custom-scale'?_sbd.fill:'original-size';
+    var _sbgScale=_tsNormalizeScale(_sbd.customScale);
+    document.documentElement.style.setProperty('--ts-secondary-background-position-x', _sbgx);
+    document.documentElement.style.setProperty('--ts-secondary-background-position-y', _sbgy);
+    document.documentElement.style.setProperty('--ts-secondary-background-size', _tsResolveBgSize(_sbgf,_sbgScale,_sbs));
+    var _cw=parseInt(localStorage.getItem('ts_contentWidth')||'',10);if(!Number.isInteger(_cw)||(_cw!==0&&_cw<600)) _cw=1000;
+    var _vw=document.documentElement.clientWidth||window.innerWidth||0;
+    var _sw=220;
+    var _ol=!!(window.matchMedia&&window.matchMedia('(hover: none) and (pointer: coarse)').matches)&&_vw<=760;
+    if(_ol) document.body.classList.add('sidebar-overlay-mode');
+    var _rs=_ol?0:((_s!=='1'||_r==='1')?_sw:0);
+    var _pl=24;
+    var _pr=24;
+    var _sg=_pl;
+    var _tg=_rs+_sg;
+    var _aw=Math.max(0,_vw-_pl-_pr);
+    var _sh=_cw===0?_aw:Math.min(_cw,_aw);
+    var _sl=_pl+Math.max(0,(_aw-_sh)/2);
+    var _ov=_tg-_sl;
+    var _ci=0;
+    if(_ov>0){
+      if(_cw===0||_aw<=_cw){
+        _ci=_ov;
+      }else{
+        var _sr=_aw-_cw;
+        var _cc=_ov*2;
+        _ci=_cc<=_sr?_cc:Math.max(0,_tg-_pl);
+      }
+    }
+    var _qs=new URLSearchParams(window.location.search);
+    var _pg=_qs.get('page');
+    if(_pg!=='stats'&&_pg!=='wrapped'&&_pg!=='collection') _pg='collection';
+    document.body.classList.remove('page-collection','page-stats','page-wrapped');
+    document.body.classList.add('page-'+_pg);
+    var _cv=_qs.get('view')==='grid'?'grid':'list';
+    if(_pg==='collection'&&_cv==='grid') document.body.classList.add('collection-view-grid');
+    var _cm=_pg==='collection'?(_cw===0?'none':_cw+'px'):'none';
+    var _initialInset=_pg==='collection'?_ci:0;
+    document.body.style.setProperty('--app-content-max-width', _cm);
+    document.body.style.setProperty('--app-content-inset-left', _initialInset+'px');
+    var _p=new URLSearchParams(window.location.search).get('album');if(_p!==null&&/^\d+$/.test(_p)) document.body.classList.add('preopen-album-modal');
+  </script>
+
+  <div id="app-background-primary" class="app-background app-background-primary" aria-hidden="true"></div>
+  <div id="app-background-secondary" class="app-background app-background-secondary" aria-hidden="true"></div>
+
+  <!-- -----------------------------------------------------------------------
+    HEADER
+  ------------------------------------------------------------------------ -->
+  <header class="header">
+    <span class="header-tooltip-wrap">
+      <span class="header-title" id="header-title" data-base-title="Trackspot">
+        <span class="header-title-text" id="header-title-text">Trackspot<span class="header-title-period" aria-hidden="true">.</span></span>
+      </span>
+      <span class="header-tooltip" id="header-tooltip">Tracking … hours of music!</span>
+    </span>
+    <div class="header-actions">
+      <div class="view-toggle">
+        <button id="btn-toggle-u-buttons" class="btn btn-icon" title="Toggle quick actions toolbar">
+          <svg class="icon-toolbar-hide" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="rotate(90)"><path d="m17 18-6-6 6-6"/><path d="M7 6v12"/></svg>
+          <svg class="icon-toolbar-show" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="rotate(270)"><path d="m17 18-6-6 6-6"/><path d="M7 6v12"/></svg>
+        </button>
+        <button id="btn-toggle-sidebar" class="btn btn-icon" title="Toggle sidebar">
+          <svg class="icon-sidebar-open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/></svg>
+          <svg class="icon-sidebar-close" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg>
+        </button>
+        <button id="btn-log-new" class="btn btn-icon" title="Log Album">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        </button>
+        <button id="btn-settings" class="btn btn-icon" title="Settings &amp; More">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button id="btn-personalization" class="btn btn-icon" title="Personalization">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+        </button>
+        <button id="btn-stats" class="btn btn-icon" title="Stats">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chart-column-icon lucide-chart-column"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+        </button>
+        <button id="btn-wrapped" class="btn btn-icon" title="Wrapped">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-gift-icon lucide-gift"><path d="M12 7v14"/><path d="M20 11v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8"/><path d="M7.5 7a1 1 0 0 1 0-5A4.8 8 0 0 1 12 7a4.8 8 0 0 1 4.5-5 1 1 0 0 1 0 5"/><rect x="3" y="7" width="18" height="4" rx="1"/></svg>
+        </button>
+        <button id="btn-view-list" class="btn btn-icon active" title="List view">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></svg>
+        </button>
+        <button id="btn-view-grid" class="btn btn-icon" title="Grid view">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- -----------------------------------------------------------------------
+    U-SHAPED BUTTONS — hang below the header on the left side
+  ------------------------------------------------------------------------ -->
+  <div id="u-buttons" class="u-buttons" style="visibility:hidden">
+    <button id="u-btn-sidebar" class="u-btn" title="Toggle sidebar">
+      <svg class="icon-sidebar-open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/></svg>
+      <svg class="icon-sidebar-close" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg>
+    </button>
+    <button id="u-btn-sort-order" class="u-btn" title="Toggle sort direction"></button>
+    <button id="u-btn-sort" class="u-btn" title="Sort">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="M17 10V4h-2"/><path d="M15 10h4"/><rect x="15" y="14" width="4" height="6" ry="2"/></svg>
+    </button>
+    <button id="u-btn-status-filter" class="u-btn" title="Status filter">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="m8 13 4-7 4 7"/><path d="M9.1 11h5.7"/></svg>
+    </button>
+    <button id="u-btn-restore-filters" class="u-btn" title="Restore saved filters &amp; sort">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h2"/><path d="M20 8v11a2 2 0 0 1-2 2h-2"/><path d="m9 15 3-3 3 3"/><path d="M12 12v9"/></svg>
+    </button>
+  </div>
+
+  <!-- -----------------------------------------------------------------------
+    MAIN LAYOUT — sidebar + content
+  ------------------------------------------------------------------------ -->
+  <div class="layout">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" style="visibility:hidden">
+
+      <section class="sidebar-section">
+        <label class="sidebar-label">Search</label>
+        <input id="filter-search" class="input" type="text" placeholder="Album or artist…" autocomplete="off" />
+      </section>
+
+      <section class="sidebar-section">
+        <label class="sidebar-label">Artist</label>
+        <input id="filter-artist" class="input" type="text" placeholder="Filter by artist…" autocomplete="off" />
+        <label class="checkbox-label" style="margin-top: 5px;">
+          <input type="checkbox" id="filter-artist-exact" />
+          Exact match
+        </label>
+      </section>
+
+      <section class="sidebar-section">
+        <label class="sidebar-label">Year</label>
+        <input id="filter-year" class="input" type="text" placeholder="e.g. 2000 or 2000-2009" />
+      </section>
+
+      <section class="sidebar-section">
+        <label class="sidebar-label">Rating</label>
+        <div class="range-row">
+          <input id="filter-rating-min" class="input input-small" type="number" placeholder="0" min="0" max="100" />
+          <span class="range-sep">–</span>
+          <input id="filter-rating-max" class="input input-small" type="number" placeholder="100" min="0" max="100" />
+          <div class="rated-filter-wrap">
+            <button id="filter-rated-btn" class="btn btn-ghost rated-filter-btn" type="button" title="Filter by rated status"></button>
+            <div id="filter-rated-dropdown" class="rated-filter-dropdown hidden">
+              <button class="rated-filter-option" data-value="rated">
+                <span class="rated-filter-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+                Rated
+              </button>
+              <button class="rated-filter-option" data-value="unrated">
+                <span class="rated-filter-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+                Unrated
+              </button>
+              <button class="rated-filter-option" data-value="both">
+                <span class="rated-filter-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="7"/><circle cx="15" cy="15" r="7"/></svg></span>
+                Both
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sidebar-section">
+        <label class="sidebar-label">Import type</label>
+        <div class="import-type-filter-wrap">
+          <button id="filter-import-type-btn" class="btn btn-ghost import-type-filter-btn" type="button"></button>
+          <div id="filter-import-type-dropdown" class="import-type-filter-dropdown hidden"></div>
+        </div>
+      </section>
+
+      <section class="sidebar-section">
+        <label class="sidebar-label">Album type</label>
+        <div class="type-filter-wrap">
+          <button id="filter-type-btn" class="btn btn-ghost type-filter-btn" type="button"></button>
+          <div id="filter-type-dropdown" class="type-filter-dropdown hidden">
+            <button class="type-filter-option" data-type="typeAlbum">Album</button>
+            <button class="type-filter-option" data-type="typeEP">EP</button>
+            <button class="type-filter-option" data-type="typeSingle">Single</button>
+            <button class="type-filter-option" data-type="typeCompilation">Compilation</button>
+            <button class="type-filter-option" data-type="typeOther">Other</button>
+            <div class="status-filter-sep"></div>
+            <button class="type-filter-option type-filter-all" data-type="all">All</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="sidebar-section">
+        <label class="sidebar-label">Status</label>
+        <div class="status-filter-wrap">
+          <button id="filter-status-btn" class="btn btn-ghost status-filter-btn" type="button"></button>
+          <div id="filter-status-dropdown" class="status-filter-dropdown hidden"></div>
+        </div>
+      </section>
+
+      <section class="sidebar-section">
+        <label class="sidebar-label">Sort</label>
+        <div class="sort-row">
+          <div class="sort-field-wrap">
+            <button id="sort-field-btn" class="btn btn-ghost sort-field-btn" type="button"></button>
+            <div id="sort-field-dropdown" class="sort-field-dropdown hidden">
+              <button class="sort-field-option" data-value="date_listened">Date listened</button>
+              <button class="sort-field-option" data-value="date_planned">Date planned</button>
+              <button class="sort-field-option" data-value="date_listened_planned">Date logged</button>
+              <button class="sort-field-option" data-value="date_logged">Server timestamp</button>
+              <button class="sort-field-option" data-value="date_edited">Date last edited</button>
+              <button class="sort-field-option" data-value="rating">Rating</button>
+              <button class="sort-field-option" data-value="artist">Artist</button>
+              <button class="sort-field-option" data-value="album">Album</button>
+              <button class="sort-field-option" data-value="release_date">Release date</button>
+              <button class="sort-field-option" data-value="duration">Duration</button>
+              <button class="sort-field-option" data-value="track_count">Track count</button>
+              <button class="sort-field-option" data-value="notes_length">Note length</button>
+              <button class="sort-field-option" data-value="notes">Notes (alphabetical)</button>
+              <button class="sort-field-option" data-value="repeats">Repeat listens</button>
+              <button class="sort-field-option" data-value="priority">Priority</button>
+            </div>
+          </div>
+          <button id="sort-order" class="sort-order-btn" title="Toggle sort direction"></button>
+        </div>
+      </section>
+
+      <div class="filter-action-btns">
+        <button id="btn-clear-filters"   class="btn btn-ghost filter-action-btn" data-tooltip="Reset filters &amp; sort to default" data-tooltip-align="left">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H3"/><path d="M7 12H3"/><path d="M7 19H3"/><path d="M12 18a5 5 0 0 0 9-3 4.5 4.5 0 0 0-4.5-4.5c-1.33 0-2.54.54-3.41 1.41L11 14"/><path d="M11 10v4h4"/></svg>
+        </button>
+        <button id="btn-save-filters"    class="btn btn-ghost filter-action-btn" data-tooltip="Save current filters &amp; sort">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
+        </button>
+        <button id="btn-restore-filters" class="btn btn-ghost filter-action-btn" data-tooltip="Restore saved filters &amp; sort" data-tooltip-align="right">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h2"/><path d="M20 8v11a2 2 0 0 1-2 2h-2"/><path d="m9 15 3-3 3 3"/><path d="M12 12v9"/></svg>
+        </button>
+      </div>
+      <span id="album-count" class="status-count sidebar-count"></span>
+
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="content">
+      <section id="page-collection" class="page-panel page-panel-collection">
+        <div class="content-inner">
+
+          <!-- List view -->
+          <div id="view-list" class="album-list"></div>
+
+          <!-- Grid view -->
+          <div id="view-grid" class="album-grid hidden"></div>
+
+          <!-- Empty state -->
+          <div id="empty-state" class="empty-state hidden">
+            <p>No albums match your filters.</p>
+          </div>
+        </div>
+      </section>
+      <section id="page-stats" class="page-panel page-panel-dashboard page-panel-stats hidden" aria-live="polite"></section>
+      <section id="page-wrapped" class="page-panel page-panel-dashboard page-panel-wrapped hidden" aria-live="polite"></section>
+
+    </main>
+  </div>
+
+  <!-- -----------------------------------------------------------------------
+    MODAL — Log / Edit album
+  ------------------------------------------------------------------------ -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+
+      <div class="modal-header">
+        <h2 id="modal-title">Log Album</h2>
+        <div class="modal-header-actions">
+          <button id="btn-show-album-info" class="btn btn-ghost btn-small hidden" type="button">Show all album info</button>
+          <button id="modal-close" class="btn btn-icon" title="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+
+        <!-- STEP 1: Spotify URL or manual toggle (only shown when logging new) -->
+        <div id="step-fetch" class="">
+
+          <div class="fetch-row">
+            <input id="input-spotify-url" class="input" type="text"
+              placeholder="Paste Spotify share link… (disabled, currently broken)"
+              disabled style="opacity:0.45; cursor:not-allowed;" />
+            <button id="btn-fetch" class="btn btn-primary">Fetch</button>
+          </div>
+
+          <div class="divider-row">
+            <hr /><span>or</span><hr />
+          </div>
+
+          <button id="btn-manual-entry" class="btn btn-ghost btn-full">
+            Enter manually
+          </button>
+
+        </div>
+
+        <!-- STEP 2: Metadata preview + user fields -->
+        <!-- Hidden until a fetch completes or manual entry is chosen -->
+        <div id="step-details" class="hidden">
+
+          <!-- Metadata (read-only for Spotify entries, editable for manual) -->
+          <div class="metadata-block">
+            <div id="meta-art-wrap" class="metadata-art-wrap">
+              <img id="meta-art" class="metadata-art" src="" alt="Album art" />
+            </div>
+            <div class="metadata-main-fields">
+              <div class="field-group">
+                <label class="field-label">Album name</label>
+                <input id="meta-album-name" class="input" type="text" />
+              </div>
+              <div class="field-group">
+                <label class="field-label">Artist(s)</label>
+                <input id="meta-artist-names" class="input" type="text"
+                  list="artist-name-list"
+                  placeholder="Separate multiple artists with commas" autocomplete="off" />
+                <datalist id="artist-name-list"></datalist>
+              </div>
+            </div>
+            <div id="metadata-art-actions" class="metadata-art-actions">
+              <label id="meta-art-upload-label" class="btn btn-ghost btn-full hidden">
+                Upload art
+                <input id="meta-art-upload" type="file" accept="image/jpeg,image/png,image/webp"
+                  class="hidden" />
+              </label>
+              <button id="btn-refetch-art" class="btn btn-ghost btn-full hidden" type="button">Re-fetch art</button>
+              <button id="btn-delete-art" class="btn btn-ghost btn-full hidden" type="button">Delete art</button>
+              <button id="btn-random-art" class="btn btn-ghost btn-full hidden" type="button">Random art</button>
+              <!-- New art preview popup (shown during re-fetch confirmation) -->
+              <div id="art-refetch-preview" class="art-refetch-preview hidden">
+                <img id="art-refetch-img" class="metadata-art" src="" alt="New art" />
+                <div id="art-refetch-compare" class="art-refetch-compare"></div>
+                <div class="art-refetch-actions">
+                  <button id="btn-art-refetch-cancel" class="btn btn-ghost" type="button">Cancel</button>
+                  <button id="btn-art-refetch-replace" class="btn btn-primary" type="button">Replace</button>
+                </div>
+              </div>
+            </div>
+            <div class="meta-row modal-two-col-row">
+              <div id="field-release-date" class="field-group field-group-small">
+                <label class="field-label">Release date</label>
+                <input id="meta-release-date" class="input" type="date" />
+              </div>
+              <div class="modal-two-col-split modal-two-col-split-right">
+                <div id="field-duration" class="field-group field-group-small">
+                  <label class="field-label">Duration</label>
+                  <input id="meta-duration" class="input" type="text" placeholder="hh:mm:ss" />
+                </div>
+                <div id="field-track-count" class="field-group field-group-small hidden">
+                  <label class="field-label">Tracks</label>
+                  <div class="spinner-input-wrap">
+                    <input id="meta-track-count" class="input input-with-spinner" type="number"
+                      min="0" />
+                    <div class="custom-spinner-group" aria-hidden="true">
+                      <div class="custom-spinner">
+                        <button id="btn-track-count-up" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Increase track count">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-up-icon lucide-chevron-up"><path d="m18 15-6-6-6 6"/></svg>
+                        </button>
+                        <button id="btn-track-count-down" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Decrease track count">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down-icon lucide-chevron-down"><path d="m6 9 6 6 6-6"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Album Type + Spotify Artist ID (manual entries only) -->
+          <div id="field-manual-meta-row" class="user-fields-row modal-two-col-row">
+            <div id="field-album-type" class="field-group hidden">
+              <label class="field-label">Album type</label>
+              <input id="meta-album-type" class="input" type="text" list="album-type-list"
+                placeholder="Album, EP, Single, Compilation…" autocomplete="off" />
+              <datalist id="album-type-list">
+                <option value="Album" />
+                <option value="EP" />
+                <option value="Single" />
+                <option value="Compilation" />
+              </datalist>
+            </div>
+            <div id="field-artist-id" class="field-group hidden">
+              <label class="field-label">Spotify Artist ID <span class="field-optional">(optional)</span></label>
+              <div class="fetch-row">
+                <input id="meta-artist-id" class="input" type="text"
+                  placeholder="ID or https://open.spotify.com/artist/…" />
+                <button id="btn-trim-artist-id" class="btn btn-ghost" type="button">Trim</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Album Link + Artist Link (manual entries only) -->
+          <div id="field-manual-links-row" class="user-fields-row modal-two-col-row">
+            <div id="field-album-link" class="field-group hidden">
+              <label class="field-label">Album link <span class="field-optional">(optional)</span></label>
+              <input id="meta-album-link" class="input" type="text"
+                placeholder="https://…" />
+            </div>
+            <div id="field-artist-link" class="field-group hidden">
+              <label class="field-label">Artist link <span class="field-optional">(optional)</span></label>
+              <input id="meta-artist-link" class="input" type="text"
+                placeholder="https://…" />
+            </div>
+          </div>
+
+          <!-- Priority row -->
+          <div id="field-priority-row" class="user-fields-row">
+            <div class="field-group field-group-small">
+              <label class="field-label">Priority</label>
+              <input id="input-priority" class="input" type="number" min="0" value="0" />
+            </div>
+          </div>
+
+          <div id="field-planned-at-row" class="user-fields-row hidden">
+            <div class="field-group field-group-date">
+              <label class="field-label">Date planned <span class="field-optional">(optional)</span></label>
+              <div class="date-row">
+                <input id="input-planned-at" class="input input-small" type="date" />
+                <button id="btn-planned-date-today" class="btn btn-ghost" type="button">Today</button>
+                <button id="btn-planned-date-clear" class="btn btn-ghost" type="button">Clear</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Status + date listened row -->
+          <div class="user-fields-row user-fields-row-status modal-two-col-row">
+            <div class="modal-two-col-split modal-two-col-split-left">
+              <div class="field-group field-group-status">
+                <label class="field-label">Status</label>
+                <select id="input-status" class="input">
+                  <option value="completed">Completed</option>
+                  <option value="dropped">Dropped</option>
+                  <option value="planned">Planned</option>
+                </select>
+              </div>
+              <div id="field-repeats-row" class="field-group field-group-small field-group-repeats">
+                <label class="field-label">Repeat listens</label>
+                <div class="spinner-input-wrap">
+                  <input id="input-repeats" class="input input-with-spinner" type="number" min="0" value="0" />
+                  <div class="custom-spinner-group" aria-hidden="true">
+                    <div class="custom-spinner">
+                      <button id="btn-repeats-up" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Increase repeat listens">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-up-icon lucide-chevron-up"><path d="m18 15-6-6-6 6"/></svg>
+                      </button>
+                      <button id="btn-repeats-down" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Decrease repeat listens">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down-icon lucide-chevron-down"><path d="m6 9 6 6 6-6"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="field-group field-group-date">
+              <label class="field-label">Date listened <span class="field-optional">(optional)</span></label>
+              <div class="date-row">
+                <input id="input-listened-at" class="input input-small" type="date" />
+                <button id="btn-date-today" class="btn btn-ghost" type="button">Today</button>
+                <button id="btn-date-clear" class="btn btn-ghost" type="button">Clear</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rating row -->
+          <div class="user-fields-row">
+            <div class="field-group field-group-small">
+              <label class="field-label">Rating <span class="field-optional">(0–100)</span></label>
+              <div class="rating-row">
+                <div class="spinner-input-wrap rating-input-wrap">
+                  <input id="input-rating" class="input input-with-spinner input-with-double-spinner" type="number"
+                    min="0" max="100" placeholder="—" />
+                  <div class="custom-spinner-group" aria-hidden="true">
+                    <div class="custom-spinner">
+                      <button id="btn-rating-up" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Increase rating">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-up-icon lucide-chevron-up"><path d="m18 15-6-6-6 6"/></svg>
+                      </button>
+                      <button id="btn-rating-down" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Decrease rating">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down-icon lucide-chevron-down"><path d="m6 9 6 6 6-6"/></svg>
+                      </button>
+                    </div>
+                    <div class="custom-spinner">
+                      <button id="btn-rating-up-5" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Increase rating by 5">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevrons-up-icon lucide-chevrons-up"><path d="m17 11-5-5-5 5"/><path d="m17 18-5-5-5 5"/></svg>
+                      </button>
+                      <button id="btn-rating-down-5" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Decrease rating by 5">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevrons-down-icon lucide-chevrons-down"><path d="m7 6 5 5 5-5"/><path d="m7 13 5 5 5-5"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <span id="rating-display" class="rating-badge">—</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">Notes <span class="field-optional">(optional)</span></label>
+            <textarea id="input-notes" class="input textarea" rows="4"
+              placeholder="Your thoughts…"></textarea>
+          </div>
+
+          <div id="fetch-error" class="error-message hidden"></div>
+
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button id="btn-modal-delete" class="btn btn-danger hidden">Delete</button>
+        <div class="modal-footer-right">
+          <button id="btn-cancel" class="btn btn-ghost">Cancel</button>
+          <button id="btn-save" class="btn btn-primary hidden">Save</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- -----------------------------------------------------------------------
+    MODAL — Confirm delete
+  ------------------------------------------------------------------------ -->
+  <div id="delete-overlay" class="modal-overlay hidden">
+    <div class="modal modal-small">
+      <div class="modal-header">
+        <h2>Delete album?</h2>
+      </div>
+      <div class="modal-body">
+        <p id="delete-message"></p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-delete-cancel" class="btn btn-ghost">Cancel</button>
+        <button id="btn-delete-confirm" class="btn btn-danger">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="art-lightbox-overlay" class="art-lightbox-overlay hidden" aria-hidden="true">
+    <img id="art-lightbox-image" class="art-lightbox-image" src="" alt="" />
+  </div>
+
+  <!-- -----------------------------------------------------------------------
+    MODAL — Settings
+  ------------------------------------------------------------------------ -->
+  <div id="settings-overlay" class="modal-overlay settings-panel-overlay hidden">
+    <div class="modal modal-settings">
+
+      <div class="modal-header">
+        <h2>Settings &amp; More</h2>
+        <button id="settings-close" class="btn btn-icon" title="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
+
+      <div class="modal-body">
+
+        <div class="settings-section">
+          <div class="settings-section-title">Miscellaneous</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Your name</span>
+                <span class="settings-row-desc">Optional name input for use on the Wrapped page and perhaps elsewhere.</span>
+              </div>
+              <div class="wrapped-name-setting-control">
+                <input id="input-wrapped-name" class="input" type="text" placeholder="Your name (optional)" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" aria-autocomplete="none" />
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Click art in list view to enlarge</span>
+                <span class="settings-row-desc">Opens the album art in a centered overlay when clicked in list view.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-list-art-enlarge" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Reserve sidebar space when collapsed</span>
+                <span class="settings-row-desc">Keeps the list/grid from widening when the sidebar is hidden.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-reserve-sidebar-space" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Grinch mode</span>
+                <span class="settings-row-desc">Prevents automatic seasonal theme switching.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-grinch-mode" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Accent period</span>
+                <span class="settings-row-desc">Shows an accent-colored period after the Trackspot title in the top-left header.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-accent-period" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Content width</span>
+                <span class="settings-row-desc">Keeps the main content centered on wide screens. Enter a width in pixels; <code>0</code> means unlimited. Minimum is 600; default is 1000.</span>
+              </div>
+              <div class="content-width-setting-control">
+                <div class="spinner-input-wrap content-width-input-wrap">
+                  <input id="input-content-width" class="input input-with-spinner content-width-input" type="number" min="0" step="1" placeholder="Width in px" />
+                  <div class="custom-spinner-group" aria-hidden="true">
+                    <div class="custom-spinner">
+                      <button id="btn-content-width-up" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Increase content width">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-up-icon lucide-chevron-up"><path d="m18 15-6-6-6 6"/></svg>
+                      </button>
+                      <button id="btn-content-width-down" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Decrease content width">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down-icon lucide-chevron-down"><path d="m6 9 6 6 6-6"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Top bar when scrolling</span>
+                <span class="settings-row-desc"><em>"Always visible"</em> stays fixed at the top.<br><em>"Hides on scroll"</em> disappears on scroll, returns only at the very top.<br><em>"Smart hide"</em> hides when scrolling down, reappears when scrolling up.</span>
+              </div>
+              <select id="select-header-scroll" class="input" style="width: auto; flex-shrink: 0;">
+                <option value="fixed">Always visible</option>
+                <option value="scroll">Hides on scroll</option>
+                <option value="smart">Smart hide</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Album modal</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Show repeat listens field</span>
+                <span class="settings-row-desc">Reveals the <em>"Repeat listens"</em> field in the album edit modal.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-show-repeats-field" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Show priority field</span>
+                <span class="settings-row-desc">Reveals the <em>"Priority"</em> field in the album edit modal.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-show-priority-field" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Show re-fetch art button</span>
+                <span class="settings-row-desc">Reveals the <em>"Re-fetch art"</em> button in the album edit modal.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-show-refetch-art" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Show date planned field</span>
+                <span class="settings-row-desc">Reveals the <em>"Date planned"</em> field in the album modal.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-show-planned-at-field" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Pages</div>
+          <div class="settings-section-body">
+            <p class="settings-desc">Controls whether a view contains all albums or is split into pages. Page controls are in the bottom-right, by default accessible only by hovering. Change the setting below to <em>"Static"</em> to always display page controls.</p>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Page controls</span>
+                <span class="settings-row-desc">Choose whether the page controls appear only on hover or stay visible whenever multiple pages exist.</span>
+              </div>
+              <select id="select-page-control-visibility" class="input" style="width: auto; flex-shrink: 0;">
+                <option value="hover">Hover</option>
+                <option value="static">Static</option>
+              </select>
+            </div>
+            <div class="settings-row settings-row-pages">
+              <div class="settings-row-info">
+                <span class="settings-row-label">List view albums per page</span>
+                <span id="page-desc-list" class="settings-row-desc">Choose unlimited, the suggested 18 albums per page, or enter your own positive integer.</span>
+              </div>
+              <div class="page-setting-control">
+                <select id="page-mode-list" class="input page-mode-select">
+                  <option value="unlimited">Unlimited</option>
+                  <option value="suggested">Suggested (18)</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <input id="page-suggested-list" class="input page-suggested-input hidden" type="text" value="18" readonly tabindex="-1" />
+                <div class="spinner-input-wrap page-custom-wrap hidden" id="page-custom-wrap-list">
+                  <input id="page-custom-list" class="input input-with-spinner page-custom-input" type="number" min="1" step="1" placeholder="Albums" />
+                  <div class="custom-spinner-group" aria-hidden="true">
+                    <div class="custom-spinner">
+                      <button id="btn-page-custom-list-up" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Increase list view albums per page">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-up-icon lucide-chevron-up"><path d="m18 15-6-6-6 6"/></svg>
+                      </button>
+                      <button id="btn-page-custom-list-down" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Decrease list view albums per page">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down-icon lucide-chevron-down"><path d="m6 9 6 6 6-6"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-row settings-row-pages">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Grid view albums per page</span>
+                <span id="page-desc-grid" class="settings-row-desc">Choose unlimited, the suggested 18 albums per page, or enter your own positive integer.</span>
+              </div>
+              <div class="page-setting-control">
+                <select id="page-mode-grid" class="input page-mode-select">
+                  <option value="unlimited">Unlimited</option>
+                  <option value="suggested">Suggested (18)</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <input id="page-suggested-grid" class="input page-suggested-input hidden" type="text" value="18" readonly tabindex="-1" />
+                <div class="spinner-input-wrap page-custom-wrap hidden" id="page-custom-wrap-grid">
+                  <input id="page-custom-grid" class="input input-with-spinner page-custom-input" type="number" min="1" step="1" placeholder="Albums" />
+                  <div class="custom-spinner-group" aria-hidden="true">
+                    <div class="custom-spinner">
+                      <button id="btn-page-custom-grid-up" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Increase grid view albums per page">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-up-icon lucide-chevron-up"><path d="m18 15-6-6-6 6"/></svg>
+                      </button>
+                      <button id="btn-page-custom-grid-down" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Decrease grid view albums per page">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down-icon lucide-chevron-down"><path d="m6 9 6 6 6-6"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Show page count</span>
+                <span class="settings-row-desc">Displays the current page number above the page controls.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-show-page-count" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Show first/last page buttons</span>
+                <span class="settings-row-desc">Adds first and last page buttons above the next/previous controls when pagination is enabled.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-first-last-page-buttons" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Quick Actions Toolbar</div>
+          <div class="settings-section-body">
+            <p class="settings-desc">Controls the visibility and order of buttons in the upper-left toolbar.</p>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Toolbar visibility</span>
+                <span class="settings-row-desc">Choose whether the toolbar stays visible when toggled on or appears only on hover.</span>
+              </div>
+              <select id="select-quick-actions-visibility" class="input" style="width: auto; flex-shrink: 0;">
+                <option value="visible">Visible</option>
+                <option value="hover">Hover</option>
+              </select>
+            </div>
+            <div id="u-button-list" class="u-button-list"></div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Complex Status Filters</div>
+          <div class="settings-section-body">
+            <p class="settings-desc">Filters that match multiple statuses at once. Appear in the sidebar Status dropdown below the individual statuses. Drag to reorder.</p>
+            <div id="complex-status-list" class="complex-status-list"></div>
+            <div class="complex-status-list-actions">
+              <button id="btn-add-complex-status" class="btn btn-ghost" style="flex:1">+ Add filter</button>
+              <button id="btn-reset-complex-statuses" class="btn btn-ghost">Reset to defaults</button>
+            </div>
+            <div id="complex-status-form" class="complex-status-form hidden">
+              <input id="complex-status-name-input" class="input" type="text" placeholder="Filter name…" maxlength="40" />
+              <div id="complex-status-toggles" class="complex-status-toggles"></div>
+              <div class="complex-status-form-actions">
+                <button id="btn-complex-cancel" class="btn btn-ghost" type="button">Cancel</button>
+                <button id="btn-complex-save" class="btn btn-primary" type="button">Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Export</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Download CSV</span>
+                <span class="settings-row-desc">All albums and metadata as a spreadsheet-compatible CSV file.</span>
+              </div>
+              <button id="btn-download-csv" class="btn btn-ghost">Download</button>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Database backup only</span>
+                <span class="settings-row-desc">ZIP with CSV and database only, no images. Album art available online will be re-fetched on import.</span>
+              </div>
+              <button id="btn-download-backup-db" class="btn btn-ghost">Download</button>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Essential backup</span>
+                <span class="settings-row-desc">ZIP, CSV, database, and images which cannot be re-fetched.</span>
+              </div>
+              <button id="btn-download-backup-essential" class="btn btn-ghost">Download</button>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Full backup</span>
+                <span class="settings-row-desc">ZIP archive containing the CSV, database file, and all album art images.</span>
+              </div>
+              <button id="btn-download-backup" class="btn btn-ghost">Download</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Import</div>
+          <div class="settings-section-body">
+            <div class="settings-row settings-row-import-csv">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Import from CSV</span>
+                <span class="settings-row-desc">Uploads a CSV, queues album rows in Trackspot, and lets the Spicetify extension import them in the background.<br /><br />Note that you must first go to the Spicetify extension settings and enable the background CSV worker.<br /><br />Please click the "CSV formatting instructions" button to see Trackspot's required formatting.</span>
+              </div>
+              <div class="csv-import-controls">
+                <button id="btn-csv-format-help" class="btn btn-ghost csv-import-help-btn" type="button">CSV formatting instructions</button>
+                <div class="csv-import-file-row">
+                  <label for="input-import-csv" class="btn btn-ghost csv-import-browse-btn">Browse CSV</label>
+                  <span id="csv-import-file-name" class="csv-import-file-name">No file selected</span>
+                </div>
+                <input id="input-import-csv" class="hidden" type="file" accept=".csv,text/csv" />
+                <select id="select-import-default-status" class="input csv-import-status-select">
+                  <option value="completed">Default status: Completed</option>
+                  <option value="planned">Default status: Planned</option>
+                  <option value="dropped">Default status: Dropped</option>
+                </select>
+                <div class="csv-import-button-row">
+                  <button id="btn-import-csv" class="btn btn-ghost" type="button">Start import</button>
+                </div>
+              </div>
+            </div>
+            <div id="csv-import-progress" class="csv-import-progress hidden" aria-live="polite">
+              <div class="csv-import-header">
+                <div id="csv-import-heading" class="csv-import-heading"></div>
+                <button id="btn-close-import-csv" class="btn btn-icon btn-small hidden" type="button" title="Dismiss import summary">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+              <div id="csv-import-meta" class="csv-import-meta"></div>
+              <div class="csv-import-actions">
+                <button id="btn-open-import-report" class="btn btn-ghost btn-small hidden" type="button">Open report</button>
+                <button id="btn-cancel-import-csv" class="btn btn-danger btn-small hidden" type="button">Cancel import</button>
+              </div>
+              <div id="csv-import-counts" class="csv-import-counts"></div>
+            </div>
+            <div class="settings-row settings-row-section-divider">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Merge from backup</span>
+                <span class="settings-row-desc">Add entries from a backup that don't already exist. Existing albums are kept unchanged.</span>
+              </div>
+              <button id="btn-merge-backup" class="btn btn-ghost">Import</button>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Restore from backup</span>
+                <span class="settings-row-desc">Replace everything with the contents of a backup. This cannot be undone.</span>
+              </div>
+              <button id="btn-restore-backup" class="btn btn-danger">Restore</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Bulk Operations</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Re-fetch missing art</span>
+                <span class="settings-row-desc">Attempts to download album art for all albums that currently have none.</span>
+              </div>
+              <button id="btn-bulk-refetch-art" class="btn btn-ghost">Run</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section" id="settings-debug-section">
+          <div class="settings-section-title">Debug</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Show debug controls</span>
+                <span class="settings-row-desc">Enables the Show all album info button plus Delete art and Random art controls in the album edit modal.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-debug-controls" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Show wipe database button</span>
+                <span class="settings-row-desc">Reveals the "Wipe database" section at the bottom of this panel.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-show-wipe-db" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Early Wrapped</span>
+                <span class="settings-row-desc">Lets you see a year's Wrapped before the new year comes around.</span>
+              </div>
+              <label class="settings-toggle">
+                <input type="checkbox" id="toggle-early-wrapped" />
+                <span class="settings-toggle-track"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Reset all settings</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Reset all settings</span>
+                <span class="settings-row-desc">Clear all saved settings, filters, and sort preferences, restoring everything to defaults.</span>
+              </div>
+              <button id="btn-reset-all-settings" class="btn btn-danger">Reset</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Clear localStorage</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Clear localStorage</span>
+                <span class="settings-row-desc">Permanently clears all localStorage data for this app in your browser. This cannot be undone.</span>
+              </div>
+              <button id="btn-clear-local-storage" class="btn btn-danger">Clear</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section hidden" id="settings-wipe-section">
+          <div class="settings-section-title">Wipe database</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Wipe database</span>
+                <span class="settings-row-desc">Permanently deletes all albums and their images. This cannot be undone.</span>
+              </div>
+              <button id="btn-wipe-db" class="btn btn-danger">Wipe</button>
+            </div>
+          </div>
+        </div>
+
+        <p id="settings-status" class="settings-status"></p>
+
+      </div>
+
+      <div id="early-wrapped-confirm-overlay" class="early-wrapped-confirm-overlay hidden" aria-hidden="true">
+        <div id="early-wrapped-confirm-floater" class="early-wrapped-confirm-floater">
+          <div class="early-wrapped-confirm-card" role="dialog" aria-modal="true" aria-labelledby="early-wrapped-confirm-text">
+            <p id="early-wrapped-confirm-text" class="early-wrapped-confirm-text"></p>
+            <div class="early-wrapped-confirm-actions">
+              <button id="btn-early-wrapped-confirm-left" class="btn btn-ghost" type="button"></button>
+              <button id="btn-early-wrapped-confirm-right" class="btn btn-primary" type="button"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <div class="modal-footer-right">
+          <button id="btn-settings-close" class="btn btn-ghost">Close</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="personalization-overlay" class="modal-overlay settings-panel-overlay hidden">
+    <div class="modal modal-settings">
+      <div class="modal-header">
+        <h2>Personalization</h2>
+        <button id="personalization-close" class="btn btn-icon" title="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="settings-section">
+          <div class="settings-section-title">Themes</div>
+          <div class="settings-section-body">
+            <p class="settings-row-desc settings-section-intro">Themes are presets of color schemes, optional background images, and UI opacity presets, allowing you to quickly change the look of Trackspot. Try scrolling through the default selection to see which you like, or, make your own.</p>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Saved themes</span>
+                <span id="personalization-theme-description" class="settings-row-desc">No theme selected.</span>
+              </div>
+              <div class="opacity-presets-control">
+                <select id="select-personalization-theme" class="input opacity-preset-select"></select>
+              </div>
+            </div>
+            <p id="personalization-theme-selection-warning" class="settings-status settings-status-inline"></p>
+            <details class="settings-disclosure" open>
+              <summary class="settings-disclosure-summary">
+                <span class="settings-disclosure-title">Your theme images</span>
+                <span class="settings-disclosure-desc">Click to show/hide your theme images.</span>
+              </summary>
+              <div class="settings-disclosure-body">
+                <div id="personalization-theme-gallery-user" class="background-gallery"></div>
+              </div>
+            </details>
+            <details class="settings-disclosure" open>
+              <summary class="settings-disclosure-summary">
+                <span class="settings-disclosure-title">Preset theme images</span>
+                <span class="settings-disclosure-desc">Click to show/hide preset theme images.</span>
+              </summary>
+              <div class="settings-disclosure-body">
+                <div id="personalization-theme-gallery-preset" class="background-gallery"></div>
+              </div>
+            </details>
+            <details class="settings-disclosure">
+              <summary class="settings-disclosure-summary">
+                <span class="settings-disclosure-title">Theme editing controls</span>
+                <span class="settings-disclosure-desc">Click to show/hide theme editing controls.</span>
+              </summary>
+              <div class="settings-disclosure-body">
+                <p id="personalization-theme-editor-warning" class="settings-status settings-status-inline"></p>
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Theme preview</span>
+                    <span id="personalization-theme-status" class="settings-row-desc">Create a theme or select one to manage it here.</span>
+                  </div>
+                  <div class="theme-preview-editor">
+                    <button id="btn-personalization-theme-preview" class="theme-preview-button" type="button" aria-label="Open theme preview image">
+                      <img id="img-personalization-theme-preview" class="theme-preview-image" alt="" />
+                      <span class="theme-preview-empty">No preview image selected.</span>
+                    </button>
+                    <div class="theme-preview-actions">
+                      <button id="btn-personalization-theme-upload-preview" class="btn btn-ghost" type="button">Upload preview</button>
+                      <input id="input-personalization-theme-preview" class="hidden" type="file" accept="image/jpeg,image/png,image/webp,image/gif" />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Theme name</span>
+                    <span class="settings-row-desc">Theme names must be unique, even if the only difference is capitalization.</span>
+                  </div>
+                  <input id="input-personalization-theme-name" class="input" type="text" maxlength="60" placeholder="Theme name" />
+                </div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Theme description</span>
+                    <span class="settings-row-desc">Optional. Shown below the theme picker when the theme is selected.</span>
+                  </div>
+                  <input id="input-personalization-theme-description" class="input" type="text" maxlength="180" placeholder="Optional description" />
+                </div>
+
+                <div class="theme-editor-actions">
+                  <button id="btn-personalization-theme-new" class="btn btn-ghost" type="button">New</button>
+                  <button id="btn-personalization-theme-save" class="btn btn-ghost" type="button">Save as new</button>
+                  <button id="btn-personalization-theme-update" class="btn btn-ghost" type="button">Update</button>
+                  <button id="btn-personalization-theme-delete" class="btn btn-ghost" type="button">Delete</button>
+                </div>
+                <p id="personalization-theme-editor-message" class="settings-status settings-status-inline"></p>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Color Scheme</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Preset scheme</span>
+                <span id="personalization-color-scheme-description" class="settings-row-desc">Trackspot’s default blue-and-slate palette.</span>
+              </div>
+              <div class="color-scheme-control">
+                <select id="select-personalization-color-scheme" class="input color-scheme-select"></select>
+                <button id="btn-personalization-color-scheme-download" class="btn btn-ghost" type="button">Download CSS</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Background Image</div>
+          <div class="settings-section-body">
+            <div class="background-slot-tabs" role="tablist" aria-label="Background image mode">
+              <button id="btn-personalization-background-tab-primary" class="btn btn-ghost background-slot-tab active" type="button" role="tab" aria-selected="true">Primary Background Image</button>
+              <button id="btn-personalization-background-tab-secondary" class="btn btn-ghost background-slot-tab" type="button" role="tab" aria-selected="false">Secondary Background Image</button>
+            </div>
+
+            <div id="personalization-background-panel-primary" class="background-slot-panel">
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-row-label">Current primary background</span>
+                  <span id="personalization-background-current" class="settings-row-desc">No background image selected.</span>
+                </div>
+                <div class="background-image-actions">
+                  <button id="btn-personalization-upload-background" class="btn btn-ghost" type="button">Upload image</button>
+                  <button id="btn-personalization-clear-background" class="btn btn-ghost" type="button">Clear</button>
+                </div>
+                <input id="input-personalization-background" class="hidden" type="file" accept="image/jpeg,image/png,image/webp,image/gif" />
+              </div>
+              <details class="settings-disclosure background-image-panel" open>
+                <summary class="settings-disclosure-summary">
+                  <span class="settings-disclosure-title">Your images</span>
+                  <span class="settings-disclosure-desc">Click to show/hide your uploaded images.</span>
+                </summary>
+                <div class="settings-disclosure-body">
+                  <div id="personalization-user-images" class="background-gallery"></div>
+                </div>
+              </details>
+
+              <details class="settings-disclosure background-image-panel" open>
+                <summary class="settings-disclosure-summary">
+                  <span class="settings-disclosure-title">Preset images</span>
+                  <span class="settings-disclosure-desc">Click to show/hide preset images.</span>
+                </summary>
+                <div class="settings-disclosure-body">
+                  <div id="personalization-preset-images" class="background-gallery"></div>
+                </div>
+              </details>
+
+              <div class="background-image-panel">
+                <div class="background-image-panel-title">Background image appearance</div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">X-position</span>
+                    <span class="settings-row-desc">Align the image to the left, keep it centered, or align it to the right side of the screen.</span>
+                  </div>
+                  <select id="select-personalization-background-position-x" class="input" style="width: auto; flex-shrink: 0;">
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </select>
+                </div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Y-position</span>
+                    <span class="settings-row-desc">Align the image to the top, keep it centered, or align it to the bottom of the screen.</span>
+                  </div>
+                  <select id="select-personalization-background-position-y" class="input" style="width: auto; flex-shrink: 0;">
+                    <option value="top">Top</option>
+                    <option value="center">Center</option>
+                    <option value="bottom">Bottom</option>
+                  </select>
+                </div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Fill mode</span>
+                    <span class="settings-row-desc">Choose whether the image covers the screen, fits to the screen height, fits to the screen width, displays at its original size, or uses a custom scale multiplier.</span>
+                  </div>
+                  <select id="select-personalization-background-fill" class="input" style="width: auto; flex-shrink: 0;">
+                    <option value="cover">Cover</option>
+                    <option value="fit-height">Fit to height</option>
+                    <option value="fit-width">Fit to width</option>
+                    <option value="original-size">Original size</option>
+                    <option value="custom-scale">Custom scale</option>
+                  </select>
+                </div>
+
+                <div id="personalization-background-custom-scale-row" class="settings-row hidden">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Scale multiplier</span>
+                    <span class="settings-row-desc">Only used for Custom scale. Enter a decimal from 0.05 to 5 with up to 5 decimal places; 1 keeps the image at its original size.</span>
+                  </div>
+                  <input id="input-personalization-background-custom-scale" class="input" type="number" min="0.05" max="5" step="0.00001" inputmode="decimal" style="width: 9rem; flex-shrink: 0;" />
+                </div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Background image opacity</span>
+                    <span class="settings-row-desc">Controls the opacity of the background image.</span>
+                  </div>
+                  <div class="opacity-setting-control" data-opacity-setting="backgroundImage">
+                    <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                    <label class="opacity-number-wrap">
+                      <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                      <span class="opacity-number-suffix">%</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Background image blur</span>
+                    <span class="settings-row-desc">Controls how much blur the background image gets.</span>
+                  </div>
+                  <div class="opacity-setting-control" data-opacity-setting="backgroundImageBlur">
+                    <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                    <label class="opacity-number-wrap">
+                      <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                      <span class="opacity-number-suffix">%</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="personalization-background-panel-secondary" class="background-slot-panel hidden">
+              <div class="settings-row">
+                <div class="settings-row-info">
+                  <span class="settings-row-label">Current secondary background</span>
+                  <span id="personalization-secondary-background-current" class="settings-row-desc">No background image selected.</span>
+                </div>
+                <div class="background-image-actions">
+                  <button id="btn-personalization-upload-secondary-background" class="btn btn-ghost" type="button">Upload image</button>
+                  <button id="btn-personalization-clear-secondary-background" class="btn btn-ghost" type="button">Clear</button>
+                </div>
+                <input id="input-personalization-secondary-background" class="hidden" type="file" accept="image/jpeg,image/png,image/webp,image/gif" />
+              </div>
+              <details class="settings-disclosure background-image-panel" open>
+                <summary class="settings-disclosure-summary">
+                  <span class="settings-disclosure-title">Your images</span>
+                  <span class="settings-disclosure-desc">Click to show/hide your uploaded images.</span>
+                </summary>
+                <div class="settings-disclosure-body">
+                  <div id="personalization-secondary-user-images" class="background-gallery"></div>
+                </div>
+              </details>
+
+              <details class="settings-disclosure background-image-panel" open>
+                <summary class="settings-disclosure-summary">
+                  <span class="settings-disclosure-title">Preset images</span>
+                  <span class="settings-disclosure-desc">Click to show/hide preset images.</span>
+                </summary>
+                <div class="settings-disclosure-body">
+                  <div id="personalization-secondary-preset-images" class="background-gallery"></div>
+                </div>
+              </details>
+
+              <div class="background-image-panel">
+                <div class="background-image-panel-title">Background image appearance</div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">X-position</span>
+                    <span class="settings-row-desc">Align the image to the left, keep it centered, or align it to the right side of the screen.</span>
+                  </div>
+                  <select id="select-personalization-secondary-background-position-x" class="input" style="width: auto; flex-shrink: 0;">
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </select>
+                </div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Y-position</span>
+                    <span class="settings-row-desc">Align the image to the top, keep it centered, or align it to the bottom of the screen.</span>
+                  </div>
+                  <select id="select-personalization-secondary-background-position-y" class="input" style="width: auto; flex-shrink: 0;">
+                    <option value="top">Top</option>
+                    <option value="center">Center</option>
+                    <option value="bottom">Bottom</option>
+                  </select>
+                </div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Fill mode</span>
+                    <span class="settings-row-desc">Choose whether the image covers the screen, fits to the screen height, fits to the screen width, displays at its original size, or uses a custom scale multiplier.</span>
+                  </div>
+                  <select id="select-personalization-secondary-background-fill" class="input" style="width: auto; flex-shrink: 0;">
+                    <option value="cover">Cover</option>
+                    <option value="fit-height">Fit to height</option>
+                    <option value="fit-width">Fit to width</option>
+                    <option value="original-size">Original size</option>
+                    <option value="custom-scale">Custom scale</option>
+                  </select>
+                </div>
+
+                <div id="personalization-secondary-background-custom-scale-row" class="settings-row hidden">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Scale multiplier</span>
+                    <span class="settings-row-desc">Only used for Custom scale. Enter a decimal from 0.05 to 5 with up to 5 decimal places; 1 keeps the image at its original size.</span>
+                  </div>
+                  <input id="input-personalization-secondary-background-custom-scale" class="input" type="number" min="0.05" max="5" step="0.00001" inputmode="decimal" style="width: 9rem; flex-shrink: 0;" />
+                </div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Secondary background image opacity</span>
+                    <span class="settings-row-desc">Controls the opacity of the secondary background image separately from the primary background image.</span>
+                  </div>
+                  <div class="opacity-setting-control" data-opacity-setting="secondaryBackgroundImage">
+                    <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                    <label class="opacity-number-wrap">
+                      <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                      <span class="opacity-number-suffix">%</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="settings-row">
+                  <div class="settings-row-info">
+                    <span class="settings-row-label">Secondary background image blur</span>
+                    <span class="settings-row-desc">Controls how much blur the secondary background image gets.</span>
+                  </div>
+                  <div class="opacity-setting-control" data-opacity-setting="secondaryBackgroundImageBlur">
+                    <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                    <label class="opacity-number-wrap">
+                      <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                      <span class="opacity-number-suffix">%</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">UI Opacity</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Opacity presets</span>
+                <span class="settings-row-desc">Apply a saved set of opacity values, or start from one of the built-in presets.</span>
+              </div>
+              <div class="opacity-presets-control">
+                <select id="select-personalization-opacity-preset" class="input opacity-preset-select"></select>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Manage custom presets</span>
+                <span class="settings-row-desc">Name the current opacity values, save a new preset, or update/delete one of your own presets.</span>
+              </div>
+              <div class="opacity-preset-editor">
+                <input id="input-personalization-opacity-preset-name" class="input opacity-preset-name-input" type="text" maxlength="60" placeholder="Preset name" />
+                <div class="opacity-preset-editor-actions">
+                  <button id="btn-personalization-opacity-preset-save" class="btn btn-ghost" type="button">Save as new</button>
+                  <button id="btn-personalization-opacity-preset-update" class="btn btn-ghost" type="button">Update</button>
+                  <button id="btn-personalization-opacity-preset-delete" class="btn btn-ghost" type="button">Delete</button>
+                </div>
+              </div>
+            </div>
+
+            <details id="personalization-opacity-controls-details" class="settings-disclosure">
+              <summary class="settings-disclosure-summary">
+                <span class="settings-disclosure-title">UI opacity controls</span>
+                <span class="settings-disclosure-desc">Expand to fine-tune the opacity of each individual interface surface and text layer.</span>
+              </summary>
+
+              <div class="settings-disclosure-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Top bar</span>
+                <span class="settings-row-desc">Controls the header surface without dimming the title, top-right buttons, or the Trackspot hover bubble outline/text.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="header">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Quick actions toolbar</span>
+                <span class="settings-row-desc">Controls the full upper-left quick actions toolbar.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="quickActionsToolbar">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Sidebar</span>
+                <span class="settings-row-desc">Controls the full sidebar.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="sidebar">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Row header background</span>
+                <span class="settings-row-desc">Controls the list-view album row header background without changing the header text.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="rowHeaderBackground">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Row</span>
+                <span class="settings-row-desc">Controls list-row surfaces and outlines without changing the row art or row text.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="row">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Row art</span>
+                <span class="settings-row-desc">Controls list-mode album art.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="rowArt">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Row text</span>
+                <span class="settings-row-desc">Controls list-mode text and metadata.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="rowText">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Card</span>
+                <span class="settings-row-desc">Controls grid-card surfaces and outlines without changing card art or card text.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="card">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Card art</span>
+                <span class="settings-row-desc">Controls grid-mode album art.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="cardArt">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Card text</span>
+                <span class="settings-row-desc">Controls grid-mode text and metadata.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="cardText">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Style-based background gradient</span>
+                <span class="settings-row-desc">Some styles, like Ocean, also come with an optional background gradient. It is disabled in the included opacity presets by default but you can reenable it by turning up its opacity with this slider.</span>
+              </div>
+              <div class="opacity-setting-control" data-opacity-setting="styleBackgroundGradient">
+                <input class="opacity-slider" type="range" min="0" max="100" step="1" />
+                <label class="opacity-number-wrap">
+                  <input class="input opacity-number-input" type="number" min="0" max="100" step="1" inputmode="numeric" />
+                  <span class="opacity-number-suffix">%</span>
+                </label>
+              </div>
+            </div>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Custom CSS Override</div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">Uploaded CSS</span>
+                <span id="personalization-custom-theme-current" class="settings-row-desc">No custom CSS override uploaded.</span>
+              </div>
+              <div class="color-scheme-custom-actions">
+                <button id="btn-personalization-upload-theme-css" class="btn btn-ghost" type="button">Upload CSS</button>
+                <button id="btn-personalization-clear-theme-css" class="btn btn-ghost" type="button">Clear custom CSS</button>
+              </div>
+              <input id="input-personalization-theme-css" class="hidden" type="file" accept=".css,text/css" />
+            </div>
+
+            <p class="settings-inline-note">Custom CSS is layered on top of the current color scheme, so you can start from a preset and override only what you want.</p>
+          </div>
+        </div>
+
+        <p id="personalization-background-status" class="settings-status"></p>
+      </div>
+
+      <div class="modal-footer">
+        <div class="modal-footer-right">
+          <button id="btn-personalization-close" class="btn btn-ghost">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="page-controls" class="page-controls hidden" aria-label="Pagination controls">
+    <button id="page-control-first" class="page-control-btn page-control-btn-top hidden" type="button" aria-label="First page"></button>
+    <button id="page-control-last" class="page-control-btn page-control-btn-top hidden" type="button" aria-label="Last page"></button>
+    <button id="page-control-prev" class="page-control-btn" type="button" aria-label="Previous page"></button>
+    <button id="page-control-next" class="page-control-btn" type="button" aria-label="Next page"></button>
+  </div>
+  <div id="page-count" class="page-count hidden" aria-hidden="true"></div>
+
+  <div id="csv-format-overlay" class="modal-overlay hidden">
+    <div class="modal modal-small modal-csv-help">
+      <div class="modal-header">
+        <h2>CSV formatting instructions</h2>
+        <button id="csv-format-close" class="btn btn-icon" title="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
+      <div class="modal-body csv-help-body">
+        <div class="csv-help-section">
+          <p>The CSV import supports two import modes: <strong>header-based</strong> and <strong>positional</strong>.</p>
+        </div>
+
+        <div class="csv-help-section">
+          <strong>Header-based mode</strong>
+          <p>If the first non-blank row contains the header <code>Spotify Link</code>, Trackspot uses header-based mode. Column order doesn't matter, and any optional headers can be omitted entirely.</p>
+          <div class="csv-help-table-wrap">
+            <table class="csv-help-table">
+              <thead>
+                <tr>
+                  <th>Header</th>
+                  <th>Required</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>Spotify Link</code></td>
+                  <td>Yes</td>
+                  <td>A valid Spotify album URL or URI</td>
+                </tr>
+                <tr>
+                  <td><code>Rating</code></td>
+                  <td>No</td>
+                  <td>Integer from 0–100</td>
+                </tr>
+                <tr>
+                  <td><code>Notes</code></td>
+                  <td>No</td>
+                  <td>Free text; may contain commas, quotes, CJK characters, and newlines if quoted</td>
+                </tr>
+                <tr>
+                  <td><code>Date Listened</code></td>
+                  <td>No</td>
+                  <td>Format: <code>YYYY/MM/DD</code></td>
+                </tr>
+                <tr>
+                  <td><code>Status</code></td>
+                  <td>No</td>
+                  <td><code>Completed</code>, <code>Dropped</code>, or <code>Planned</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Note that your headers <strong>must</strong> match these exactly, including capitalization.</p>
+        </div>
+
+        <div class="csv-help-section">
+          <strong>Positional mode</strong>
+          <p>If no <code>Spotify Link</code> header is found, Trackspot reads columns by position. Include as many columns as you need; any trailing columns can be omitted.</p>
+          <div class="csv-help-table-wrap">
+            <table class="csv-help-table">
+              <thead>
+                <tr>
+                  <th>Column</th>
+                  <th>Field</th>
+                  <th>Required</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>A</td>
+                  <td>Spotify Link</td>
+                  <td>Yes</td>
+                </tr>
+                <tr>
+                  <td>B</td>
+                  <td>Rating</td>
+                  <td>No</td>
+                </tr>
+                <tr>
+                  <td>C</td>
+                  <td>Notes</td>
+                  <td>No</td>
+                </tr>
+                <tr>
+                  <td>D</td>
+                  <td>Date Listened</td>
+                  <td>No</td>
+                </tr>
+                <tr>
+                  <td>E</td>
+                  <td>Status</td>
+                  <td>No</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="csv-help-section">
+          <strong>Example</strong>
+          <pre class="csv-help-pre">Spotify Link,Rating,Notes,Date Listened,Status
+https://open.spotify.com/album/3jJ8chfB4MIsp9Z2ys43VS,97,"Notes can include commas, quotes, and Unicode like 日本語",2024/10/28,Completed</pre>
+        </div>
+
+        <div class="csv-help-section">
+          <strong>Notes</strong>
+          <ul class="csv-help-list">
+            <li>Spotify links may include <code>?si=...</code> tracking parameters, as they will be stripped automatically.</li>
+            <li>Rows without a valid Spotify album link are skipped.</li>
+            <li>Invalid rating, date, or status values don't block a row from importing; Trackspot imports what it can and logs a warning.</li>
+            <li>Missing optional fields default to blank, except Status, which falls back to the default you choose in the import UI.</li>
+            <li>If the same album appears more than once, only the first row is imported.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-footer-right">
+          <button id="btn-csv-format-close" class="btn btn-ghost" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

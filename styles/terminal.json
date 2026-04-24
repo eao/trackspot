@@ -1,0 +1,24 @@
+{
+  "id": "terminal",
+  "name": "Terminal",
+  "description": "Matrixmaxxing.",
+  "vars": {
+    "--bg-base": "#050a05",
+    "--bg-surface": "#0a150a",
+    "--bg-elevated": "#0f200f",
+    "--bg-hover": "#152a15",
+    "--modal-overlay-scrim": "rgba(0, 5, 0, 0.85)",
+    "--accent": "#33ff33",
+    "--accent-hover": "#66ff66",
+    "--accent-dim": "#0a3a0a",
+    "--text-primary": "#33ff33",
+    "--text-secondary": "#20cc20",
+    "--text-muted": "#107010",
+    "--border": "#1a4a1a",
+    "--border-focus": "#33ff33",
+    "--danger": "#ff3333",
+    "--danger-hover": "#ff6666",
+    "--success": "#33ff33"
+  },
+  "css": "body { font-family: 'Courier New', 'Consolas', 'Liberation Mono', monospace; text-shadow: 0 0 5px rgba(51, 255, 51, 0.4); }\ninput, select, textarea, button { font-family: 'Courier New', 'Consolas', 'Liberation Mono', monospace; }\n* { border-radius: 0 !important; }\n.header { text-transform: uppercase; letter-spacing: 0.15em; }\n::selection { background: #33ff33; color: #050a05; }"
+}

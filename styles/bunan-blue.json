@@ -1,0 +1,24 @@
+{
+    "id":  "bunan-blue",
+    "name":  "Bunan Blue",
+    "description":  "A safe, default blue 'n' slate.",
+    "vars":  {
+                 "--bg-base":  "#0f1117",
+                 "--bg-surface":  "#1a1f2e",
+                 "--bg-elevated":  "#222840",
+                 "--bg-hover":  "#2a3050",
+                 "--modal-overlay-scrim":  "rgba(0, 0, 0, 0.65)",
+                 "--accent":  "#4f8ef7",
+                 "--accent-hover":  "#6ba3f8",
+                 "--accent-dim":  "#1e3a6e",
+                 "--text-primary":  "#e2e8f0",
+                 "--text-secondary":  "#adb9cb",
+                 "--text-muted":  "#647888",
+                 "--border":  "#2d3748",
+                 "--border-focus":  "#4f8ef7",
+                 "--danger":  "#e53e3e",
+                 "--danger-hover":  "#fc8181",
+                 "--success":  "#38a169"
+             },
+    "css":  "body { background-color: #0f1117 !important; background-image: linear-gradient(to bottom, color-mix(in srgb, #0d1422 var(--ts-opacity-style-background-gradient), transparent) 0%, color-mix(in srgb, #0f1117 var(--ts-opacity-style-background-gradient), transparent) 60%, color-mix(in srgb, #0f1117 var(--ts-opacity-style-background-gradient), transparent) 100%) !important; background-repeat: no-repeat !important; background-position: top center !important; background-size: 100% 100vh !important; }"
+}

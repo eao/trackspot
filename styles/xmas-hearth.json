@@ -1,0 +1,24 @@
+{
+    "id": "xmas-hearth",
+    "name": "Hearth",
+    "description": "Needs a background image of a Christmas hearth to make a Christmas Morning theme. I would have bundled one in but there weren't any free ones available.",
+    "vars": {
+        "--bg-base": "#1A120B",
+        "--bg-surface": "#241910",
+        "--bg-elevated": "#302016",
+        "--bg-hover": "#3C2A1C",
+        "--modal-overlay-scrim": "rgba(10, 6, 2, 0.72)",
+        "--accent": "#D4943C",
+        "--accent-hover": "#E8AE58",
+        "--accent-dim": "#3D2810",
+        "--text-primary": "#F0E4D4",
+        "--text-secondary": "#C4A888",
+        "--text-muted": "#7A6248",
+        "--border": "#443020",
+        "--border-focus": "#D4943C",
+        "--danger": "#C45040",
+        "--danger-hover": "#E07060",
+        "--success": "#5CA858"
+    },
+    "css": "body {\n  background-color: #140E08 !important;\n}\n.header {\n  background: linear-gradient(\n    180deg,\n    color-mix(in srgb, #302016 var(--ts-opacity-header), transparent) 0%,\n    color-mix(in srgb, #241910 var(--ts-opacity-header), transparent) 100%\n  ) !important;\n  border-bottom: 2px solid color-mix(in srgb, #D4943C var(--ts-opacity-header), transparent) !important;\n}\n.sidebar {\n  background: linear-gradient(180deg, #241910 0%, #1E1510 50%, #1A120B 100%) !important;\n  border-right: 1px solid #443020 !important;\n}\n.album-row {\n  background: color-mix(in srgb, #241910 var(--ts-row-surface-opacity, var(--ts-opacity-row)), transparent) !important;\n  border: 1.5px solid color-mix(in srgb, #443020 var(--ts-row-surface-opacity, var(--ts-opacity-row)), transparent) !important;\n}\n.album-row:hover {\n  background: color-mix(in srgb, #3C2A1C var(--ts-opacity-row), transparent) !important;\n  border-color: color-mix(in srgb, #D4943C var(--ts-opacity-row), transparent) !important;\n}\n.album-card {\n  background: color-mix(in srgb, #241910 var(--ts-opacity-card), transparent) !important;\n  border: 1.5px solid color-mix(in srgb, #443020 var(--ts-opacity-card), transparent) !important;\n  border-radius: 12px !important;\n}\n.album-card:hover {\n  border-color: color-mix(in srgb, #D4943C var(--ts-opacity-card), transparent) !important;\n}\n.card-info {\n  background: color-mix(in srgb, #1E1510 var(--ts-opacity-card), transparent) !important;\n}\n.modal {\n  background: linear-gradient(180deg, #2A1C12 0%, #241910 100%) !important;\n  border: 2px solid #5A3C22 !important;\n  border-radius: 14px !important;\n  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);\n}\nbutton {\n  background: linear-gradient(180deg, #3C2A1C 0%, #302016 100%) !important;\n  border: 1.5px solid #5A3C22 !important;\n  color: #F0E4D4 !important;\n}\nbutton:hover {\n  background: linear-gradient(180deg, #4A3424 0%, #3C2A1C 100%) !important;\n  border-color: #D4943C !important;\n}\na, .artist-link { color: #D4943C !important; }\na:hover, .artist-link:hover { color: #E8AE58 !important; }\ninput, select, textarea {\n  background: #1A120B !important;\n  border: 1.5px solid #443020 !important;\n  color: #F0E4D4 !important;\n}\ninput:focus, select:focus, textarea:focus {\n  border-color: #D4943C !important;\n  box-shadow: 0 0 0 3px rgba(212, 148, 60, 0.12);\n}\n::selection { background: #5A3C22; color: #F0E4D4; }"
+}
