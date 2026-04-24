@@ -28,7 +28,7 @@ import {
   getDefaultFilterPreset, saveDefaultFilterPreset, syncFilterControlsFromState,
 } from './sidebar.js';
 import {
-  openLogModal, handleFetch, handleRefetch, handleManualEntry,
+  openLogModal,
   handleImageUpload, handleSaveNew, handleSaveEdit,
   openEditModal, closeModal,
   showAlbumInfoDebugWindow,
@@ -290,22 +290,7 @@ function initEvents() {
   initListEvents();
   initGridEvents();
 
-  // Modal — fetch step.
-  el.btnFetch.addEventListener('click', () => {
-    if (state.modal.mode === 'edit') {
-      handleRefetch();
-    } else {
-      handleFetch();
-    }
-  });
-
-  el.btnManualEntry.addEventListener('click', handleManualEntry);
   el.btnShowAlbumInfo.addEventListener('click', showAlbumInfoDebugWindow);
-
-  // Allow pressing Enter in the Spotify URL field to trigger fetch.
-  el.inputSpotifyUrl.addEventListener('keydown', e => {
-    if (e.key === 'Enter') handleFetch();
-  });
 
   // Modal — details step.
   el.inputRating.addEventListener('input', e => {

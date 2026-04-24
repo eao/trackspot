@@ -1,5 +1,5 @@
 const { db } = require('./db');
-const { downloadImage } = require('./spotify');
+const { downloadImage } = require('./spotify-helpers');
 const {
   deriveReleaseYear,
   getReleaseDateFromSpotifyReleaseDate,

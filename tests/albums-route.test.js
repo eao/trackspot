@@ -10,6 +10,7 @@ const serverModulePaths = [
   '../server/routes/albums.js',
   '../server/import-service.js',
   '../server/album-helpers.js',
+  '../server/spotify-helpers.js',
   '../server/spotify-note-links.js',
   '../server/db.js',
 ];
@@ -43,6 +44,13 @@ function getRouteHandler(router, method, routePath) {
     entry.route?.path === routePath && entry.route.methods?.[method]
   );
   return layer?.route?.stack?.[0]?.handle ?? null;
+}
+
+function getRouteHandlers(router, method, routePath) {
+  const layer = router.stack.find(entry =>
+    entry.route?.path === routePath && entry.route.methods?.[method]
+  );
+  return layer?.route?.stack?.map(entry => entry.handle) ?? [];
 }
 
 function createResponse() {
@@ -115,6 +123,33 @@ afterEach(() => {
 });
 
 describe('albums route helpers', () => {
+  it('returns the uploaded manual image path from the albums upload endpoint', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    openDbs.push(dbModule.db);
+
+    const handlers = getRouteHandlers(albumsRouter, 'post', '/upload-image');
+    const uploadHandler = handlers.at(-1);
+    expect(uploadHandler).toBeTypeOf('function');
+
+    const res = createResponse();
+    uploadHandler({ file: { filename: 'manual_test.jpg' } }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody).toEqual({ image_path: 'images/manual_test.jpg' });
+  });
+
+  it('rejects manual image uploads when no file was received', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    openDbs.push(dbModule.db);
+
+    const uploadHandler = getRouteHandlers(albumsRouter, 'post', '/upload-image').at(-1);
+    const res = createResponse();
+    uploadHandler({ file: null }, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.jsonBody).toEqual({ error: 'No image file received.' });
+  });
+
   it('searches artist names without matching unrelated artist JSON metadata', () => {
     const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
     const { db } = dbModule;

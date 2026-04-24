@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 const { db, IMAGES_DIR } = require('../db');
 const {
   deriveReleaseYear,
@@ -26,6 +27,28 @@ const {
   importSpotifyGraphqlAlbum,
 } = require('../import-service');
 const { normalizeSpotifyNoteLinks } = require('../spotify-note-links');
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, IMAGES_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+    const name = `manual_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
+    cb(null, name);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JPEG, PNG, and WebP images are allowed.'));
+    }
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1041,6 +1064,19 @@ router.post('/import', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/albums/upload-image
+// Handles image uploads for manual album entries.
+// ---------------------------------------------------------------------------
+
+router.post('/upload-image', upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file received.' });
+  }
+
+  res.json({ image_path: `images/${req.file.filename}` });
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/albums/:id/refetch-art
 // Re-fetches album art from Spotify CDN. If the album already has art,
 // saves the new file as a temp file and returns comparison info.
@@ -1054,7 +1090,7 @@ router.post('/:id/refetch-art', async (req, res) => {
   const imageUrl = existing.image_url_large || existing.image_url_medium || existing.image_url_small;
   if (!imageUrl) return res.status(400).json({ error: 'No image URL stored for this album.' });
 
-  const { downloadImage } = require('../spotify');
+  const { downloadImage } = require('../spotify-helpers');
   const crypto = require('crypto');
 
   try {

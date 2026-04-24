@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const AdmZip = require('adm-zip');
 const serverModulePaths = [
   '../server/routes/backup.js',
-  '../server/spotify.js',
+  '../server/spotify-helpers.js',
   '../server/db.js',
 ];
 

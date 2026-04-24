@@ -139,7 +139,7 @@ async function restoreAlbumImages(rows, zip, isRestore) {
   }
 
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  const { downloadImage } = require('../spotify');
+  const { downloadImage } = require('../spotify-helpers');
 
   for (const row of rows) {
     if (row.image_path) {

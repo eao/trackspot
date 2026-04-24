@@ -92,7 +92,6 @@ app.use('/theme-previews-thumbs', express.static(SEED_THEME_PREVIEW_IMAGES_THUMB
 // ---------------------------------------------------------------------------
 
 const albumsRouter = require('./routes/albums');
-const spotifyRouter = require('./routes/spotify');
 const backupRouter  = require('./routes/backup');
 const importsRouter = require('./routes/imports');
 const backgroundsRouter = require('./routes/backgrounds');
@@ -101,7 +100,6 @@ const themesRouter = require('./routes/themes');
 const preferencesRouter = require('./routes/preferences');
 
 app.use('/api/albums', albumsRouter);
-app.use('/api/spotify', spotifyRouter);
 app.use('/api/backup', backupRouter);
 app.use('/api/imports', importsRouter);
 app.use('/api/backgrounds', backgroundsRouter);

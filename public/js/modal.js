@@ -239,8 +239,6 @@ export function populateDetailsFields(album, isManual) {
   // Show image upload button only for manual entries.
   el.metaArtUploadLabel.classList.toggle('hidden', !isManual);
 
-  // The old "Refetch metadata" details-step button is currently unused.
-  el.btnFetch.classList.add('hidden');
 }
 
 export function syncAlbumModalFieldVisibility() {
@@ -263,17 +261,6 @@ export function syncAlbumModalDebugControls() {
 }
 
 // ---------------------------------------------------------------------------
-// Show the details step
-// ---------------------------------------------------------------------------
-
-function showDetailsStep() {
-  el.stepFetch.classList.add('hidden');
-  el.stepDetails.classList.remove('hidden');
-  el.btnSave.classList.remove('hidden');
-  el.btnSave.textContent = 'Save';
-}
-
-// ---------------------------------------------------------------------------
 // Open the log modal (new album)
 // ---------------------------------------------------------------------------
 
@@ -291,8 +278,6 @@ export function openLogModal() {
 
   el.modalTitle.textContent = 'Log Album';
 
-  // Go straight to the manual-entry details step.
-  el.stepFetch.classList.add('hidden');
   el.stepDetails.classList.remove('hidden');
   el.btnSave.classList.remove('hidden');
   el.btnSave.textContent = 'Save';
@@ -312,70 +297,6 @@ export function openLogModal() {
 }
 
 // ---------------------------------------------------------------------------
-// Handle Spotify fetch button
-// ---------------------------------------------------------------------------
-
-export async function handleFetch() {
-  const url = el.inputSpotifyUrl.value.trim();
-  if (!url) return;
-
-  if (state.modal.isFetching) return;
-  state.modal.isFetching = true;
-
-  el.btnFetch.textContent = 'Fetching…';
-  el.btnFetch.disabled = true;
-  hideError();
-
-  try {
-    const meta = await apiFetch('/api/spotify/fetch', {
-      method: 'POST',
-      body: JSON.stringify({ url }),
-    });
-
-    state.modal.pendingMeta = meta;
-    state.modal.step = 'details';
-    state.modal.isManual = false;
-
-    populateDetailsFields(meta, false);
-    showDetailsStep();
-    syncAlbumModalFieldVisibility();
-
-  } catch (e) {
-    if (e.status === 409) {
-      // Album already logged — show a helpful message rather than a raw error.
-      showError(
-        `Already logged: "${e.data.album_name}" by ${formatArtists(e.data.artists)}. ` +
-        `Click its row to edit it.`
-      );
-    } else {
-      showError(e.message);
-    }
-  } finally {
-    state.modal.isFetching = false;
-    el.btnFetch.textContent = 'Fetch';
-    el.btnFetch.disabled = false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Handle manual entry button
-// ---------------------------------------------------------------------------
-
-export function handleManualEntry() {
-  state.modal.isManual  = true;
-  state.modal.step      = 'details';
-  state.modal.pendingMeta = null;
-
-  clearDetailsFields();
-
-  // For manual entries, metadata fields are editable and the image upload
-  // button is shown instead of the art preview.
-  populateDetailsFields(null, true);
-  showDetailsStep();
-  syncAlbumModalFieldVisibility();
-}
-
-// ---------------------------------------------------------------------------
 // Handle image upload (manual entry)
 // ---------------------------------------------------------------------------
 
@@ -386,7 +307,7 @@ export async function handleImageUpload(file) {
   formData.append('image', file);
 
   try {
-    const result = await fetch('/api/spotify/upload-image', {
+    const result = await fetch('/api/albums/upload-image', {
       method: 'POST',
       body: formData,
       // Do NOT set Content-Type here — the browser sets it automatically
@@ -439,10 +360,9 @@ export async function handleSaveNew() {
   delete pendingMeta.release_year;
 
   const payload = {
-    // Spotify metadata (null for manual entries).
+    // Imported metadata (usually empty for manual entries).
     ...pendingMeta,
-    // Always use whatever is currently in the editable fields,
-    // in case the user corrected something after the fetch.
+    // Always use whatever is currently in the editable fields.
     album_name:   albumName,
     artists,
     release_date: el.metaReleaseDate.value || null,
@@ -516,8 +436,6 @@ export async function openEditModal(id) {
 
   el.modalTitle.textContent = 'Edit Album';
 
-  // In edit mode we skip straight to the details step.
-  el.stepFetch.classList.add('hidden');
   el.stepDetails.classList.remove('hidden');
   el.btnSave.classList.remove('hidden');
   el.btnModalDelete.classList.remove('hidden');
@@ -686,40 +604,6 @@ export async function handleSaveEdit() {
     state.modal.isSaving = false;
     el.btnSave.textContent = 'Save';
     el.btnSave.disabled = false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Handle Spotify metadata refetch (edit mode)
-// ---------------------------------------------------------------------------
-// Allows refreshing metadata for an existing Spotify-linked album.
-// Only shown for Spotify entries, not manual ones.
-
-export async function handleRefetch() {
-  if (state.modal.isFetching) return;
-  state.modal.isFetching = true;
-
-  el.btnFetch.textContent = 'Refetching…';
-  el.btnFetch.disabled = true;
-  hideError();
-
-  try {
-    const updated = storeAlbumDetails(normalizeAlbumClientShape(await apiFetch(`/api/spotify/refetch/${state.modal.albumId}`, {
-      method: 'POST',
-    })));
-    invalidateDashboardCache();
-    await loadAlbums({ preservePage: true });
-
-    // Repopulate the metadata display with fresh data.
-    populateDetailsFields(updated, false);
-    syncAlbumModalFieldVisibility();
-
-  } catch (e) {
-    showError(e.message);
-  } finally {
-    state.modal.isFetching = false;
-    el.btnFetch.textContent = 'Refetch metadata';
-    el.btnFetch.disabled = false;
   }
 }
 

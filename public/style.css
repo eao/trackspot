@@ -1400,7 +1400,7 @@ select.input {
 }
 
 /* -------------------------------------------------------------------------
-   MODAL — FETCH STEP
+   MODAL — COMPACT INPUT ROWS
 -------------------------------------------------------------------------- */
 
 .fetch-row {
@@ -1410,20 +1410,6 @@ select.input {
 
 .fetch-row .input {
   flex: 1;
-}
-
-.divider-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-
-.divider-row hr {
-  flex: 1;
-  border: none;
-  border-top: 1px solid var(--border);
 }
 
 /* -------------------------------------------------------------------------

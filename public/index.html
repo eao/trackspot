@@ -367,28 +367,7 @@
 
       <div class="modal-body">
 
-        <!-- STEP 1: Spotify URL or manual toggle (only shown when logging new) -->
-        <div id="step-fetch" class="">
-
-          <div class="fetch-row">
-            <input id="input-spotify-url" class="input" type="text"
-              placeholder="Paste Spotify share link… (disabled, currently broken)"
-              disabled style="opacity:0.45; cursor:not-allowed;" />
-            <button id="btn-fetch" class="btn btn-primary">Fetch</button>
-          </div>
-
-          <div class="divider-row">
-            <hr /><span>or</span><hr />
-          </div>
-
-          <button id="btn-manual-entry" class="btn btn-ghost btn-full">
-            Enter manually
-          </button>
-
-        </div>
-
-        <!-- STEP 2: Metadata preview + user fields -->
-        <!-- Hidden until a fetch completes or manual entry is chosen -->
+        <!-- Metadata + user fields -->
         <div id="step-details" class="hidden">
 
           <!-- Metadata (read-only for Spotify entries, editable for manual) -->

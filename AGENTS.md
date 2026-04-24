@@ -54,8 +54,6 @@ http://localhost:1060
 Expected root `.env` values:
 
 ```text
-SPOTIFY_CLIENT_ID=...
-SPOTIFY_CLIENT_SECRET=...
 PORT=1060
 DATA_DIR=./data
 ```
@@ -78,7 +76,7 @@ The app is designed for local/trusted use. There is **no auth layer**.
 - `server/index.js`: app entry point, static serving, CORS, route mounting, error handling
 - `server/db.js`: SQLite setup via `better-sqlite3`, schema creation, schema evolution with `ensureColumn`, trigger setup, DB replacement helpers
 - `server/album-helpers.js`: album parsing and normalization utilities
-- `server/spotify.js`: Spotify client credentials flow, metadata extraction, image download helpers
+- `server/spotify-helpers.js`: Spotify album URL/URI parsing and album-art download helpers
 - `server/import-service.js`: import a Spotify GraphQL album payload into the DB
 - `server/import-jobs.js`: CSV import queue and worker leasing
 - `server/preferences-store.js`: persisted global preferences in `preferences.json`
@@ -88,8 +86,7 @@ The app is designed for local/trusted use. There is **no auth layer**.
 
 ### Routes
 
-- `server/routes/albums.js`: album CRUD, wipe, Spicetify import, art actions
-- `server/routes/spotify.js`: fetch/refetch metadata, upload replacement art
+- `server/routes/albums.js`: album CRUD, wipe, Spicetify import, manual image upload, art actions
 - `server/routes/imports.js`: CSV import job lifecycle, claim/complete/fail flow
 - `server/routes/backup.js`: backup download, DB export, CSV export, restore/merge
 - `server/routes/backgrounds.js`: primary and secondary background upload/delete/thumbnail APIs

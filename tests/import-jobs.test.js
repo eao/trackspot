@@ -9,7 +9,7 @@ const serverModulePaths = [
   '../server/import-jobs.js',
   '../server/import-service.js',
   '../server/album-helpers.js',
-  '../server/spotify.js',
+  '../server/spotify-helpers.js',
   '../server/db.js',
 ];
 

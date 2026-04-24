@@ -1,6 +1,6 @@
 const { parse } = require('csv-parse/sync');
 const { db } = require('./db');
-const { extractAlbumId } = require('./spotify');
+const { extractAlbumId } = require('./spotify-helpers');
 const {
   parseJsonField,
   VALID_STATUSES,
