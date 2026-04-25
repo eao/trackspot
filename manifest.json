@@ -1,7 +1,7 @@
 [
   {
     "name": "Trackspot",
-    "description": "Track your albums AniList-style with Trackspot.",
+    "description": "Track, rate, and write about albums with Trackspot.",
     "preview": "spicetify-extension-files/images/marketplace-preview.jpg",
     "main": "trackspot-spicetify.js",
     "readme": "spicetify-extension-files/README.md",
