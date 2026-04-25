@@ -98,6 +98,7 @@ const backgroundsRouter = require('./routes/backgrounds');
 const opacityPresetsRouter = require('./routes/opacity-presets');
 const themesRouter = require('./routes/themes');
 const preferencesRouter = require('./routes/preferences');
+const welcomeTourRouter = require('./routes/welcome-tour');
 
 app.use('/api/albums', albumsRouter);
 app.use('/api/backup', backupRouter);
@@ -106,6 +107,7 @@ app.use('/api/backgrounds', backgroundsRouter);
 app.use('/api/opacity-presets', opacityPresetsRouter);
 app.use('/api/themes', themesRouter);
 app.use('/api/preferences', preferencesRouter);
+app.use('/api/welcome-tour', welcomeTourRouter);
 
 // ---------------------------------------------------------------------------
 // Error handling

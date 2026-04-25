@@ -228,6 +228,7 @@ function ensureAppSchema(connection) {
       source               TEXT NOT NULL DEFAULT 'manual',  -- 'spotify' | 'manual'
       album_link           TEXT,
       artist_link          TEXT,
+      welcome_sample_key   TEXT,
 
       -- Timestamps
       created_at           TEXT NOT NULL DEFAULT (datetime('now')),
@@ -314,6 +315,8 @@ function ensureAppSchema(connection) {
     `ALTER TABLE albums ADD COLUMN release_date TEXT;`);
   ensureColumn(connection, 'albums', 'spotify_first_track',
     `ALTER TABLE albums ADD COLUMN spotify_first_track TEXT;`);
+  ensureColumn(connection, 'albums', 'welcome_sample_key',
+    `ALTER TABLE albums ADD COLUMN welcome_sample_key TEXT;`);
   backfillSpotifyReleaseDates(connection);
   backfillAlbumReleaseDates(connection);
   backfillSpotifyFirstTracks(connection);

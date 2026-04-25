@@ -80,6 +80,9 @@ describe('preferences route', () => {
       earlyWrapped: false,
       seasonalThemeHistory: {},
       wrappedName: '',
+      welcomeTourCompletedAt: null,
+      welcomeTourSkippedAt: null,
+      welcomeSamplesAddedAt: null,
     });
   });
 
@@ -119,6 +122,9 @@ describe('preferences route', () => {
         christmas: 2026,
       },
       wrappedName: 'Erik',
+      welcomeTourCompletedAt: null,
+      welcomeTourSkippedAt: null,
+      welcomeSamplesAddedAt: null,
     });
 
     const readHandler = getRouteHandler(preferencesRouter, 'get', '/');

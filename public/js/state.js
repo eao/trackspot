@@ -129,6 +129,15 @@ export const state = {
   seasonalThemeHistory: {},
   wrappedName: '',
   contentWidthPx: 1000,
+  welcomeTour: {
+    active: false,
+    replay: false,
+    completedAt: null,
+    skippedAt: null,
+    samplesAddedAt: null,
+    sampleCount: 0,
+    lockSessionId: null,
+  },
 
   // Complex status filters (loaded from localStorage at init).
   complexStatuses: [],
@@ -445,6 +454,9 @@ export const el = {
   btnBulkRefetchArt: document.getElementById('btn-bulk-refetch-art'),
   btnResetAllSettings: document.getElementById('btn-reset-all-settings'),
   btnClearLocalStorage: document.getElementById('btn-clear-local-storage'),
+  btnReplayWelcomeTour: document.getElementById('btn-replay-welcome-tour'),
+  btnRemoveWelcomeSamples: document.getElementById('btn-remove-welcome-samples'),
+  welcomeSamplesRow: document.getElementById('welcome-samples-row'),
   toggleShowRepeatsField: document.getElementById('toggle-show-repeats-field'),
   toggleShowPriorityField: document.getElementById('toggle-show-priority-field'),
   toggleShowRefetchArt: document.getElementById('toggle-show-refetch-art'),

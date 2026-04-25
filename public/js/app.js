@@ -38,6 +38,7 @@ import {
 import {
   closeSettings, closePersonalization, setDebugMode, setUButtons,
   setHeaderScrollMode, setShowRepeatsField, setShowPriorityField, setShowPlannedAtField, setShowRefetchArtButton, setShowWipeDb, setListArtClickToEnlarge, setReserveSidebarSpace, setAccentPeriod, setGrinchMode, setContentWidthPx, restoreContentWidthSettings, clearLocalStorage, wipeDatabase, initPaginationSettings, initQuickActionsToolbarSettings, initCsvImportControls, initPersonalizationSettings, initEarlyWrappedSettingsUi, closeCsvFormattingInstructions,
+  removeWelcomeSampleAlbums, refreshWelcomeTourSettings,
 } from './settings.js';
 import { syncAppShellLayout } from './app-shell.js';
 import { setCollectionView, setPage, syncNavigationFromLocation } from './navigation.js';
@@ -45,6 +46,7 @@ import { fetchPreferences } from './preferences.js';
 import { persistWrappedName, setWrappedName, syncWrappedNameSettingsInput } from './wrapped-name.js';
 import { initHeaderScrollTracking } from './header-scroll.js';
 import { getSteppedContentWidthPx } from './layout-width.js';
+import { initWelcomeTourEvents, maybeStartWelcomeTour } from './welcome-tour.js';
 
 // ---------------------------------------------------------------------------
 // Tooltips
@@ -556,6 +558,14 @@ function initSettings() {
   el.btnContentWidthUp.addEventListener('click', () => nudgeContentWidth(100));
   el.btnContentWidthDown.addEventListener('click', () => nudgeContentWidth(-100));
   el.toggleShowWipeDb.addEventListener('change', () => setShowWipeDb(el.toggleShowWipeDb.checked));
+  el.btnReplayWelcomeTour?.addEventListener('click', () => {
+    closeSettings();
+    window.dispatchEvent(new CustomEvent('welcome-tour:replay'));
+  });
+  el.btnRemoveWelcomeSamples?.addEventListener('click', () => {
+    void removeWelcomeSampleAlbums();
+  });
+  refreshWelcomeTourSettings().catch(() => {});
   el.btnClearLocalStorage.addEventListener('click', clearLocalStorage);
   el.btnWipeDb.addEventListener('click', wipeDatabase);
   window.addEventListener('resize', () => {
@@ -632,6 +642,7 @@ async function init() {
   updateTypeFilterBtn();   // set initial label on the type filter button
   updateRestoreBtn();      // disable restore button if no preset saved yet
   initHeaderScrollTracking();
+  initWelcomeTourEvents();
 
   window.addEventListener('popstate', () => {
     syncNavigationFromLocation({ historyMode: 'replace', activate: true });
@@ -653,6 +664,7 @@ async function init() {
       openLaunchAlbumModal,
       openEditModal,
     });
+    await maybeStartWelcomeTour();
     return;
   }
 
@@ -662,6 +674,7 @@ async function init() {
     initial: true,
   });
   maybeClearLaunchAlbumParam();
+  await maybeStartWelcomeTour();
 }
 
 init();

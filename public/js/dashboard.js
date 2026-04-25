@@ -72,6 +72,15 @@ export function resolveWrappedYear(albums, requestedYear, now = new Date()) {
 }
 
 export async function loadAlbumsForDashboard() {
+  if (state.welcomeTour?.active) {
+    const albums = normalizeAlbumsForStats(state.albums || []);
+    state.albumListMeta = {
+      ...(state.albumListMeta || {}),
+      trackedListenedMs: albums.reduce((sum, album) => sum + (album.duration_ms || 0), 0),
+    };
+    syncHeaderTooltip();
+    return albums;
+  }
   if (dashboardState.albums) return dashboardState.albums;
   if (dashboardState.loadingPromise) return dashboardState.loadingPromise;
 

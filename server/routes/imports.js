@@ -17,11 +17,17 @@ const {
   InvalidImportPayloadError,
   importSpotifyGraphqlAlbum,
 } = require('../import-service');
+const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
 const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+router.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  return rejectIfWelcomeTourLocked(req, res, next);
 });
 
 router.get('/active', (_req, res) => {

@@ -19,7 +19,7 @@ import {
 import { render, loadAlbums, resetPagination, openArtLightbox } from './render.js';
 import { escHtml } from './utils.js';
 import { waitForImageReady } from './image-ready.js';
-import { patchPreferences } from './preferences.js';
+import { applyPreferencesToState, patchPreferences } from './preferences.js';
 import { setWrappedName } from './wrapped-name.js';
 import { syncHeaderTitleText } from './header-title.js';
 import {
@@ -1588,7 +1588,7 @@ function buildThemeFormData(options = {}) {
   return form;
 }
 
-async function applyTheme(theme) {
+export async function applyTheme(theme) {
   if (!theme) return;
 
   state.personalization.selectedThemeId = theme.id;
@@ -1613,6 +1613,25 @@ async function applyTheme(theme) {
   setAppliedThemeId(theme.id);
   state.personalization.appliedThemeDirty = false;
   syncThemeUi();
+}
+
+export async function applyThemeByName(themeName) {
+  if (!state.personalization.themesLoaded) {
+    await loadThemes();
+  }
+  const theme = state.personalization.themes.find(item => item.name === themeName) ?? null;
+  if (!theme) throw new Error(`Theme "${themeName}" is not available.`);
+  await applyTheme(theme);
+  return theme;
+}
+
+export async function restorePersonalizationFromStorage() {
+  restorePersonalizationSettings();
+  if (!state.personalization.themesLoaded) {
+    await loadThemes();
+  } else {
+    syncThemeUi();
+  }
 }
 
 function getBackgroundThumbnailEndpoint(slotKey, image) {
@@ -2438,6 +2457,7 @@ export function openSettings() {
   el.settingsOverlay.classList.remove('hidden');
   renderComplexStatusList();
   renderUButtonList();
+  refreshWelcomeTourSettings().catch(() => {});
 }
 
 export function closeSettings() {
@@ -2479,6 +2499,36 @@ export function openCsvFormattingInstructions() {
 
 export function closeCsvFormattingInstructions() {
   el.csvFormatOverlay.classList.add('hidden');
+}
+
+export async function refreshWelcomeTourSettings() {
+  if (!el.welcomeSamplesRow) return null;
+  const status = await apiFetch('/api/welcome-tour/status');
+  if (status.preferences) {
+    applyPreferencesToState(status.preferences);
+  }
+  state.welcomeTour.sampleCount = status.sampleCount ?? 0;
+  el.welcomeSamplesRow.classList.toggle('hidden', !(status.sampleCount > 0));
+  if (el.btnRemoveWelcomeSamples) {
+    el.btnRemoveWelcomeSamples.disabled = !(status.sampleCount > 0);
+  }
+  return status;
+}
+
+export async function removeWelcomeSampleAlbums() {
+  if (!window.confirm('Remove the two welcome tour sample albums? This will not affect your other albums.')) return;
+  try {
+    const result = await apiFetch('/api/welcome-tour/samples', { method: 'DELETE' });
+    if (result.status?.preferences) {
+      applyPreferencesToState(result.status.preferences);
+    }
+    state.welcomeTour.sampleCount = result.status?.sampleCount ?? 0;
+    el.welcomeSamplesRow?.classList.toggle('hidden', !(state.welcomeTour.sampleCount > 0));
+    setSettingsStatus(`Removed ${result.removedCount ?? 0} sample album${result.removedCount === 1 ? '' : 's'}.`);
+    await loadAlbums({ preservePage: true });
+  } catch (error) {
+    setSettingsStatus(error.message, true);
+  }
 }
 
 function clearCsvImportPoll() {

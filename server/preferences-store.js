@@ -87,6 +87,10 @@ function normalizeWrappedName(value) {
   return typeof value === 'string' ? value : '';
 }
 
+function normalizeOptionalTimestamp(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 function normalizePreferences(rawValue = {}) {
   return {
     complexStatuses: normalizeComplexStatuses(rawValue.complexStatuses),
@@ -95,6 +99,9 @@ function normalizePreferences(rawValue = {}) {
     earlyWrapped: !!rawValue.earlyWrapped,
     seasonalThemeHistory: normalizeSeasonalThemeHistory(rawValue.seasonalThemeHistory),
     wrappedName: normalizeWrappedName(rawValue.wrappedName),
+    welcomeTourCompletedAt: normalizeOptionalTimestamp(rawValue.welcomeTourCompletedAt),
+    welcomeTourSkippedAt: normalizeOptionalTimestamp(rawValue.welcomeTourSkippedAt),
+    welcomeSamplesAddedAt: normalizeOptionalTimestamp(rawValue.welcomeSamplesAddedAt),
   };
 }
 
@@ -144,5 +151,6 @@ module.exports = {
   normalizeComplexStatuses,
   normalizeSeasonalThemeHistory,
   normalizeWrappedName,
+  normalizeOptionalTimestamp,
   createStoreError,
 };

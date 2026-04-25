@@ -27,6 +27,7 @@ const {
   importSpotifyGraphqlAlbum,
 } = require('../import-service');
 const { normalizeSpotifyNoteLinks } = require('../spotify-note-links');
+const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, IMAGES_DIR),
@@ -48,6 +49,11 @@ const upload = multer({
       cb(new Error('Only JPEG, PNG, and WebP images are allowed.'));
     }
   },
+});
+
+router.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  return rejectIfWelcomeTourLocked(req, res, next);
 });
 
 // ---------------------------------------------------------------------------

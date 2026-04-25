@@ -41,6 +41,14 @@ function isCollectionPageActive() {
   return (state.navigation?.page || 'collection') === 'collection';
 }
 
+function applyExternalLinkAttrs(link, href) {
+  if (typeof href === 'string' && href.startsWith('spotify:')) {
+    return;
+  }
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+}
+
 function getListResponsiveMeasurementWidth() {
   if (!el.viewList) return 0;
   return el.viewList.parentElement?.clientWidth || el.viewList.clientWidth || 0;
@@ -908,8 +916,7 @@ function renderList(albums, startIndex = 0, options = {}) {
       const link = document.createElement('a');
       link.textContent = album.album_name;
       link.href = album.album_link;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
+      applyExternalLinkAttrs(link, album.album_link);
       link.title = 'Open album link';
       link.addEventListener('click', e => e.stopPropagation());
       albumNameEl.appendChild(link);
@@ -1030,8 +1037,7 @@ function renderGrid(albums, options = {}) {
       const link = document.createElement('a');
       link.textContent = album.album_name;
       link.href = album.album_link;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
+      applyExternalLinkAttrs(link, album.album_link);
       link.title = 'Open album link';
       link.addEventListener('click', e => e.stopPropagation());
       titleEl.appendChild(link);

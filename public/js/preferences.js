@@ -17,6 +17,9 @@ export function getDefaultPreferences() {
     earlyWrapped: false,
     seasonalThemeHistory: {},
     wrappedName: '',
+    welcomeTourCompletedAt: null,
+    welcomeTourSkippedAt: null,
+    welcomeSamplesAddedAt: null,
   };
 }
 
@@ -48,6 +51,15 @@ export function applyPreferencesToState(preferences = {}) {
   state.wrappedName = typeof preferences.wrappedName === 'string'
     ? preferences.wrappedName
     : defaults.wrappedName;
+  state.welcomeTour.completedAt = typeof preferences.welcomeTourCompletedAt === 'string'
+    ? preferences.welcomeTourCompletedAt
+    : null;
+  state.welcomeTour.skippedAt = typeof preferences.welcomeTourSkippedAt === 'string'
+    ? preferences.welcomeTourSkippedAt
+    : null;
+  state.welcomeTour.samplesAddedAt = typeof preferences.welcomeSamplesAddedAt === 'string'
+    ? preferences.welcomeSamplesAddedAt
+    : null;
 }
 
 export async function fetchPreferences() {

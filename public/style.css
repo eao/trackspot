@@ -139,6 +139,89 @@ a:hover {
   display: none !important;
 }
 
+/* Welcome tour */
+
+.welcome-tour-active {
+  overflow: hidden;
+}
+
+.welcome-tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.welcome-tour-card {
+  position: fixed;
+  top: var(--welcome-tour-top, 112px);
+  left: var(--welcome-tour-left, calc(100vw - min(420px, 92vw) - 28px));
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) var(--welcome-tour-card-bg-opacity, 96%), transparent);
+  color: var(--text);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+}
+
+.welcome-tour-card-centered {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.welcome-tour-card-theme {
+  top: auto;
+  right: 42px;
+  bottom: 56px;
+  left: auto;
+}
+
+.welcome-tour-kicker {
+  margin-bottom: 7px;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.welcome-tour-card h2 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.welcome-tour-card p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.welcome-tour-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.welcome-tour-cta {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.welcome-tour-note {
+  margin-top: 10px !important;
+  font-size: 0.86rem;
+}
+
 body.preopen-album-modal::before {
   content: '';
   position: fixed;
