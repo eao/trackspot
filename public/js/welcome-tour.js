@@ -46,7 +46,7 @@ const DEMO_ALBUMS = [
     is_pre_release: 0,
     image_path: 'assets/welcome/placeholder-spotify-album.jpg',
     status: 'completed',
-    rating: 88,
+    rating: 92,
     notes: 'This sample behaves like a Spotify import: imported metadata is read-only, while your listening details stay editable.',
     planned_at: null,
     listened_at: `${DEMO_YEAR}-01-15`,
@@ -81,11 +81,11 @@ const DEMO_ALBUMS = [
     copyright: [],
     is_pre_release: 0,
     image_path: 'assets/welcome/placeholder-manual-album.jpg',
-    status: 'planned',
+    status: 'dropped',
     rating: null,
     notes: 'Manual logs are for albums you want to enter yourself. You can edit their title, artist, dates, links, and art.',
-    planned_at: `${DEMO_YEAR}-02-01`,
-    listened_at: null,
+    planned_at: null,
+    listened_at: `${DEMO_YEAR}-02-01`,
     repeats: 0,
     priority: 1,
     source: 'manual',
@@ -228,6 +228,7 @@ let snapshot = null;
 let skippedToFinal = false;
 let heartbeatTimer = null;
 let statusCache = null;
+let inertSnapshots = [];
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -396,6 +397,82 @@ function createOverlay() {
   document.body.appendChild(overlay);
 }
 
+function setAppInert(enabled) {
+  if (!enabled) {
+    inertSnapshots.forEach(({ element, inert, ariaHidden }) => {
+      element.inert = inert;
+      if (ariaHidden === null) {
+        element.removeAttribute('aria-hidden');
+      } else {
+        element.setAttribute('aria-hidden', ariaHidden);
+      }
+    });
+    inertSnapshots = [];
+    document.removeEventListener('keydown', handleTourKeydown, true);
+    return;
+  }
+
+  inertSnapshots = Array.from(document.body.children)
+    .filter(element => element !== overlay)
+    .map(element => ({
+      element,
+      inert: !!element.inert,
+      ariaHidden: element.getAttribute('aria-hidden'),
+    }));
+
+  inertSnapshots.forEach(({ element }) => {
+    element.inert = true;
+    element.setAttribute('aria-hidden', 'true');
+  });
+  document.addEventListener('keydown', handleTourKeydown, true);
+}
+
+function getTourFocusableElements() {
+  if (!card) return [];
+  return Array.from(card.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+    .filter(element => !element.disabled && element.offsetParent !== null);
+}
+
+function focusTourControl() {
+  const focusable = getTourFocusableElements();
+  const preferred = card?.querySelector('[data-action="next"], [data-action="continue"], [data-action="samples"], [data-action="empty"]');
+  if (preferred instanceof HTMLElement && !preferred.disabled) {
+    preferred.focus();
+    return;
+  }
+  focusable[0]?.focus();
+}
+
+function trapTourTab(event) {
+  const focusable = getTourFocusableElements();
+  if (!focusable.length) {
+    event.preventDefault();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function handleTourKeydown(event) {
+  if (!state.welcomeTour.active || !card) return;
+  if (card.contains(event.target)) {
+    if (event.key === 'Tab') trapTourTab(event);
+    return;
+  }
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  focusTourControl();
+}
+
 function removeOverlay() {
   overlay?.remove();
   overlay = null;
@@ -447,14 +524,16 @@ function renderWarning() {
   card.querySelector('[data-action="continue"]').addEventListener('click', () => showStep(0));
   card.querySelector('[data-action="skip"]').addEventListener('click', () => skipTour());
   card.querySelector('[data-action="later"]').addEventListener('click', () => finishTour({ restoreOnly: true }));
+  focusTourControl();
 }
 
 function renderStep(step) {
   const progress = `${currentStepIndex + 1} / ${TOUR_STEPS.length}`;
   const alreadyAdded = !!state.welcomeTour.samplesAddedAt || (statusCache?.sampleCount ?? 0) > 0;
-  const finalActions = alreadyAdded
-    ? '<p class="welcome-tour-note">Sample albums have already been added once. You can remove them from Settings.</p><button class="btn btn-primary" data-action="empty">Finish</button>'
-    : '<button class="btn btn-secondary" data-action="empty">Start with empty collection</button><button class="btn btn-primary" data-action="samples">Add sample albums</button>';
+  const sampleWarning = alreadyAdded
+    ? '<p class="welcome-tour-note">Adding sample albums again will delete any existing welcome samples and add fresh copies.</p>'
+    : '';
+  const finalActions = `${sampleWarning}<button class="btn btn-secondary" data-action="empty">Start with empty collection</button><button class="btn btn-primary" data-action="samples">Add sample albums</button>`;
 
   card.className = 'welcome-tour-card';
   card.innerHTML = `
@@ -477,6 +556,7 @@ function renderStep(step) {
   card.querySelector('[data-action="empty"]')?.addEventListener('click', () => finishTour({ markComplete: true }));
   card.querySelector('[data-action="samples"]')?.addEventListener('click', () => finishTour({ markComplete: true, addSamples: true }));
   requestAnimationFrame(() => positionCard(step));
+  focusTourControl();
 }
 
 async function showStep(index) {
@@ -612,6 +692,7 @@ async function finishTour(options = {}) {
   if (!state.welcomeTour.active) return;
   state.welcomeTour.active = false;
   document.body.classList.remove('welcome-tour-active');
+  setAppInert(false);
   removeOverlay();
   await releaseLock();
 
@@ -654,6 +735,7 @@ export async function startWelcomeTour(options = {}) {
   skippedToFinal = false;
   neutralizeFilters();
   createOverlay();
+  setAppInert(true);
   document.body.classList.add('welcome-tour-active');
   startHeartbeat();
 

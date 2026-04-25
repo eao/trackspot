@@ -1591,6 +1591,10 @@ function buildThemeFormData(options = {}) {
 export async function applyTheme(theme) {
   if (!theme) return;
 
+  if (!state.personalization.opacityPresetsLoaded) {
+    await loadOpacityPresets();
+  }
+
   state.personalization.selectedThemeId = theme.id;
   populateThemeDraftFromTheme(theme);
   syncThemeUi();

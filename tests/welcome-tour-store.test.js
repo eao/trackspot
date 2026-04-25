@@ -99,19 +99,20 @@ describe('welcome tour store', () => {
     });
   });
 
-  it('inserts sample albums idempotently without storing the real Spotify album id', () => {
+  it('replaces sample albums without storing the real Spotify album id', () => {
     const { dbModule, welcomeStore } = loadContext();
 
     const first = welcomeStore.insertWelcomeSamples();
     const second = welcomeStore.insertWelcomeSamples();
     const rows = dbModule.db.prepare(`
-      SELECT album_name, spotify_album_id, album_link, source, welcome_sample_key, image_path
+      SELECT album_name, spotify_album_id, album_link, source, welcome_sample_key, image_path, status, rating
       FROM albums
       ORDER BY id ASC
     `).all();
 
     expect(first.insertedCount).toBe(2);
-    expect(second.insertedCount).toBe(0);
+    expect(second.insertedCount).toBe(2);
+    expect(second.replacedCount).toBe(2);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       album_name: 'Placeholder Spotify Import',
@@ -119,6 +120,13 @@ describe('welcome tour store', () => {
       album_link: 'spotify:album:4pj54JwPaS9XsSRTTgAWZg',
       source: 'spotify',
       welcome_sample_key: 'spotify-placeholder',
+      status: 'completed',
+      rating: 92,
+    });
+    expect(rows[1]).toMatchObject({
+      album_name: 'Placeholder Manual Log',
+      status: 'dropped',
+      rating: null,
     });
     expect(rows[0].image_path).toBe('images/welcome-placeholder-spotify-album.jpg');
   });

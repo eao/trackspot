@@ -139,7 +139,7 @@ function buildWelcomeSamples() {
       is_pre_release: 0,
       image_path: copySampleArt('placeholder-spotify-album.jpg', 'welcome-placeholder-spotify-album.jpg'),
       status: 'completed',
-      rating: 88,
+      rating: 92,
       notes: 'This sample behaves like a Spotify import: imported metadata is read-only, while your listening details stay editable.',
       planned_at: null,
       listened_at: `${new Date().getFullYear()}-01-15`,
@@ -172,11 +172,11 @@ function buildWelcomeSamples() {
       copyright: JSON.stringify([]),
       is_pre_release: 0,
       image_path: copySampleArt('placeholder-manual-album.jpg', 'welcome-placeholder-manual-album.jpg'),
-      status: 'planned',
+      status: 'dropped',
       rating: null,
       notes: 'Manual logs are for albums you want to enter yourself. You can edit their title, artist, dates, links, and art.',
-      planned_at: `${new Date().getFullYear()}-02-01`,
-      listened_at: null,
+      planned_at: null,
+      listened_at: `${new Date().getFullYear()}-02-01`,
       repeats: 0,
       priority: 1,
       source: 'manual',
@@ -187,8 +187,8 @@ function buildWelcomeSamples() {
 }
 
 function insertWelcomeSamples() {
-  const existing = new Set(getWelcomeSampleRows().map(row => row.welcome_sample_key));
-  const samples = buildWelcomeSamples().filter(sample => !existing.has(sample.welcome_sample_key));
+  const removed = removeWelcomeSamples();
+  const samples = buildWelcomeSamples();
 
   const insert = db.prepare(`
     INSERT INTO albums (
@@ -214,6 +214,7 @@ function insertWelcomeSamples() {
     preferences,
     samples: getWelcomeSampleRows().map(row => parseAlbum(row, { includeSpotifyGraphqlJson: false })),
     insertedCount: samples.length,
+    replacedCount: removed.removedCount,
   };
 }
 
