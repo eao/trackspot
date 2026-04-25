@@ -4939,7 +4939,7 @@ function openStyleModal() {
   `;
 
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:flex-start;justify-content:space-between;gap:16px;';
+  header.style.cssText = 'position:relative;z-index:1;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;';
 
   const title = document.createElement('div');
   title.style.cssText = 'font-size:22px;font-weight:700;line-height:1.2;';
@@ -4959,6 +4959,13 @@ function openStyleModal() {
     height: 36px;
     margin-top: -6px;
     margin-right: -6px;
+    padding: 0;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 2;
     border: none;
     border-radius: 999px;
     background: rgba(255,255,255,0.08);
