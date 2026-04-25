@@ -4952,27 +4952,43 @@ function openStyleModal() {
   const closeButton = document.createElement('button');
   closeButton.type = 'button';
   closeButton.setAttribute('aria-label', 'Close settings');
-  closeButton.textContent = '×';
   closeButton.style.cssText = `
+    all: unset;
     flex-shrink: 0;
-    width: 36px;
-    height: 36px;
-    margin-top: -6px;
-    margin-right: -6px;
+    width: 44px;
+    height: 44px;
+    margin-top: -10px;
+    margin-right: -10px;
     padding: 0;
     box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     position: relative;
-    z-index: 2;
+    z-index: 10;
     border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.82);
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+  `;
+
+  const closeButtonIcon = document.createElement('span');
+  closeButtonIcon.textContent = '×';
+  closeButtonIcon.style.cssText = `
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
     border-radius: 999px;
     background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.82);
+    color: currentColor;
     font-size: 24px;
     line-height: 1;
-    cursor: pointer;
+    pointer-events: none;
+    user-select: none;
   `;
 
   const optionList = document.createElement('div');
@@ -5533,11 +5549,11 @@ function openStyleModal() {
 
   closeButton.addEventListener('click', removeStyleModal);
   closeButton.addEventListener('mouseenter', () => {
-    closeButton.style.background = 'rgba(255,255,255,0.14)';
+    closeButtonIcon.style.background = 'rgba(255,255,255,0.14)';
     closeButton.style.color = '#ffffff';
   });
   closeButton.addEventListener('mouseleave', () => {
-    closeButton.style.background = 'rgba(255,255,255,0.08)';
+    closeButtonIcon.style.background = 'rgba(255,255,255,0.08)';
     closeButton.style.color = 'rgba(255,255,255,0.82)';
   });
   overlay.addEventListener('click', (event) => {
@@ -5699,6 +5715,7 @@ function openStyleModal() {
   });
 
   header.appendChild(title);
+  closeButton.appendChild(closeButtonIcon);
   header.appendChild(closeButton);
   renderOptions();
   syncServerInputs();
