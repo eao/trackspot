@@ -56,12 +56,13 @@ describe('CSV import jobs', () => {
       'https://open.spotify.com/album/1234567890ABCDEFGHIJ,101,"notes",2024/99/40,Unknown',
       'not-a-spotify-link,50,,,Completed',
       'https://open.spotify.com/album/AAAAAAAAAAAAAAAAAAAA,,,2024/09/25,Planned',
+      'https://open.spotify.com/album/BBBBBBBBBBBBBBBBBBBB,,,2024-09-26,Planned',
       'https://open.spotify.com/album/AAAAAAAAAAAAAAAAAAAA,,,,',
     ].join('\n');
 
     const rows = importJobs.parseCsvImportRows(csv, 'completed', new Set(['1234567890ABCDEFGHIJ']));
 
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(6);
 
     expect(rows[0]).toMatchObject({
       spotify_url: 'https://open.spotify.com/album/7MgKUMFAF55BX7vvfPeyFn',
@@ -82,7 +83,7 @@ describe('CSV import jobs', () => {
 
     expect(rows[2]).toMatchObject({
       status: 'skipped',
-      error: 'Row skipped because the Spotify link field did not contain a valid Spotify album link.',
+      error: 'Row skipped because the Spotify URL field did not contain a valid Spotify album link.',
     });
 
     expect(rows[3]).toMatchObject({
@@ -91,6 +92,13 @@ describe('CSV import jobs', () => {
     });
 
     expect(rows[4]).toMatchObject({
+      spotify_url: 'https://open.spotify.com/album/BBBBBBBBBBBBBBBBBBBB',
+      listened_at: '2024-09-26',
+      desired_status: 'planned',
+      status: 'queued',
+    });
+
+    expect(rows[5]).toMatchObject({
       status: 'skipped',
       error: 'Duplicate album later in this CSV was skipped.',
       desired_status: 'completed',
@@ -101,9 +109,9 @@ describe('CSV import jobs', () => {
     const { importJobs, dbModule } = loadServerModules();
     openDbs.push(dbModule.db);
     const csv = [
-      'Notes,Spotify Link,Status',
-      '"first note",https://open.spotify.com/album/ABCDEFGHIJKLMNOPQRST,Dropped',
-      '"second note",https://open.spotify.com/album/QRSTUVWXYZABCDEFGHI,',
+      'Notes,Spotify URL,Status,Listen date',
+      '"first note",https://open.spotify.com/album/ABCDEFGHIJKLMNOPQRST,Dropped,2024-01-20',
+      '"second note",https://open.spotify.com/album/QRSTUVWXYZABCDEFGHI,,',
     ].join('\n');
 
     const rows = importJobs.parseCsvImportRows(csv, 'planned');
@@ -115,7 +123,7 @@ describe('CSV import jobs', () => {
       spotify_url: 'https://open.spotify.com/album/ABCDEFGHIJKLMNOPQRST',
       rating: null,
       notes: 'first note',
-      listened_at: null,
+      listened_at: '2024-01-20',
       desired_status: 'dropped',
       default_status_applied: 0,
       status: 'queued',

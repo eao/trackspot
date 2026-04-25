@@ -2790,7 +2790,7 @@ async function openCsvImportReport() {
           <th>Album ID</th>
           <th>Final status</th>
           <th>Rating</th>
-          <th>Date listened</th>
+          <th>Listen date</th>
           <th>Report</th>
           <th>Raw row</th>
         </tr>

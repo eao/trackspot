@@ -889,8 +889,8 @@
           <div class="settings-section-body">
             <div class="settings-row">
               <div class="settings-row-info">
-                <span class="settings-row-label">Download CSV</span>
-                <span class="settings-row-desc">All albums and metadata as a spreadsheet-compatible CSV file.</span>
+                <span class="settings-row-label">Export Trackspot CSV</span>
+                <span class="settings-row-desc">Download your current Trackspot album data as a spreadsheet-compatible CSV. For moving or restoring full Trackspot data, use backup merge/restore.</span>
               </div>
               <button id="btn-download-csv" class="btn btn-ghost">Download</button>
             </div>
@@ -923,11 +923,11 @@
           <div class="settings-section-body">
             <div class="settings-row settings-row-import-csv">
               <div class="settings-row-info">
-                <span class="settings-row-label">Import from CSV</span>
-                <span class="settings-row-desc">Uploads a CSV, queues album rows in Trackspot, and lets the Spicetify extension import them in the background.<br /><br />Note that you must first go to the Spicetify extension settings and enable the background CSV worker.<br /><br />Please click the "CSV formatting instructions" button to see Trackspot's required formatting.</span>
+                <span class="settings-row-label">Import Spotify album list</span>
+                <span class="settings-row-desc">Upload a CSV of Spotify album URLs plus optional Trackspot fields. Trackspot queues the rows, then the Spicetify extension fetches album data in the background.<br /><br />First open the Spicetify extension settings and enable the background CSV worker.<br /><br />To move or restore Trackspot data, use backup merge/restore.</span>
               </div>
               <div class="csv-import-controls">
-                <button id="btn-csv-format-help" class="btn btn-ghost csv-import-help-btn" type="button">CSV formatting instructions</button>
+                <button id="btn-csv-format-help" class="btn btn-ghost csv-import-help-btn" type="button">Spotify CSV import format</button>
                 <div class="csv-import-file-row">
                   <label for="input-import-csv" class="btn btn-ghost csv-import-browse-btn">Browse CSV</label>
                   <span id="csv-import-file-name" class="csv-import-file-name">No file selected</span>
@@ -1661,17 +1661,18 @@
   <div id="csv-format-overlay" class="modal-overlay hidden">
     <div class="modal modal-small modal-csv-help">
       <div class="modal-header">
-        <h2>CSV formatting instructions</h2>
+        <h2>Spotify CSV import format</h2>
         <button id="csv-format-close" class="btn btn-icon" title="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="modal-body csv-help-body">
         <div class="csv-help-section">
+          <p>Use this for spreadsheet lists that contain Spotify album URLs. Trackspot gets album details from Spotify and applies any optional Rating, Notes, Listen date, and Status values from the CSV.</p>
           <p>The CSV import supports two import modes: <strong>header-based</strong> and <strong>positional</strong>.</p>
         </div>
 
         <div class="csv-help-section">
           <strong>Header-based mode</strong>
-          <p>If the first non-blank row contains the header <code>Spotify Link</code>, Trackspot uses header-based mode. Column order doesn't matter, and any optional headers can be omitted entirely.</p>
+          <p>If the first non-blank row contains the header <code>Spotify URL</code>, Trackspot uses header-based mode. Column order doesn't matter, optional headers can be omitted, and extra columns are ignored.</p>
           <div class="csv-help-table-wrap">
             <table class="csv-help-table">
               <thead>
@@ -1683,7 +1684,7 @@
               </thead>
               <tbody>
                 <tr>
-                  <td><code>Spotify Link</code></td>
+                  <td><code>Spotify URL</code></td>
                   <td>Yes</td>
                   <td>A valid Spotify album URL or URI</td>
                 </tr>
@@ -1698,9 +1699,9 @@
                   <td>Free text; may contain commas, quotes, CJK characters, and newlines if quoted</td>
                 </tr>
                 <tr>
-                  <td><code>Date Listened</code></td>
+                  <td><code>Listen date</code></td>
                   <td>No</td>
-                  <td>Format: <code>YYYY/MM/DD</code></td>
+                  <td>Format: <code>YYYY-MM-DD</code> or <code>YYYY/MM/DD</code></td>
                 </tr>
                 <tr>
                   <td><code>Status</code></td>
@@ -1715,7 +1716,7 @@
 
         <div class="csv-help-section">
           <strong>Positional mode</strong>
-          <p>If no <code>Spotify Link</code> header is found, Trackspot reads columns by position. Include as many columns as you need; any trailing columns can be omitted.</p>
+          <p>If no <code>Spotify URL</code> header is found, Trackspot reads columns by position. Include as many columns as you need; any trailing columns can be omitted.</p>
           <div class="csv-help-table-wrap">
             <table class="csv-help-table">
               <thead>
@@ -1728,7 +1729,7 @@
               <tbody>
                 <tr>
                   <td>A</td>
-                  <td>Spotify Link</td>
+                  <td>Spotify URL</td>
                   <td>Yes</td>
                 </tr>
                 <tr>
@@ -1743,7 +1744,7 @@
                 </tr>
                 <tr>
                   <td>D</td>
-                  <td>Date Listened</td>
+                  <td>Listen date</td>
                   <td>No</td>
                 </tr>
                 <tr>
@@ -1758,8 +1759,8 @@
 
         <div class="csv-help-section">
           <strong>Example</strong>
-          <pre class="csv-help-pre">Spotify Link,Rating,Notes,Date Listened,Status
-https://open.spotify.com/album/3jJ8chfB4MIsp9Z2ys43VS,97,"Notes can include commas, quotes, and Unicode like 日本語",2024/10/28,Completed</pre>
+          <pre class="csv-help-pre">Spotify URL,Rating,Notes,Listen date,Status
+https://open.spotify.com/album/3jJ8chfB4MIsp9Z2ys43VS,97,"Notes can include commas, quotes, and Unicode like 日本語",2024-10-28,Completed</pre>
         </div>
 
         <div class="csv-help-section">
@@ -1769,6 +1770,7 @@ https://open.spotify.com/album/3jJ8chfB4MIsp9Z2ys43VS,97,"Notes can include comm
             <li>Rows without a valid Spotify album link are skipped.</li>
             <li>Invalid rating, date, or status values don't block a row from importing; Trackspot imports what it can and logs a warning.</li>
             <li>Missing optional fields default to blank, except Status, which falls back to the default you choose in the import UI.</li>
+            <li>Album names, artist names, art, and release details come from Spotify, so they are not required in the import CSV.</li>
             <li>If the same album appears more than once, only the first row is imported.</li>
           </ul>
         </div>

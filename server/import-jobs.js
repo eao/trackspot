@@ -10,10 +10,10 @@ const {
 
 const ROW_LEASE_MS = 2 * 60 * 1000;
 const CSV_HEADER_NAMES = Object.freeze({
-  spotifyLink: 'Spotify Link',
+  spotifyUrl: 'Spotify URL',
   rating: 'Rating',
   notes: 'Notes',
-  dateListened: 'Date Listened',
+  listenDate: 'Listen date',
   status: 'Status',
 });
 
@@ -35,20 +35,20 @@ function getCsvHeaderMap(record) {
   if (!Array.isArray(record)) return null;
 
   const headerMap = new Map();
-  let hasSpotifyLinkHeader = false;
+  let hasSpotifyUrlHeader = false;
 
   record.forEach((value, index) => {
     const trimmed = String(value ?? '').trim();
     if (!trimmed) return;
     if (Object.values(CSV_HEADER_NAMES).includes(trimmed)) {
       headerMap.set(trimmed, index);
-      if (trimmed === CSV_HEADER_NAMES.spotifyLink) {
-        hasSpotifyLinkHeader = true;
+      if (trimmed === CSV_HEADER_NAMES.spotifyUrl) {
+        hasSpotifyUrlHeader = true;
       }
     }
   });
 
-  return hasSpotifyLinkHeader ? headerMap : null;
+  return hasSpotifyUrlHeader ? headerMap : null;
 }
 
 function getCsvFieldValue(record, headerMap, headerName, fallbackIndex) {
@@ -80,15 +80,15 @@ function normalizeCsvDate(value, warnings) {
   const trimmed = String(value ?? '').trim();
   if (!trimmed) return null;
 
-  const match = trimmed.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+  const match = trimmed.match(/^(\d{4})([-/])(\d{2})\2(\d{2})$/);
   if (!match) {
     warnings.push(`Date "${trimmed}" was invalid and was left blank.`);
     return null;
   }
 
   const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
+  const month = Number(match[3]);
+  const day = Number(match[4]);
   const date = new Date(Date.UTC(year, month - 1, day));
   const isValid = date.getUTCFullYear() === year &&
     date.getUTCMonth() === month - 1 &&
@@ -99,7 +99,7 @@ function normalizeCsvDate(value, warnings) {
     return null;
   }
 
-  return `${match[1]}-${match[2]}-${match[3]}`;
+  return `${match[1]}-${match[3]}-${match[4]}`;
 }
 
 function normalizeCsvRating(value, warnings) {
@@ -153,7 +153,7 @@ function parseCsvImportRows(csvContent, defaultStatus, existingAlbumIds = new Se
     const rowIndex = index + 1;
     const warnings = [];
     const { spotifyUrl, spotifyAlbumId } = normalizeCsvLink(
-      getCsvFieldValue(record, headerMap, CSV_HEADER_NAMES.spotifyLink, 0),
+      getCsvFieldValue(record, headerMap, CSV_HEADER_NAMES.spotifyUrl, 0),
     );
 
     if (!spotifyAlbumId) {
@@ -168,7 +168,7 @@ function parseCsvImportRows(csvContent, defaultStatus, existingAlbumIds = new Se
         default_status_applied: 1,
         warnings,
         status: 'skipped',
-        error: 'Row skipped because the Spotify link field did not contain a valid Spotify album link.',
+        error: 'Row skipped because the Spotify URL field did not contain a valid Spotify album link.',
         raw_row: record.slice(),
       });
       return;
@@ -181,7 +181,7 @@ function parseCsvImportRows(csvContent, defaultStatus, existingAlbumIds = new Se
     const notesRaw = getCsvFieldValue(record, headerMap, CSV_HEADER_NAMES.notes, 2);
     const notes = notesRaw === undefined || notesRaw === null || notesRaw === '' ? null : String(notesRaw);
     const listenedAt = normalizeCsvDate(
-      getCsvFieldValue(record, headerMap, CSV_HEADER_NAMES.dateListened, 3),
+      getCsvFieldValue(record, headerMap, CSV_HEADER_NAMES.listenDate, 3),
       warnings,
     );
     const { status: desiredStatus, defaulted } = normalizeCsvStatus(
