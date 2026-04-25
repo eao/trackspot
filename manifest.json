@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Trackspot",
+    "description": "Track your albums AniList-style with Trackspot.",
+    "preview": "spicetify-extension-files/images/marketplace-preview.jpg",
+    "main": "trackspot-spicetify.js",
+    "readme": "spicetify-extension-files/README.md",
+    "authors": [
+      {
+        "name": "eao",
+        "url": "https://github.com/eao"
+      }
+    ],
+    "tags": ["ratings", "statistics", "stats", "scores", "albums", "library", "export"]
+  }
+]
