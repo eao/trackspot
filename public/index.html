@@ -119,12 +119,13 @@
         _ci=_cc<=_sr?_cc:Math.max(0,_tg-_pl);
       }
     }
-    var _qs=new URLSearchParams(window.location.search);
-    var _pg=_qs.get('page');
-    if(_pg!=='stats'&&_pg!=='wrapped'&&_pg!=='collection') _pg='collection';
+    var _path=(window.location.pathname||'/').split('/').filter(Boolean);
+    var _pg='collection';
+    if(_path[0]==='stats'&&_path.length===1) _pg='stats';
+    else if(_path[0]==='wrapped'&&_path.length<=2) _pg='wrapped';
     document.body.classList.remove('page-collection','page-stats','page-wrapped');
     document.body.classList.add('page-'+_pg);
-    var _cv=_qs.get('view')==='grid'?'grid':'list';
+    var _cv=_path[0]==='collection'&&_path[1]==='grid'?'grid':'list';
     if(_pg==='collection'&&_cv==='grid') document.body.classList.add('collection-view-grid');
     var _cm=_pg==='collection'?(_cw===0?'none':_cw+'px'):'none';
     var _initialInset=_pg==='collection'?_ci:0;

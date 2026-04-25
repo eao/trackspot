@@ -1,5 +1,5 @@
 // =============================================================================
-// Client-side page navigation and query-string routing.
+// Client-side page navigation and path routing.
 // =============================================================================
 
 import { state, el } from './state.js';
@@ -119,46 +119,63 @@ function syncNavigationChrome() {
   syncAppShellLayout();
 }
 
-export function parseNavigationFromSearch(search = window.location.search) {
-  const params = new URLSearchParams(search);
-  const hasNavigationParams = params.has('page') || params.has('view') || params.has('year');
-  const page = getNormalizedPage(params.get('page') || 'collection');
-  const collectionView = getNormalizedCollectionView(params.get('view') || 'list');
-  const rawYear = params.get('year');
-  const parsedYear = Number.parseInt(String(rawYear ?? ''), 10);
-  const wrappedYear = page === 'wrapped' && Number.isFinite(parsedYear) ? parsedYear : null;
-  const normalized = getNormalizedNavigation({ page, collectionView, wrappedYear });
-  const normalizedSearch = buildNavigationSearch(normalized, search);
+function getNormalizedPathname(pathname) {
+  const rawPathname = String(pathname || '/');
+  return rawPathname.startsWith('/') ? rawPathname : `/${rawPathname}`;
+}
 
+export function buildNavigationPath(navigation = state.navigation) {
+  const normalized = getNormalizedNavigation(navigation);
+  if (normalized.page === 'collection') {
+    return `/collection/${normalized.collectionView}`;
+  }
+  if (normalized.page === 'wrapped') {
+    if (normalized.wrappedYear !== null) {
+      return `/wrapped/${normalized.wrappedYear}`;
+    }
+    return '/wrapped';
+  }
+  return '/stats';
+}
+
+export function parseNavigationFromPath(pathname = window.location.pathname) {
+  const currentPath = getNormalizedPathname(pathname);
+  const segments = currentPath.split('/').filter(Boolean);
+  let navigation;
+
+  if (!segments.length) {
+    navigation = { page: 'collection', collectionView: 'list', wrappedYear: null };
+  } else if (segments[0] === 'collection') {
+    navigation = {
+      page: 'collection',
+      collectionView: getNormalizedCollectionView(segments[1] || 'list'),
+      wrappedYear: null,
+    };
+  } else if (segments[0] === 'stats' && segments.length === 1) {
+    navigation = { page: 'stats', collectionView: 'list', wrappedYear: null };
+  } else if (segments[0] === 'wrapped' && segments.length <= 2) {
+    const rawYear = String(segments[1] ?? '');
+    const parsedYear = /^\d+$/.test(rawYear) ? Number.parseInt(rawYear, 10) : null;
+    navigation = {
+      page: 'wrapped',
+      collectionView: 'list',
+      wrappedYear: Number.isFinite(parsedYear) ? parsedYear : null,
+    };
+  } else {
+    navigation = { page: 'collection', collectionView: 'list', wrappedYear: null };
+  }
+
+  const normalized = getNormalizedNavigation(navigation);
   return {
     navigation: normalized,
-    isBareEntry: !hasNavigationParams,
-    needsNormalization: normalizedSearch !== ((search && search.startsWith('?')) ? search : (search ? `?${search}` : '')),
+    isBareEntry: segments.length === 0,
+    needsNormalization: buildNavigationPath(normalized) !== currentPath,
   };
 }
 
-export function buildNavigationSearch(navigation = state.navigation, search = window.location.search) {
-  const normalized = getNormalizedNavigation(navigation);
-  const params = new URLSearchParams(search);
-  params.set('page', normalized.page);
-
-  if (normalized.page === 'collection') {
-    params.set('view', normalized.collectionView);
-    params.delete('year');
-  } else if (normalized.page === 'wrapped') {
-    params.delete('view');
-    if (normalized.wrappedYear !== null) {
-      params.set('year', String(normalized.wrappedYear));
-    } else {
-      params.delete('year');
-    }
-  } else {
-    params.delete('view');
-    params.delete('year');
-  }
-
-  const next = params.toString();
-  return next ? `?${next}` : '';
+function buildLaunchAlbumSearch(search = window.location.search) {
+  const albumId = new URLSearchParams(search).get('album');
+  return albumId && /^\d+$/.test(albumId) ? `?album=${encodeURIComponent(albumId)}` : '';
 }
 
 export function writeNavigationToLocation(mode = 'push', navigation = state.navigation, options = {}) {
@@ -166,11 +183,12 @@ export function writeNavigationToLocation(mode = 'push', navigation = state.navi
     historyObj = window.history,
     locationObj = window.location,
   } = options;
-  const nextSearch = buildNavigationSearch(navigation, locationObj.search);
-  const nextUrl = `${locationObj.pathname}${nextSearch}${locationObj.hash || ''}`;
+  const nextPath = buildNavigationPath(navigation);
+  const nextSearch = buildLaunchAlbumSearch(locationObj.search);
+  const nextUrl = `${nextPath}${nextSearch}${locationObj.hash || ''}`;
   const method = mode === 'replace' ? 'replaceState' : 'pushState';
   historyObj[method]({}, '', nextUrl);
-  return nextSearch;
+  return `${nextPath}${nextSearch}`;
 }
 
 function suppressShellTransitionsForNavigation(enabled) {
@@ -292,7 +310,7 @@ export function syncNavigationFromLocation(options = {}) {
     activate = false,
     initial = false,
   } = options;
-  const parsed = parseNavigationFromSearch(window.location.search);
+  const parsed = parseNavigationFromPath(window.location.pathname);
 
   if (parsed.needsNormalization && historyMode) {
     writeNavigationToLocation(historyMode, parsed.navigation);

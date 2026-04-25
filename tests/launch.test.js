@@ -56,6 +56,15 @@ describe('launch album startup helpers', () => {
     expect(getLaunchAlbumId('?foo=1')).toBeNull();
   });
 
+  it('clears a launch album query param back to the clean collection route', async () => {
+    const { maybeClearLaunchAlbumParam } = await import('../public/js/launch.js');
+    const history = { replaceState: vi.fn() };
+
+    maybeClearLaunchAlbumParam('?album=42', '/collection/list', history);
+
+    expect(history.replaceState).toHaveBeenCalledWith({}, '', '/collection/list');
+  });
+
   it('removes the pre-dim class after a successful launch modal open', async () => {
     global.document.body.classList.add('preopen-album-modal');
     const { openLaunchAlbumModal } = await import('../public/js/launch.js');

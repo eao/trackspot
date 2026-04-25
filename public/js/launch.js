@@ -53,9 +53,7 @@ function applyLaunchModalFade(overlay = el.modalOverlay, durationMs = LAUNCH_MOD
 export function maybeClearLaunchAlbumParam(search = window.location.search, pathname = window.location.pathname, history = window.history) {
   const params = new URLSearchParams(search);
   if (!params.has('album')) return;
-  params.delete('album');
-  const nextSearch = params.toString();
-  history.replaceState({}, '', nextSearch ? `${pathname}?${nextSearch}` : pathname);
+  history.replaceState({}, '', pathname);
 }
 
 export async function preloadLaunchModalArt(launchAlbumId, options = {}) {

@@ -2394,7 +2394,7 @@ function getAlbumSummaryFromGraphql(graphqlData) {
 }
 
 function openTrackspotAlbum(serverUrl, id) {
-  window.open(`${serverUrl}/?album=${id}`, '_blank');
+  window.open(`${serverUrl}/collection/list?album=${id}`, '_blank');
 }
 
 function openTrackspotApp(serverUrl) {

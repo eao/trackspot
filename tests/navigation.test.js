@@ -107,10 +107,10 @@ describe('navigation routing', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('parses a bare URL as collection/list and flags it for normalization', async () => {
-    const { parseNavigationFromSearch } = await import('../public/js/navigation.js');
+  it('parses a bare path as collection/list and flags it for normalization', async () => {
+    const { parseNavigationFromPath } = await import('../public/js/navigation.js');
 
-    const parsed = parseNavigationFromSearch('');
+    const parsed = parseNavigationFromPath('/');
 
     expect(parsed.navigation).toEqual({
       page: 'collection',
@@ -121,20 +121,76 @@ describe('navigation routing', () => {
     expect(parsed.needsNormalization).toBe(true);
   });
 
-  it('builds wrapped URLs without leaking collection view params', async () => {
-    const { buildNavigationSearch } = await import('../public/js/navigation.js');
+  it('parses clean collection, stats, and wrapped paths', async () => {
+    const { parseNavigationFromPath } = await import('../public/js/navigation.js');
 
-    const search = buildNavigationSearch({
+    expect(parseNavigationFromPath('/collection/grid').navigation).toEqual({
+      page: 'collection',
+      collectionView: 'grid',
+      wrappedYear: null,
+    });
+    expect(parseNavigationFromPath('/stats').navigation).toEqual({
+      page: 'stats',
+      collectionView: 'list',
+      wrappedYear: null,
+    });
+    expect(parseNavigationFromPath('/wrapped/2025').navigation).toEqual({
+      page: 'wrapped',
+      collectionView: 'list',
+      wrappedYear: 2025,
+    });
+  });
+
+  it('normalizes partial and invalid paths to canonical paths', async () => {
+    const { parseNavigationFromPath } = await import('../public/js/navigation.js');
+
+    expect(parseNavigationFromPath('/collection').needsNormalization).toBe(true);
+    expect(parseNavigationFromPath('/collection/nope').navigation).toEqual({
+      page: 'collection',
+      collectionView: 'list',
+      wrappedYear: null,
+    });
+    expect(parseNavigationFromPath('/wrapped/not-a-year').navigation).toEqual({
+      page: 'wrapped',
+      collectionView: 'list',
+      wrappedYear: null,
+    });
+    expect(parseNavigationFromPath('/nope').navigation).toEqual({
+      page: 'collection',
+      collectionView: 'list',
+      wrappedYear: null,
+    });
+  });
+
+  it('builds wrapped paths without leaking collection view state', async () => {
+    const { buildNavigationPath } = await import('../public/js/navigation.js');
+
+    const path = buildNavigationPath({
       page: 'wrapped',
       collectionView: 'grid',
       wrappedYear: 2025,
-    }, '?album=42');
+    });
 
-    expect(search).toBe('?album=42&page=wrapped&year=2025');
+    expect(path).toBe('/wrapped/2025');
+  });
+
+  it('writes clean paths while preserving only a numeric launch album param', async () => {
+    window.history.replaceState({}, '', '/collection/list?album=42&foo=bar');
+    const { writeNavigationToLocation } = await import('../public/js/navigation.js');
+
+    const url = writeNavigationToLocation('replace', {
+      page: 'wrapped',
+      collectionView: 'grid',
+      wrappedYear: 2025,
+    });
+
+    expect(url).toBe('/wrapped/2025?album=42');
+    expect(window.location.pathname).toBe('/wrapped/2025');
+    expect(window.location.search).toBe('?album=42');
   });
 
   it('syncs top-bar state and disabled collection controls for stats pages', async () => {
-    window.history.replaceState({}, '', '/?page=stats');
+    window.history.replaceState({}, '', '/stats');
     const { syncNavigationFromLocation } = await import('../public/js/navigation.js');
 
     const parsed = syncNavigationFromLocation({ activate: false, historyMode: 'replace' });
@@ -153,7 +209,7 @@ describe('navigation routing', () => {
 
   it('preserves the current collection page when returning from stats', async () => {
     stateMock.navigation.page = 'stats';
-    window.history.replaceState({}, '', '/?page=collection&view=list');
+    window.history.replaceState({}, '', '/collection/list');
     const { syncNavigationFromLocation } = await import('../public/js/navigation.js');
 
     syncNavigationFromLocation({ activate: true, historyMode: null });
@@ -194,7 +250,7 @@ describe('navigation routing', () => {
   it('saves the scroll position of the page being left during popstate navigation', async () => {
     stateMock.navigation.page = 'wrapped';
     window.scrollY = 420;
-    window.history.replaceState({}, '', '/?page=collection&view=list');
+    window.history.replaceState({}, '', '/collection/list');
     const { syncNavigationFromLocation } = await import('../public/js/navigation.js');
 
     syncNavigationFromLocation({ activate: true, historyMode: null });

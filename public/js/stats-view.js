@@ -86,7 +86,7 @@ function quietLinkHtml(text, href) {
 
 function topArtistSearchLinkHtml(name) {
   const label = escHtml(name);
-  return `<a class="stats-quiet-link stats-top-artist-link" href="?page=collection" data-artist-name="${label}">${label}</a>`;
+  return `<a class="stats-quiet-link stats-top-artist-link" href="/collection/list" data-artist-name="${label}">${label}</a>`;
 }
 
 function albumSpotifyHref(album) {

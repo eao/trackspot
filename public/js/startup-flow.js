@@ -22,7 +22,7 @@ export async function runStartupFlow(options = {}) {
 
   await loadPage();
 
-  // If the page was opened with ?album=<id> (e.g. from the Spicetify extension),
+  // If the page was opened with /collection/list?album=<id> (e.g. from the Spicetify extension),
   // automatically open the edit modal for that album.
   maybeClearLaunchAlbumParam();
   await Promise.all([

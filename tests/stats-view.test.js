@@ -161,7 +161,7 @@ describe('stats view spotify links', () => {
 
     const link = container.querySelector('.topart-name .stats-top-artist-link');
     expect(link?.textContent).toBe('Artist One');
-    expect(link?.getAttribute('href')).toBe('?page=collection');
+    expect(link?.getAttribute('href')).toBe('/collection/list');
 
     link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
