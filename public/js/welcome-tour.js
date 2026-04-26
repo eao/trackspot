@@ -1,7 +1,7 @@
 import { apiFetch, state, DEFAULT_COMPLEX_STATUSES } from './state.js';
 import { render, loadAlbums } from './render.js';
 import { setPage } from './navigation.js';
-import { applyCollectionViewState, syncFilterControlsFromState, updateImportTypeFilterBtn, updateRatedFilterBtn, updateRestoreBtn, updateSortFieldBtn, updateSortOrderBtn, updateStatusFilterBtn, updateTypeFilterBtn } from './sidebar.js';
+import { animateGridSidebarToggle, applyCollectionViewState, syncFilterControlsFromState, updateImportTypeFilterBtn, updateRatedFilterBtn, updateRestoreBtn, updateSortFieldBtn, updateSortOrderBtn, updateStatusFilterBtn, updateTypeFilterBtn } from './sidebar.js';
 import { openLogModal, closeModal } from './modal.js';
 import {
   applyThemeByName,
@@ -420,78 +420,19 @@ function setTourReserveSidebarSpace(enabled) {
   syncAppShellLayout();
 }
 
-async function flushTourSidebarTransitionReset() {
+function setTourSidebarTransition(enabled) {
   const sidebar = document.querySelector('.sidebar');
-  await nextAnimationFrame();
-  if (sidebar instanceof Element) {
-    void sidebar.getBoundingClientRect();
+  if (sidebar instanceof HTMLElement) {
+    sidebar.style.transition = enabled
+      ? 'transform 0.25s ease, padding-top 0.25s ease, top 0.25s ease, opacity 0.15s ease'
+      : 'none';
   }
 }
 
-function getTourSidebarTransition(targetCollapsed) {
-  const isGrid = document.body.classList.contains('collection-view-grid');
-  const transformDuration = isGrid
-    ? (targetCollapsed ? '0.18s' : '0.51s')
-    : '0.25s';
-  return `transform ${transformDuration} ease, padding-top 0.25s ease, top 0.25s ease, opacity 0.15s ease`;
-}
-
-function armTourSidebarTransition(targetCollapsed) {
+function setTourSidebarNonTransformTransition() {
   const sidebar = document.querySelector('.sidebar');
-  if (!(sidebar instanceof HTMLElement)) return;
-  const transition = getTourSidebarTransition(targetCollapsed);
-  sidebar.style.transition = transition;
-  window.setTimeout(() => {
-    if (sidebar.style.transition === transition) {
-      sidebar.style.transition = '';
-    }
-  }, 620);
-}
-
-async function stageTourCollectionAnimationStart(options = {}) {
-  const {
-    sidebarCollapsed,
-    targetSidebarCollapsed = sidebarCollapsed,
-    uButtonsEnabled,
-    stageSidebar = false,
-    stageUButtons = false,
-  } = options;
-  const sidebar = document.querySelector('.sidebar');
-  const content = document.querySelector('.content');
-  if ((stageSidebar || stageUButtons) && sidebar instanceof HTMLElement) {
-    sidebar.style.transition = 'none';
-  }
-  if (stageSidebar && content instanceof HTMLElement) {
-    content.style.transition = 'none';
-  }
-
-  if (stageSidebar) {
-    setTourSidebarCollapsed(sidebarCollapsed);
-  }
-  if (stageUButtons) {
-    setUButtons(uButtonsEnabled);
-  }
-
-  if (sidebar instanceof Element) {
-    void sidebar.getBoundingClientRect();
-  }
-  if (stageSidebar && content instanceof Element) {
-    void content.getBoundingClientRect();
-  }
-
-  await nextAnimationFrame();
-
-  if ((stageSidebar || stageUButtons) && sidebar instanceof HTMLElement) {
-    sidebar.style.transition = getTourSidebarTransition(targetSidebarCollapsed);
-  }
-  if (stageSidebar && content instanceof HTMLElement) {
-    content.style.transition = '';
-  }
-
-  await nextAnimationFrame();
-
-  if (sidebar instanceof Element) {
-    void sidebar.getBoundingClientRect();
+  if (sidebar instanceof HTMLElement) {
+    sidebar.style.transition = 'padding-top 0.25s ease, top 0.25s ease, opacity 0.15s ease';
   }
 }
 
@@ -506,27 +447,58 @@ async function prepareCollectionView(view, options = {}) {
   const wasUButtonsEnabled = document.body.classList.contains('u-buttons-enabled');
   const shouldAnimateSidebarChange = animateSidebarChange && wasSidebarCollapsed !== sidebarCollapsed;
   const shouldAnimateUButtonsChange = animateUButtonsChange && wasUButtonsEnabled !== uButtonsEnabled;
+  const shouldAnimateAnyChange = shouldAnimateSidebarChange || shouldAnimateUButtonsChange;
 
   closeSettings();
   closePersonalization();
   closeModal();
   await setPage('collection', { historyMode: null, skipCollectionLoad: true, suppressTransitions: true });
   applyCollectionViewState(view, { load: false, suppressTransitions: true, preservePage: true });
-  if (shouldAnimateSidebarChange || shouldAnimateUButtonsChange) {
-    await stageTourCollectionAnimationStart({
-      sidebarCollapsed: !sidebarCollapsed,
-      targetSidebarCollapsed: sidebarCollapsed,
-      uButtonsEnabled: wasUButtonsEnabled,
-      stageSidebar: shouldAnimateSidebarChange,
-      stageUButtons: shouldAnimateUButtonsChange,
-    });
+  if (shouldAnimateAnyChange) {
+    setTourSidebarTransition(false);
+    setTourSidebarCollapsed(wasSidebarCollapsed);
+    setUButtons(wasUButtonsEnabled);
+    setDemoAlbums();
+    await nextAnimationFrame();
+    const sidebar = document.querySelector('.sidebar');
+    if (sidebar instanceof Element) {
+      void sidebar.getBoundingClientRect();
+    }
   }
-  setTourSidebarCollapsed(sidebarCollapsed);
-  setUButtons(uButtonsEnabled);
-  if (shouldAnimateSidebarChange || shouldAnimateUButtonsChange) {
-    armTourSidebarTransition(sidebarCollapsed);
+
+  if (shouldAnimateSidebarChange && view === 'grid') {
+    if (shouldAnimateUButtonsChange) {
+      setTourSidebarNonTransformTransition();
+      setUButtons(uButtonsEnabled);
+    }
+    animateGridSidebarToggle();
+  } else if (shouldAnimateSidebarChange) {
+    setTourSidebarTransition(true);
+    setTourSidebarCollapsed(sidebarCollapsed);
+  } else {
+    setTourSidebarCollapsed(sidebarCollapsed);
   }
-  setDemoAlbums();
+
+  if (!shouldAnimateUButtonsChange || shouldAnimateSidebarChange) {
+    setUButtons(uButtonsEnabled);
+  } else {
+    setTourSidebarTransition(true);
+    setUButtons(uButtonsEnabled);
+  }
+
+  if (shouldAnimateAnyChange) {
+    window.setTimeout(() => {
+      setTourSidebarTransition(true);
+      window.requestAnimationFrame(() => {
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar instanceof HTMLElement) {
+          sidebar.style.transition = '';
+        }
+      });
+    }, 1050);
+  } else {
+    setDemoAlbums();
+  }
 }
 
 async function prepareCollectionList(options = {}) {
@@ -570,14 +542,12 @@ async function prepareQuickActionsStep() {
 async function prepareLogAlbumButtonStep() {
   const sidebarCollapsed = document.body.classList.contains('sidebar-collapsed');
   const quickActionsEnabled = document.body.classList.contains('u-buttons-enabled');
-  await prepareCollectionGrid({ sidebarCollapsed, uButtonsEnabled: quickActionsEnabled });
-  if (quickActionsEnabled) {
-    setUButtons(false);
-  }
-  if (!sidebarCollapsed) {
-    await flushTourSidebarTransitionReset();
-    setTourSidebarCollapsed(true);
-  }
+  await prepareCollectionGrid({
+    animateSidebarChange: !sidebarCollapsed,
+    animateUButtonsChange: quickActionsEnabled,
+    sidebarCollapsed: true,
+    uButtonsEnabled: false,
+  });
 }
 
 async function prepareManualModalStep() {

@@ -76,6 +76,9 @@ vi.mock('../public/js/navigation.js', () => ({
 }));
 
 vi.mock('../public/js/sidebar.js', () => ({
+  animateGridSidebarToggle: vi.fn(() => {
+    globalThis.document?.body?.classList.toggle('sidebar-collapsed');
+  }),
   applyCollectionViewState: applyCollectionViewStateMock,
   syncFilterControlsFromState: vi.fn(),
   updateImportTypeFilterBtn: vi.fn(),

@@ -685,9 +685,11 @@ export function animateGridSidebarToggle() {
 
   // Animate the sidebar with JS using the same easing/duration as the cards,
   // so its right edge tracks the left edge of the top-left card in lockstep.
-  // Disable the CSS transition first so they don't fight each other.
+  // Exclude transform from the CSS transition first so it doesn't fight the
+  // JS transform animation. Keep the other transitions available for tour
+  // steps that reveal/hide the quick actions toolbar at the same time.
   if (sidebarEl instanceof Element) {
-    sidebarEl.style.transition = 'none';
+    sidebarEl.style.transition = 'padding-top 0.25s ease, top 0.25s ease, opacity 0.15s ease';
     const animation = sidebarEl.animate(
       isNowCollapsed
         ? [{ transform: 'translateX(0)' },        { transform: 'translateX(-100%)' }]
