@@ -53,6 +53,8 @@ const applyCollectionViewStateMock = vi.fn(view => {
   stateMock.navigation.page = 'collection';
   stateMock.navigation.collectionView = view;
   stateMock.view = view;
+  globalThis.document?.body?.classList.toggle('collection-view-grid', view === 'grid');
+  globalThis.document?.body?.classList.toggle('view-grid', view === 'grid');
   if (view === 'grid') {
     setUButtonsMock(true);
   }
@@ -232,19 +234,20 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 9; i += 1) {
+    for (let i = 0; i < 8; i += 1) {
       await advanceTourStep();
     }
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
+    expect(globalThis.document.body.classList.contains('collection-view-grid')).toBe(true);
   });
 
   it('reveals quick actions with the sidebar out', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
       await advanceTourStep();
     }
 
@@ -257,7 +260,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 9; i += 1) {
+    for (let i = 0; i < 8; i += 1) {
       await advanceTourStep();
     }
 
@@ -277,7 +280,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 9; i += 1) {
+    for (let i = 0; i < 8; i += 1) {
       await advanceTourStep();
     }
 
@@ -296,7 +299,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 11; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       await advanceTourStep();
     }
 
@@ -313,7 +316,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 9; i += 1) {
+    for (let i = 0; i < 8; i += 1) {
       await advanceTourStep();
     }
 
@@ -331,7 +334,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
       await advanceTourStep();
     }
 
@@ -351,7 +354,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
       await advanceTourStep();
     }
 
@@ -371,7 +374,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
       await advanceTourStep();
     }
 
@@ -393,7 +396,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
       await advanceTourStep();
     }
 
@@ -411,7 +414,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 13; i += 1) {
+    for (let i = 0; i < 12; i += 1) {
       await advanceTourStep();
     }
 
@@ -428,7 +431,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 15; i += 1) {
+    for (let i = 0; i < 14; i += 1) {
       await advanceTourStep();
     }
 
@@ -619,7 +622,7 @@ describe('welcome tour UI preparation', () => {
       const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
       await startWelcomeTour({ replay: true });
-      for (let i = 0; i < 9; i += 1) {
+      for (let i = 0; i < 8; i += 1) {
         await advanceTourStep();
       }
 
@@ -652,7 +655,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 11; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       await advanceTourStep();
     }
 
@@ -660,5 +663,18 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
     expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(false);
     expect(setUButtonsMock).toHaveBeenLastCalledWith(false);
+  });
+
+  it('returns to list view on the spicetify setup step', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 18; i += 1) {
+      await advanceTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Spicetify Setup');
+    expect(globalThis.document.body.classList.contains('collection-view-grid')).toBe(false);
+    expect(stateMock.view).toBe('list');
   });
 });

@@ -205,14 +205,6 @@ const TOUR_STEPS = [
     effect: prepareCollectionGrid,
   },
   {
-    id: 'list-reset',
-    title: 'Back to List View',
-    body: 'We will reset to list view for the rest of the tour, where the sidebar and logging controls are easiest to see.',
-    anchor: '#btn-view-list',
-    highlight: '#btn-view-list',
-    effect: prepareListResetStep,
-  },
-  {
     id: 'sidebar',
     title: 'Sidebar',
     body: 'The sidebar holds search, filters, and sorting. Toggle it at least once before continuing; you can leave it open or tucked away.',
@@ -259,7 +251,7 @@ const TOUR_STEPS = [
     highlightAction: 'settings-open',
     requireHighlightAction: true,
     advanceOnHighlightAction: true,
-    effect: prepareCollectionList,
+    effect: prepareCollectionGrid,
   },
   {
     id: 'settings',
@@ -277,7 +269,7 @@ const TOUR_STEPS = [
     highlightAction: 'personalization-open',
     requireHighlightAction: true,
     advanceOnHighlightAction: true,
-    effect: prepareCollectionList,
+    effect: prepareCollectionGrid,
   },
   {
     id: 'personalization',
@@ -482,7 +474,7 @@ async function stageTourCollectionAnimationStart(options = {}) {
   }
 }
 
-async function prepareCollectionList(options = {}) {
+async function prepareCollectionView(view, options = {}) {
   const {
     sidebarCollapsed = true,
     uButtonsEnabled = false,
@@ -498,7 +490,7 @@ async function prepareCollectionList(options = {}) {
   closePersonalization();
   closeModal();
   await setPage('collection', { historyMode: null, skipCollectionLoad: true, suppressTransitions: true });
-  applyCollectionViewState('list', { load: false, suppressTransitions: true, preservePage: true });
+  applyCollectionViewState(view, { load: false, suppressTransitions: true, preservePage: true });
   if (shouldAnimateSidebarChange || shouldAnimateUButtonsChange) {
     await stageTourCollectionAnimationStart({
       sidebarCollapsed: !sidebarCollapsed,
@@ -512,14 +504,12 @@ async function prepareCollectionList(options = {}) {
   setDemoAlbums();
 }
 
-async function prepareCollectionGrid() {
-  closeSettings();
-  closePersonalization();
-  closeModal();
-  await setPage('collection', { historyMode: null, skipCollectionLoad: true, suppressTransitions: true });
-  applyCollectionViewState('grid', { load: false, suppressTransitions: true, preservePage: true });
-  setUButtons(false);
-  setDemoAlbums();
+async function prepareCollectionList(options = {}) {
+  await prepareCollectionView('list', options);
+}
+
+async function prepareCollectionGrid(options = {}) {
+  await prepareCollectionView('grid', options);
 }
 
 async function prepareThemeStep(step) {
@@ -534,16 +524,8 @@ async function prepareThemeStep(step) {
   await applyThemeByName(step.themeName);
 }
 
-async function prepareListResetStep(step, context = {}) {
-  await prepareCollectionList({
-    animateSidebarChange: context.previousStep?.id === 'sidebar',
-    sidebarCollapsed: true,
-    uButtonsEnabled: false,
-  });
-}
-
 async function prepareSidebarStep() {
-  await prepareCollectionList({
+  await prepareCollectionGrid({
     animateSidebarChange: true,
     animateUButtonsChange: true,
     sidebarCollapsed: false,
@@ -552,7 +534,7 @@ async function prepareSidebarStep() {
 }
 
 async function prepareQuickActionsStep() {
-  await prepareCollectionList({
+  await prepareCollectionGrid({
     animateSidebarChange: true,
     animateUButtonsChange: true,
     sidebarCollapsed: false,
@@ -563,7 +545,7 @@ async function prepareQuickActionsStep() {
 async function prepareLogAlbumButtonStep() {
   const sidebarCollapsed = document.body.classList.contains('sidebar-collapsed');
   const quickActionsEnabled = document.body.classList.contains('u-buttons-enabled');
-  await prepareCollectionList({ sidebarCollapsed, uButtonsEnabled: quickActionsEnabled });
+  await prepareCollectionGrid({ sidebarCollapsed, uButtonsEnabled: quickActionsEnabled });
   if (quickActionsEnabled) {
     setUButtons(false);
   }
@@ -574,17 +556,17 @@ async function prepareLogAlbumButtonStep() {
 }
 
 async function prepareManualModalStep() {
-  await prepareCollectionList();
+  await prepareCollectionGrid();
   openLogModal();
 }
 
 async function prepareSettingsStep() {
-  await prepareCollectionList();
+  await prepareCollectionGrid();
   openSettings();
 }
 
 async function preparePersonalizationStep() {
-  await prepareCollectionList();
+  await prepareCollectionGrid();
   openPersonalization();
 }
 
