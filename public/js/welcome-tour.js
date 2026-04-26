@@ -21,6 +21,13 @@ import { invalidateDashboardCache } from './dashboard.js';
 const MOBILE_WARNING_WIDTH = 780;
 const LOCK_HEARTBEAT_MS = 10000;
 
+function nextAnimationFrame() {
+  return new Promise(resolve => {
+    const raf = window.requestAnimationFrame || (callback => window.setTimeout(callback, 0));
+    raf(() => resolve());
+  });
+}
+
 function padDatePart(value) {
   return String(value).padStart(2, '0');
 }
@@ -347,13 +354,29 @@ function neutralizeFilters() {
   updateRestoreBtn();
 }
 
-async function prepareCollectionList() {
+function setTourSidebarCollapsed(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+}
+
+async function flushTourSidebarTransitionReset() {
+  const sidebar = document.querySelector('.sidebar');
+  await nextAnimationFrame();
+  if (sidebar instanceof Element) {
+    void sidebar.getBoundingClientRect();
+  }
+}
+
+async function prepareCollectionList(options = {}) {
+  const {
+    sidebarCollapsed = true,
+  } = options;
+
   closeSettings();
   closePersonalization();
   closeModal();
   await setPage('collection', { historyMode: null, skipCollectionLoad: true, suppressTransitions: true });
   applyCollectionViewState('list', { load: false, suppressTransitions: true, preservePage: true });
-  document.body.classList.remove('sidebar-collapsed');
+  setTourSidebarCollapsed(sidebarCollapsed);
   setUButtons(false);
   setDemoAlbums();
 }
@@ -374,7 +397,7 @@ async function prepareThemeStep(step) {
   closeModal();
   await setPage('collection', { historyMode: null, skipCollectionLoad: true, suppressTransitions: true });
   applyCollectionViewState('list', { load: false, suppressTransitions: true, preservePage: true });
-  document.body.classList.remove('sidebar-collapsed');
+  setTourSidebarCollapsed(true);
   setUButtons(false);
   setDemoAlbums();
   await applyThemeByName(step.themeName);
@@ -382,12 +405,14 @@ async function prepareThemeStep(step) {
 
 async function prepareSidebarStep() {
   await prepareCollectionList();
-  document.body.classList.remove('sidebar-collapsed');
+  await flushTourSidebarTransitionReset();
+  setTourSidebarCollapsed(false);
 }
 
 async function prepareQuickActionsStep() {
-  await prepareCollectionList();
-  document.body.classList.add('u-buttons-enabled');
+  await prepareCollectionList({ sidebarCollapsed: false });
+  await flushTourSidebarTransitionReset();
+  setUButtons(true);
 }
 
 async function prepareManualModalStep() {
@@ -558,17 +583,24 @@ function positionCard(step) {
   const rect = anchor.getBoundingClientRect();
   const cardRect = card.getBoundingClientRect();
   const gap = 14;
-  let left = rect.right + gap;
-  let top = rect.top + Math.max(0, (rect.height - cardRect.height) / 2);
+  let left;
+  let top;
 
-  if (left + cardRect.width > window.innerWidth - gap) {
-    left = rect.left - cardRect.width - gap;
+  if (anchor.closest('.header')) {
+    left = rect.right - cardRect.width;
+    top = rect.bottom + gap;
+  } else {
+    left = rect.right + gap;
+    top = rect.top + Math.max(0, (rect.height - cardRect.height) / 2);
+
+    if (left + cardRect.width > window.innerWidth - gap) {
+      left = rect.left - cardRect.width - gap;
+    }
   }
-  if (left < gap) {
-    left = window.innerWidth - cardRect.width - gap;
-  }
+  left = Math.min(left, window.innerWidth - cardRect.width - gap);
+  left = Math.max(gap, left);
   top = Math.max(gap, Math.min(window.innerHeight - cardRect.height - gap, top));
-  card.style.setProperty('--welcome-tour-left', `${Math.max(gap, left)}px`);
+  card.style.setProperty('--welcome-tour-left', `${left}px`);
   card.style.setProperty('--welcome-tour-top', `${top}px`);
 }
 

@@ -44,7 +44,9 @@ const setPageMock = vi.fn(async page => {
   stateMock.navigation.page = page;
   stateMock.view = stateMock.navigation.collectionView;
 });
-const setUButtonsMock = vi.fn();
+const setUButtonsMock = vi.fn(enabled => {
+  globalThis.document?.body?.classList.toggle('u-buttons-enabled', enabled);
+});
 const applyCollectionViewStateMock = vi.fn(view => {
   stateMock.navigation.page = 'collection';
   stateMock.navigation.collectionView = view;
@@ -110,6 +112,9 @@ vi.mock('../public/js/dashboard.js', () => ({
 async function flushTourStep() {
   await Promise.resolve();
   await Promise.resolve();
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  await Promise.resolve();
+  await new Promise(resolve => requestAnimationFrame(resolve));
   await new Promise(resolve => setTimeout(resolve, 0));
 }
 
@@ -124,8 +129,13 @@ describe('welcome tour UI preparation', () => {
     localStorage.clear();
     globalThis.document.body.className = '';
     globalThis.document.body.innerHTML = `
-      <button id="btn-view-list"></button>
-      <button id="btn-view-grid"></button>
+      <header class="header">
+        <button id="btn-view-list"></button>
+        <button id="btn-view-grid"></button>
+        <button id="btn-stats"></button>
+        <button id="btn-wrapped"></button>
+      </header>
+      <aside class="sidebar"></aside>
       <div id="u-buttons"></div>
     `;
     window.innerWidth = 1024;
@@ -164,5 +174,90 @@ describe('welcome tour UI preparation', () => {
       preservePage: true,
     }));
     expect(setUButtonsMock).toHaveBeenLastCalledWith(false);
+  });
+
+  it('starts collection tour steps with the sidebar collapsed', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Welcome to Trackspot');
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+  });
+
+  it('expands the sidebar during the sidebar step', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 8; i += 1) {
+      globalThis.document.querySelector('[data-action="next"]')?.click();
+      await flushTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
+  });
+
+  it('reveals quick actions with the sidebar already expanded', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 9; i += 1) {
+      globalThis.document.querySelector('[data-action="next"]')?.click();
+      await flushTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions');
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
+    expect(setUButtonsMock).toHaveBeenLastCalledWith(true);
+  });
+
+  it('positions top bar button tour cards below the button with right edges aligned', async () => {
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.id === 'btn-view-list') {
+        return {
+          x: 860,
+          y: 10,
+          top: 10,
+          right: 900,
+          bottom: 50,
+          left: 860,
+          width: 40,
+          height: 40,
+        };
+      }
+      if (this.classList?.contains('welcome-tour-card')) {
+        return {
+          x: 0,
+          y: 0,
+          top: 0,
+          right: 420,
+          bottom: 160,
+          left: 0,
+          width: 420,
+          height: 160,
+        };
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+
+    try {
+      const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+      await startWelcomeTour({ replay: true });
+      for (let i = 0; i < 6; i += 1) {
+        globalThis.document.querySelector('[data-action="next"]')?.click();
+        await flushTourStep();
+      }
+
+      const card = globalThis.document.querySelector('.welcome-tour-card');
+      expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('List View');
+      expect(card?.style.getPropertyValue('--welcome-tour-left')).toBe('480px');
+      expect(card?.style.getPropertyValue('--welcome-tour-top')).toBe('64px');
+    } finally {
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
   });
 });
