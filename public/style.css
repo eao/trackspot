@@ -221,6 +221,10 @@ a:hover {
   font-size: 0.86rem;
 }
 
+.welcome-tour-error {
+  color: var(--danger-hover);
+}
+
 body.preopen-album-modal::before {
   content: '';
   position: fixed;

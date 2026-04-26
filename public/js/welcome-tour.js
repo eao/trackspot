@@ -260,6 +260,8 @@ let skippedToFinal = false;
 let heartbeatTimer = null;
 let statusCache = null;
 let inertSnapshots = [];
+let heartbeatGeneration = 0;
+let isFinishingTour = false;
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -496,12 +498,42 @@ function handleTourKeydown(event) {
   if (!state.welcomeTour.active || !card) return;
   if (card.contains(event.target)) {
     if (event.key === 'Tab') trapTourTab(event);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
     return;
   }
 
   event.preventDefault();
   event.stopImmediatePropagation();
   focusTourControl();
+}
+
+function clearTourError() {
+  card?.querySelector('.welcome-tour-error')?.remove();
+}
+
+function showTourError(message) {
+  if (!card) return;
+  clearTourError();
+  const error = document.createElement('p');
+  error.className = 'welcome-tour-note welcome-tour-error';
+  error.setAttribute('role', 'alert');
+  error.textContent = message || 'Something went wrong. Please try again.';
+  const actions = card.querySelector('.welcome-tour-actions');
+  if (actions) {
+    actions.before(error);
+  } else {
+    card.appendChild(error);
+  }
+}
+
+function setTourControlsDisabled(disabled) {
+  card?.querySelectorAll('button').forEach(button => {
+    button.disabled = disabled;
+  });
+  card?.setAttribute('aria-busy', disabled ? 'true' : 'false');
 }
 
 function removeOverlay() {
@@ -560,7 +592,8 @@ function renderWarning() {
 
 function renderStep(step) {
   const progress = `${currentStepIndex + 1} / ${TOUR_STEPS.length}`;
-  const alreadyAdded = !!state.welcomeTour.samplesAddedAt || (statusCache?.sampleCount ?? 0) > 0;
+  const sampleCount = statusCache?.sampleCount ?? state.welcomeTour.sampleCount ?? 0;
+  const alreadyAdded = sampleCount > 0;
   const sampleWarning = alreadyAdded
     ? '<p class="welcome-tour-note">Adding sample albums again will delete any existing welcome samples and add fresh copies.</p>'
     : '';
@@ -601,13 +634,24 @@ async function showStep(index) {
   renderStep(step);
 }
 
-async function heartbeatLock() {
-  if (!state.welcomeTour.active) return;
+async function heartbeatLock(generation = heartbeatGeneration) {
+  if (!state.welcomeTour.active || generation !== heartbeatGeneration) return;
   try {
     const result = await apiFetch('/api/welcome-tour/lock', {
       method: 'POST',
       body: JSON.stringify({ sessionId: state.welcomeTour.lockSessionId }),
     });
+    if (!state.welcomeTour.active || generation !== heartbeatGeneration) {
+      if (result.sessionId) {
+        apiFetch('/api/welcome-tour/lock', {
+          method: 'DELETE',
+          body: JSON.stringify({ sessionId: result.sessionId }),
+        }).catch(error => {
+          console.warn('Welcome tour late lock cleanup failed:', error);
+        });
+      }
+      return;
+    }
     state.welcomeTour.lockSessionId = result.sessionId;
   } catch (error) {
     console.warn('Welcome tour lock heartbeat failed:', error);
@@ -615,13 +659,15 @@ async function heartbeatLock() {
 }
 
 function startHeartbeat() {
-  void heartbeatLock();
+  const generation = ++heartbeatGeneration;
+  void heartbeatLock(generation);
   heartbeatTimer = setInterval(() => {
-    void heartbeatLock();
+    void heartbeatLock(generation);
   }, LOCK_HEARTBEAT_MS);
 }
 
 async function releaseLock() {
+  heartbeatGeneration += 1;
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
@@ -666,6 +712,8 @@ function captureSnapshot() {
 
 async function restoreSnapshot() {
   if (!snapshot) return;
+  const targetNavigation = cloneJson(snapshot.navigation || {});
+  const targetPage = targetNavigation.page || 'collection';
   closeSettings();
   closePersonalization();
   closeModal();
@@ -685,7 +733,7 @@ async function restoreSnapshot() {
   state.albumDetailsCache = snapshot.albumDetailsCache;
   state.filters = snapshot.filters;
   state.sort = snapshot.sort;
-  state.navigation = snapshot.navigation;
+  state.navigation = targetNavigation;
   state.view = snapshot.view;
   document.body.classList.toggle('sidebar-collapsed', snapshot.bodyClasses.sidebarCollapsed);
   document.body.classList.toggle('u-buttons-enabled', snapshot.bodyClasses.uButtonsEnabled);
@@ -699,8 +747,18 @@ async function restoreSnapshot() {
   updateSortFieldBtn();
   updateSortOrderBtn();
   invalidateDashboardCache();
-  render();
+  if (targetPage === 'collection') {
+    render();
+  } else {
+    await setPage(targetPage, {
+      historyMode: null,
+      year: targetNavigation.wrappedYear,
+      initial: true,
+      suppressTransitions: true,
+    });
+  }
   window.scrollTo(0, snapshot.scrollY);
+  return targetPage;
 }
 
 async function markComplete() {
@@ -730,7 +788,27 @@ async function finishTour(options = {}) {
     restoreOnly = false,
   } = options;
 
-  if (!state.welcomeTour.active) return;
+  if (!state.welcomeTour.active || isFinishingTour) return;
+  isFinishingTour = true;
+  clearTourError();
+  setTourControlsDisabled(true);
+
+  try {
+    if (shouldAddSamples) {
+      await addSamples();
+    }
+    if (shouldMarkComplete) {
+      await markComplete();
+    }
+  } catch (error) {
+    console.error('Welcome tour finish failed:', error);
+    showTourError(error.message || 'Something went wrong. Please try again.');
+    setTourControlsDisabled(false);
+    focusTourControl();
+    isFinishingTour = false;
+    return;
+  }
+
   state.welcomeTour.active = false;
   document.body.classList.remove('welcome-tour-active');
   setAppInert(false);
@@ -738,19 +816,14 @@ async function finishTour(options = {}) {
   await releaseLock();
 
   try {
-    if (shouldMarkComplete) {
-      await markComplete();
-    }
-    if (shouldAddSamples) {
-      await addSamples();
-    }
-  } finally {
-    await restoreSnapshot();
+    const restoredPage = await restoreSnapshot();
     snapshot = null;
     skippedToFinal = false;
-    if (!restoreOnly && shouldAddSamples) {
+    if (!restoreOnly && shouldAddSamples && restoredPage === 'collection') {
       await loadAlbums();
     }
+  } finally {
+    isFinishingTour = false;
     refreshWelcomeTourSettings().catch(() => {});
   }
 }
