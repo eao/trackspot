@@ -436,31 +436,42 @@ async function flushTourSidebarTransitionReset() {
   }
 }
 
-async function stageTourSidebarAnimationStart(collapsed) {
+async function stageTourCollectionAnimationStart(options = {}) {
+  const {
+    sidebarCollapsed,
+    uButtonsEnabled,
+    stageSidebar = false,
+    stageUButtons = false,
+  } = options;
   const sidebar = document.querySelector('.sidebar');
   const content = document.querySelector('.content');
-  if (sidebar instanceof HTMLElement) {
+  if ((stageSidebar || stageUButtons) && sidebar instanceof HTMLElement) {
     sidebar.style.transition = 'none';
   }
-  if (content instanceof HTMLElement) {
+  if (stageSidebar && content instanceof HTMLElement) {
     content.style.transition = 'none';
   }
 
-  setTourSidebarCollapsed(collapsed);
+  if (stageSidebar) {
+    setTourSidebarCollapsed(sidebarCollapsed);
+  }
+  if (stageUButtons) {
+    setUButtons(uButtonsEnabled);
+  }
 
   if (sidebar instanceof Element) {
     void sidebar.getBoundingClientRect();
   }
-  if (content instanceof Element) {
+  if (stageSidebar && content instanceof Element) {
     void content.getBoundingClientRect();
   }
 
   await nextAnimationFrame();
 
-  if (sidebar instanceof HTMLElement) {
+  if ((stageSidebar || stageUButtons) && sidebar instanceof HTMLElement) {
     sidebar.style.transition = '';
   }
-  if (content instanceof HTMLElement) {
+  if (stageSidebar && content instanceof HTMLElement) {
     content.style.transition = '';
   }
 
@@ -476,17 +487,25 @@ async function prepareCollectionList(options = {}) {
     sidebarCollapsed = true,
     uButtonsEnabled = false,
     animateSidebarChange = false,
+    animateUButtonsChange = false,
   } = options;
   const wasSidebarCollapsed = document.body.classList.contains('sidebar-collapsed');
+  const wasUButtonsEnabled = document.body.classList.contains('u-buttons-enabled');
   const shouldAnimateSidebarChange = animateSidebarChange && wasSidebarCollapsed !== sidebarCollapsed;
+  const shouldAnimateUButtonsChange = animateUButtonsChange && wasUButtonsEnabled !== uButtonsEnabled;
 
   closeSettings();
   closePersonalization();
   closeModal();
   await setPage('collection', { historyMode: null, skipCollectionLoad: true, suppressTransitions: true });
   applyCollectionViewState('list', { load: false, suppressTransitions: true, preservePage: true });
-  if (shouldAnimateSidebarChange) {
-    await stageTourSidebarAnimationStart(!sidebarCollapsed);
+  if (shouldAnimateSidebarChange || shouldAnimateUButtonsChange) {
+    await stageTourCollectionAnimationStart({
+      sidebarCollapsed: !sidebarCollapsed,
+      uButtonsEnabled: wasUButtonsEnabled,
+      stageSidebar: shouldAnimateSidebarChange,
+      stageUButtons: shouldAnimateUButtonsChange,
+    });
   }
   setTourSidebarCollapsed(sidebarCollapsed);
   setUButtons(uButtonsEnabled);
@@ -526,6 +545,7 @@ async function prepareListResetStep(step, context = {}) {
 async function prepareSidebarStep() {
   await prepareCollectionList({
     animateSidebarChange: true,
+    animateUButtonsChange: true,
     sidebarCollapsed: false,
     uButtonsEnabled: false,
   });
@@ -534,10 +554,10 @@ async function prepareSidebarStep() {
 async function prepareQuickActionsStep() {
   await prepareCollectionList({
     animateSidebarChange: true,
+    animateUButtonsChange: true,
     sidebarCollapsed: false,
-    uButtonsEnabled: false,
+    uButtonsEnabled: true,
   });
-  setUButtons(true);
 }
 
 async function prepareLogAlbumButtonStep() {
