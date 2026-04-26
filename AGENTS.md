@@ -203,6 +203,9 @@ Notes:
   - persisted user data under `data/`
 - When changing DB schema behavior, inspect `server/db.js` carefully and run relevant tests such as backup/restore, imports, and migration-focused tests.
 - When changing frontend navigation, startup flow, personalization, or collection rendering, expect cross-module coupling and check related tests.
+- When changing the welcome tour, remember that it temporarily mutates frontend state, navigation, filters, themes, modal visibility, localStorage-backed settings, and server album-mutation locks. Verify restore behavior from collection and non-collection launch pages such as `/collection/list`, `/stats`, and `/wrapped`.
+- Keep welcome tour cleanup robust around async failures: lock heartbeats, completion calls, and sample insertion should not leave the app locked, marked complete incorrectly, or visually restored to the wrong page. Escape/focus handling should preserve tour-owned UI and not close underlying modals/settings panels while a step is anchored to them.
+- Welcome tour sample warnings should reflect actual sample presence, not only historical "samples added" preferences.
 
 ## Suggested Change Workflow
 
@@ -211,6 +214,7 @@ Notes:
 3. Make the code change.
 4. Regenerate derived files if needed.
 5. Run targeted tests first, then broader checks if the change is substantial.
+6. For welcome-tour flow changes, run `npm run check` and manually sanity-check replay from Settings plus first-run auto-start from an empty DB when practical.
 
 ## Known Non-Core / Local Areas
 
