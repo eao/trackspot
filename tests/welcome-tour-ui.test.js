@@ -128,6 +128,8 @@ async function advanceTourStep() {
   const next = globalThis.document.querySelector('[data-action="next"]');
   if (next?.disabled) {
     globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="next"]')?.click();
   } else {
     next?.click();
   }
@@ -226,7 +228,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
       await advanceTourStep();
     }
 
@@ -238,7 +240,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       await advanceTourStep();
     }
 
@@ -247,7 +249,7 @@ describe('welcome tour UI preparation', () => {
     expect(setUButtonsMock).toHaveBeenLastCalledWith(true);
   });
 
-  it('requires clicking the sidebar toggle highlight before advancing', async () => {
+  it('requires clicking the sidebar highlight before advancing', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
@@ -256,21 +258,22 @@ describe('welcome tour UI preparation', () => {
     }
 
     const next = globalThis.document.querySelector('[data-action="next"]');
-    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar Toggle');
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
     expect(next?.disabled).toBe(true);
 
     globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
     await flushTourStep();
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
-    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
+    expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(false);
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
   });
 
   it('allows the sidebar to be toggled on the sidebar step before resetting it on the next step', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
       await advanceTourStep();
     }
 
@@ -281,34 +284,35 @@ describe('welcome tour UI preparation', () => {
 
     await advanceTourStep();
 
-    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar Toggle');
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
   });
 
-  it('requires clicking the quick actions toolbar toggle highlight before advancing', async () => {
+  it('requires clicking the quick actions toolbar highlight before advancing', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 11; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       await advanceTourStep();
     }
 
     const next = globalThis.document.querySelector('[data-action="next"]');
-    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar Toggle');
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
     expect(next?.disabled).toBe(true);
 
     globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
     await flushTourStep();
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
-    expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(true);
+    expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(false);
+    expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(false);
   });
 
   it('leaves quick actions hidden on the log album button step when the toolbar was toggled off', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       await advanceTourStep();
     }
 
@@ -316,6 +320,28 @@ describe('welcome tour UI preparation', () => {
     globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
     await flushTourStep();
     expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(false);
+
+    await advanceTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Log Album Button');
+    expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(false);
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+  });
+
+  it('hides quick actions on the log album button step when the toolbar was left on', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 10; i += 1) {
+      await advanceTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+    expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(true);
 
     await advanceTourStep();
 
@@ -502,13 +528,12 @@ describe('welcome tour UI preparation', () => {
       const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
       await startWelcomeTour({ replay: true });
-      for (let i = 0; i < 10; i += 1) {
+      for (let i = 0; i < 9; i += 1) {
         await advanceTourStep();
       }
 
       const expectedTitles = [
         'Sidebar',
-        'Quick Actions Toolbar Toggle',
         'Quick Actions Toolbar',
         'Log Album Button',
         'Manual Adds',
@@ -536,7 +561,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 13; i += 1) {
+    for (let i = 0; i < 11; i += 1) {
       await advanceTourStep();
     }
 

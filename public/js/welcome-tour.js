@@ -213,41 +213,23 @@ const TOUR_STEPS = [
     effect: prepareCollectionList,
   },
   {
-    id: 'sidebar-toggle',
-    title: 'Sidebar Toggle',
-    body: 'Click this button whenever you want to expand or contract the sidebar.',
-    anchor: '#btn-toggle-sidebar',
-    highlight: '#btn-toggle-sidebar',
-    highlightAction: 'sidebar-toggle',
-    requireHighlightAction: true,
-    effect: prepareCollectionList,
-  },
-  {
     id: 'sidebar',
     title: 'Sidebar',
-    body: 'The sidebar holds search, filters, and sorting. It can be shown or tucked away whenever you need more space.',
+    body: 'The sidebar holds search, filters, and sorting. Toggle it at least once before continuing; you can leave it open or tucked away.',
     anchor: TOP_BAR_TOUR_ANCHOR,
     highlight: '#btn-toggle-sidebar',
     highlightAction: 'sidebar-toggle',
-    effect: prepareSidebarStep,
-  },
-  {
-    id: 'quick-actions-toggle',
-    title: 'Quick Actions Toolbar Toggle',
-    body: 'Click this button whenever you want to show or hide the quick actions toolbar.',
-    anchor: '#btn-toggle-u-buttons',
-    highlight: '#btn-toggle-u-buttons',
-    highlightAction: 'quick-actions-toggle',
     requireHighlightAction: true,
-    effect: prepareQuickActionsToggleStep,
+    effect: prepareSidebarStep,
   },
   {
     id: 'quick-actions',
     title: 'Quick Actions Toolbar',
-    body: 'The quick actions toolbar can be toggled independently from the sidebar for the controls you use most.',
+    body: 'The quick actions toolbar can be toggled independently from the sidebar for the controls you use most. Toggle it at least once before continuing.',
     anchor: TOP_BAR_TOUR_ANCHOR,
     highlight: '#btn-toggle-u-buttons',
     highlightAction: 'quick-actions-toggle',
+    requireHighlightAction: true,
     effect: prepareQuickActionsStep,
   },
   {
@@ -488,12 +470,6 @@ async function prepareSidebarStep() {
   setTourSidebarCollapsed(false);
 }
 
-async function prepareQuickActionsToggleStep() {
-  await prepareCollectionList({ sidebarCollapsed: false });
-  await flushTourSidebarTransitionReset();
-  setTourSidebarCollapsed(false);
-}
-
 async function prepareQuickActionsStep() {
   await prepareCollectionList();
   await flushTourSidebarTransitionReset();
@@ -721,7 +697,10 @@ function handleHighlightAction(step) {
 
   if (step.requireHighlightAction) {
     stepHighlightActionComplete = true;
-    void showStep(currentStepIndex + 1);
+    const next = card?.querySelector('[data-action="next"]');
+    if (next instanceof HTMLButtonElement) {
+      next.disabled = false;
+    }
   } else {
     requestAnimationFrame(() => positionHighlights(step));
   }
