@@ -17,6 +17,7 @@ import {
 } from './settings.js';
 import { applyPreferencesToState } from './preferences.js';
 import { invalidateDashboardCache } from './dashboard.js';
+import { syncAppShellLayout } from './app-shell.js';
 
 const MOBILE_WARNING_WIDTH = 780;
 const LOCK_HEARTBEAT_MS = 10000;
@@ -356,6 +357,13 @@ function neutralizeFilters() {
 
 function setTourSidebarCollapsed(collapsed) {
   document.body.classList.toggle('sidebar-collapsed', collapsed);
+  syncAppShellLayout();
+}
+
+function setTourReserveSidebarSpace(enabled) {
+  state.reserveSidebarSpace = !!enabled;
+  document.body.classList.toggle('reserve-sidebar-space', state.reserveSidebarSpace);
+  syncAppShellLayout();
 }
 
 async function flushTourSidebarTransitionReset() {
@@ -587,7 +595,12 @@ function positionCard(step) {
   let top;
 
   if (anchor.closest('.header')) {
-    left = rect.right - cardRect.width;
+    const headerButtons = Array.from(anchor.closest('.header').querySelectorAll('button'));
+    const rightmostHeaderEdge = headerButtons.reduce((right, button) => {
+      const buttonRect = button.getBoundingClientRect();
+      return Math.max(right, buttonRect.right);
+    }, rect.right);
+    left = rightmostHeaderEdge - cardRect.width;
     top = rect.bottom + gap;
   } else {
     left = rect.right + gap;
@@ -613,7 +626,7 @@ function renderWarning() {
     <p>This tour can run here, but some steps may not display correctly on smaller screens.</p>
     <div class="welcome-tour-actions">
       <button class="btn btn-ghost" data-action="later">Show me the tour next visit</button>
-      <button class="btn btn-secondary" data-action="skip">Skip tour</button>
+      <button class="btn btn-secondary welcome-tour-skip" data-action="skip">Skip tour</button>
       <button class="btn btn-primary" data-action="continue">Continue tour</button>
     </div>
   `;
@@ -641,8 +654,8 @@ function renderStep(step) {
       <p>The Spicetify extension install link will live here once it is ready.</p>
       <div class="welcome-tour-actions">${finalActions}</div>
     </div>` : `<div class="welcome-tour-actions">
+      <button class="btn btn-secondary welcome-tour-skip" data-action="skip">Skip tour</button>
       <button class="btn btn-ghost" data-action="back"${currentStepIndex === 0 ? ' disabled' : ''}>Back</button>
-      <button class="btn btn-secondary" data-action="skip">Skip</button>
       <button class="btn btn-primary" data-action="next">Next</button>
     </div>`}
   `;
@@ -730,9 +743,11 @@ function captureSnapshot() {
     navigation: cloneJson(state.navigation),
     view: state.view,
     earlyWrapped: state.earlyWrapped,
+    reserveSidebarSpace: state.reserveSidebarSpace,
     quickActionsToolbarVisibilityMode: state.quickActionsToolbarVisibilityMode,
     bodyClasses: {
       sidebarCollapsed: document.body.classList.contains('sidebar-collapsed'),
+      reserveSidebarSpace: document.body.classList.contains('reserve-sidebar-space'),
       uButtonsEnabled: document.body.classList.contains('u-buttons-enabled'),
       uButtonsHoverOnly: document.body.classList.contains('u-buttons-hover-only'),
       collectionViewGrid: document.body.classList.contains('collection-view-grid'),
@@ -768,10 +783,13 @@ async function restoreSnapshot() {
   state.sort = snapshot.sort;
   state.navigation = targetNavigation;
   state.view = snapshot.view;
+  state.reserveSidebarSpace = !!snapshot.reserveSidebarSpace;
   document.body.classList.toggle('sidebar-collapsed', snapshot.bodyClasses.sidebarCollapsed);
+  document.body.classList.toggle('reserve-sidebar-space', snapshot.bodyClasses.reserveSidebarSpace);
   document.body.classList.toggle('u-buttons-enabled', snapshot.bodyClasses.uButtonsEnabled);
   document.body.classList.toggle('collection-view-grid', snapshot.bodyClasses.collectionViewGrid);
   document.body.classList.toggle('view-grid', snapshot.bodyClasses.viewGrid);
+  syncAppShellLayout();
   syncFilterControlsFromState();
   updateStatusFilterBtn();
   updateImportTypeFilterBtn();
@@ -882,6 +900,7 @@ export async function startWelcomeTour(options = {}) {
   skippedToFinal = false;
   setEarlyWrappedEnabled(false, { persist: false });
   setQuickActionsToolbarVisibilityMode('visible', { persist: false });
+  setTourReserveSidebarSpace(false);
   neutralizeFilters();
   createOverlay();
   setAppInert(true);

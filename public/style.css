@@ -210,6 +210,10 @@ a:hover {
   margin-top: 16px;
 }
 
+.welcome-tour-skip {
+  margin-right: auto;
+}
+
 .welcome-tour-cta {
   margin-top: 14px;
   padding-top: 14px;

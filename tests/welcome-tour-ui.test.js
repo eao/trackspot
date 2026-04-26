@@ -16,6 +16,7 @@ const stateMock = {
   },
   view: 'list',
   earlyWrapped: true,
+  reserveSidebarSpace: false,
   quickActionsToolbarVisibilityMode: 'visible',
   welcomeTour: {
     active: false,
@@ -47,6 +48,7 @@ const setPageMock = vi.fn(async page => {
 const setUButtonsMock = vi.fn(enabled => {
   globalThis.document?.body?.classList.toggle('u-buttons-enabled', enabled);
 });
+const syncAppShellLayoutMock = vi.fn();
 const applyCollectionViewStateMock = vi.fn(view => {
   stateMock.navigation.page = 'collection';
   stateMock.navigation.collectionView = view;
@@ -109,6 +111,10 @@ vi.mock('../public/js/dashboard.js', () => ({
   invalidateDashboardCache: vi.fn(),
 }));
 
+vi.mock('../public/js/app-shell.js', () => ({
+  syncAppShellLayout: syncAppShellLayoutMock,
+}));
+
 async function flushTourStep() {
   await Promise.resolve();
   await Promise.resolve();
@@ -125,6 +131,7 @@ describe('welcome tour UI preparation', () => {
     renderMock.mockClear();
     setPageMock.mockClear();
     setUButtonsMock.mockClear();
+    syncAppShellLayoutMock.mockClear();
     applyCollectionViewStateMock.mockClear();
     localStorage.clear();
     globalThis.document.body.className = '';
@@ -150,6 +157,7 @@ describe('welcome tour UI preparation', () => {
       wrappedYear: null,
     };
     stateMock.view = 'list';
+    stateMock.reserveSidebarSpace = false;
     stateMock.welcomeTour = {
       active: false,
       replay: false,
@@ -184,6 +192,20 @@ describe('welcome tour UI preparation', () => {
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Welcome to Trackspot');
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+  });
+
+  it('does not reserve sidebar space while the tour sidebar is collapsed', async () => {
+    stateMock.reserveSidebarSpace = true;
+    globalThis.document.body.classList.add('reserve-sidebar-space');
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+    expect(globalThis.document.body.classList.contains('reserve-sidebar-space')).toBe(false);
+    expect(stateMock.reserveSidebarSpace).toBe(false);
+    expect(syncAppShellLayoutMock).toHaveBeenCalled();
   });
 
   it('expands the sidebar during the sidebar step', async () => {
@@ -228,6 +250,18 @@ describe('welcome tour UI preparation', () => {
           height: 40,
         };
       }
+      if (this.id === 'btn-view-grid') {
+        return {
+          x: 940,
+          y: 10,
+          top: 10,
+          right: 980,
+          bottom: 50,
+          left: 940,
+          width: 40,
+          height: 40,
+        };
+      }
       if (this.classList?.contains('welcome-tour-card')) {
         return {
           x: 0,
@@ -254,10 +288,21 @@ describe('welcome tour UI preparation', () => {
 
       const card = globalThis.document.querySelector('.welcome-tour-card');
       expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('List View');
-      expect(card?.style.getPropertyValue('--welcome-tour-left')).toBe('480px');
+      expect(card?.style.getPropertyValue('--welcome-tour-left')).toBe('560px');
       expect(card?.style.getPropertyValue('--welcome-tour-top')).toBe('64px');
     } finally {
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     }
+  });
+
+  it('places the skip tour button at the left of normal step actions', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    const firstAction = globalThis.document.querySelector('.welcome-tour-actions button');
+    expect(firstAction?.textContent).toBe('Skip tour');
+    expect(firstAction?.classList.contains('welcome-tour-skip')).toBe(true);
   });
 });
