@@ -250,9 +250,12 @@ const TOUR_STEPS = [
   {
     id: 'settings-button',
     title: 'Settings & More Button',
-    body: 'This button opens the settings area for preferences, imports, exports, backups, and reset tools.',
+    body: 'Click this button to open the settings area for preferences, imports, exports, backups, and reset tools.',
     anchor: '#btn-settings',
     highlight: '#btn-settings',
+    highlightAction: 'settings-open',
+    requireHighlightAction: true,
+    advanceOnHighlightAction: true,
     effect: prepareCollectionList,
   },
   {
@@ -265,9 +268,12 @@ const TOUR_STEPS = [
   {
     id: 'personalization-button',
     title: 'Personalization Button',
-    body: 'This button opens the personalization controls for color schemes, backgrounds, opacity, and Themes.',
+    body: 'Click this button to open the personalization controls for color schemes, backgrounds, opacity, and Themes.',
     anchor: '#btn-personalization',
     highlight: '#btn-personalization',
+    highlightAction: 'personalization-open',
+    requireHighlightAction: true,
+    advanceOnHighlightAction: true,
     effect: prepareCollectionList,
   },
   {
@@ -322,6 +328,7 @@ let inertSnapshots = [];
 let heartbeatGeneration = 0;
 let isFinishingTour = false;
 let stepHighlightActionComplete = false;
+let completedRequiredStepIds = new Set();
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -697,6 +704,11 @@ function handleHighlightAction(step) {
 
   if (step.requireHighlightAction) {
     stepHighlightActionComplete = true;
+    completedRequiredStepIds.add(step.id);
+    if (step.advanceOnHighlightAction) {
+      void showStep(currentStepIndex + 1);
+      return;
+    }
     const next = card?.querySelector('[data-action="next"]');
     if (next instanceof HTMLButtonElement) {
       next.disabled = false;
@@ -808,7 +820,7 @@ function renderStep(step) {
 async function showStep(index) {
   currentStepIndex = Math.max(0, Math.min(index, TOUR_STEPS.length - 1));
   const step = TOUR_STEPS[currentStepIndex];
-  stepHighlightActionComplete = false;
+  stepHighlightActionComplete = completedRequiredStepIds.has(step.id);
   try {
     await step.effect(step);
   } catch (error) {
@@ -1007,6 +1019,7 @@ async function finishTour(options = {}) {
     const restoredPage = await restoreSnapshot();
     snapshot = null;
     skippedToFinal = false;
+    completedRequiredStepIds.clear();
     if (!restoreOnly && shouldAddSamples && restoredPage === 'collection') {
       await loadAlbums();
     }
@@ -1035,6 +1048,7 @@ export async function startWelcomeTour(options = {}) {
   state.welcomeTour.lockSessionId = null;
   snapshot = captureSnapshot();
   skippedToFinal = false;
+  completedRequiredStepIds = new Set();
   setEarlyWrappedEnabled(false, { persist: false });
   setQuickActionsToolbarVisibilityMode('visible', { persist: false });
   setTourReserveSidebarSpace(false);

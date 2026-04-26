@@ -254,6 +254,16 @@ a:hover {
   margin-right: auto;
 }
 
+.welcome-tour-card .btn:disabled,
+.welcome-tour-card .btn:disabled:hover {
+  cursor: not-allowed;
+  background-color: color-mix(in srgb, var(--bg-hover) 70%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  color: var(--text-muted);
+  opacity: 0.68;
+  box-shadow: none;
+}
+
 .welcome-tour-cta {
   margin-top: 14px;
   padding-top: 14px;

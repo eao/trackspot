@@ -127,9 +127,13 @@ async function flushTourStep() {
 async function advanceTourStep() {
   const next = globalThis.document.querySelector('[data-action="next"]');
   if (next?.disabled) {
+    const currentTitle = globalThis.document.querySelector('.welcome-tour-card h2')?.textContent;
     globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
     await flushTourStep();
-    globalThis.document.querySelector('[data-action="next"]')?.click();
+    const updatedTitle = globalThis.document.querySelector('.welcome-tour-card h2')?.textContent;
+    if (updatedTitle === currentTitle) {
+      globalThis.document.querySelector('[data-action="next"]')?.click();
+    }
   } else {
     next?.click();
   }
@@ -288,6 +292,24 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
   });
 
+  it('remembers the sidebar toggle requirement when returning to the sidebar step', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 9; i += 1) {
+      await advanceTourStep();
+    }
+
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+    await advanceTourStep();
+    globalThis.document.querySelector('[data-action="back"]')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
+    expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(false);
+  });
+
   it('requires clicking the quick actions toolbar highlight before advancing', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
@@ -348,6 +370,58 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Log Album Button');
     expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(false);
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+  });
+
+  it('remembers the quick actions toggle requirement when returning to the toolbar step', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 10; i += 1) {
+      await advanceTourStep();
+    }
+
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+    await advanceTourStep();
+    globalThis.document.querySelector('[data-action="back"]')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
+    expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(false);
+  });
+
+  it('requires the settings button click and advances into settings', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 13; i += 1) {
+      await advanceTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Settings & More Button');
+    expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(true);
+
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Settings');
+  });
+
+  it('requires the personalization button click and advances into personalization', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 15; i += 1) {
+      await advanceTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Personalization Button');
+    expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(true);
+
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Personalization');
   });
 
   it('positions top bar button tour cards below the button with right edges aligned', async () => {
