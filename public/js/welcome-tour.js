@@ -210,7 +210,7 @@ const TOUR_STEPS = [
     body: 'We will reset to list view for the rest of the tour, where the sidebar and logging controls are easiest to see.',
     anchor: '#btn-view-list',
     highlight: '#btn-view-list',
-    effect: prepareCollectionList,
+    effect: prepareListResetStep,
   },
   {
     id: 'sidebar',
@@ -238,6 +238,9 @@ const TOUR_STEPS = [
     body: 'This button opens the manual album form when you want to add something yourself.',
     anchor: '#btn-log-new',
     highlight: '#btn-log-new',
+    highlightAction: 'log-album-open',
+    requireHighlightAction: true,
+    advanceOnHighlightAction: true,
     effect: prepareLogAlbumButtonStep,
   },
   {
@@ -437,13 +440,20 @@ async function prepareCollectionList(options = {}) {
   const {
     sidebarCollapsed = true,
     uButtonsEnabled = false,
+    animateSidebarChange = false,
   } = options;
+  const wasSidebarCollapsed = document.body.classList.contains('sidebar-collapsed');
+  const shouldAnimateSidebarChange = animateSidebarChange && wasSidebarCollapsed !== sidebarCollapsed;
 
   closeSettings();
   closePersonalization();
   closeModal();
   await setPage('collection', { historyMode: null, skipCollectionLoad: true, suppressTransitions: true });
   applyCollectionViewState('list', { load: false, suppressTransitions: true, preservePage: true });
+  if (shouldAnimateSidebarChange) {
+    setTourSidebarCollapsed(!sidebarCollapsed);
+    await flushTourSidebarTransitionReset();
+  }
   setTourSidebarCollapsed(sidebarCollapsed);
   setUButtons(uButtonsEnabled);
   setDemoAlbums();
@@ -471,28 +481,43 @@ async function prepareThemeStep(step) {
   await applyThemeByName(step.themeName);
 }
 
-async function prepareSidebarStep() {
-  await prepareCollectionList();
+async function prepareListResetStep(step, context = {}) {
+  await prepareCollectionList({
+    animateSidebarChange: context.previousStep?.id === 'sidebar',
+    sidebarCollapsed: true,
+    uButtonsEnabled: false,
+  });
+}
+
+async function prepareSidebarStep(step, context = {}) {
+  const preserveCurrentSidebarState = context.direction < 0;
+  const sidebarCollapsed = preserveCurrentSidebarState
+    ? document.body.classList.contains('sidebar-collapsed')
+    : true;
+  await prepareCollectionList({ sidebarCollapsed, uButtonsEnabled: false });
+  if (preserveCurrentSidebarState) return;
   await flushTourSidebarTransitionReset();
   setTourSidebarCollapsed(false);
 }
 
 async function prepareQuickActionsStep() {
-  await prepareCollectionList();
-  await flushTourSidebarTransitionReset();
-  setTourSidebarCollapsed(false);
+  const sidebarCollapsed = document.body.classList.contains('sidebar-collapsed');
+  await prepareCollectionList({ sidebarCollapsed, uButtonsEnabled: false });
   await flushTourSidebarTransitionReset();
   setUButtons(true);
 }
 
 async function prepareLogAlbumButtonStep() {
+  const sidebarCollapsed = document.body.classList.contains('sidebar-collapsed');
   const quickActionsEnabled = document.body.classList.contains('u-buttons-enabled');
-  await prepareCollectionList({ sidebarCollapsed: false, uButtonsEnabled: quickActionsEnabled });
-  await flushTourSidebarTransitionReset();
+  await prepareCollectionList({ sidebarCollapsed, uButtonsEnabled: quickActionsEnabled });
   if (quickActionsEnabled) {
     setUButtons(false);
   }
-  setTourSidebarCollapsed(true);
+  if (!sidebarCollapsed) {
+    await flushTourSidebarTransitionReset();
+    setTourSidebarCollapsed(true);
+  }
 }
 
 async function prepareManualModalStep() {
@@ -700,6 +725,8 @@ function handleHighlightAction(step) {
     setTourSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
   } else if (step.highlightAction === 'quick-actions-toggle') {
     setUButtons(!document.body.classList.contains('u-buttons-enabled'));
+  } else if (step.highlightAction === 'log-album-open') {
+    // The next step owns opening the modal; this highlight is the tour click zone.
   }
 
   if (step.requireHighlightAction) {
@@ -818,11 +845,18 @@ function renderStep(step) {
 }
 
 async function showStep(index) {
+  const previousStepIndex = currentStepIndex;
+  const previousStep = TOUR_STEPS[previousStepIndex] ?? null;
   currentStepIndex = Math.max(0, Math.min(index, TOUR_STEPS.length - 1));
   const step = TOUR_STEPS[currentStepIndex];
+  const direction = Math.sign(currentStepIndex - previousStepIndex);
   stepHighlightActionComplete = completedRequiredStepIds.has(step.id);
   try {
-    await step.effect(step);
+    await step.effect(step, {
+      direction,
+      previousStep,
+      previousStepIndex,
+    });
   } catch (error) {
     console.error('Welcome tour step failed:', error);
   }

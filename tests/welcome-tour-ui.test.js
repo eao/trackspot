@@ -240,7 +240,7 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
   });
 
-  it('reveals quick actions with the sidebar already expanded', async () => {
+  it('reveals quick actions without reopening an already collapsed sidebar', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
@@ -249,7 +249,7 @@ describe('welcome tour UI preparation', () => {
     }
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
-    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
     expect(setUButtonsMock).toHaveBeenLastCalledWith(true);
   });
 
@@ -273,7 +273,7 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
   });
 
-  it('allows the sidebar to be toggled on the sidebar step before resetting it on the next step', async () => {
+  it('allows the sidebar to be toggled on the sidebar step without reopening it on the next step', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
@@ -289,7 +289,24 @@ describe('welcome tour UI preparation', () => {
     await advanceTourStep();
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
-    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+  });
+
+  it('requires the log album button click and advances into the manual modal', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 11; i += 1) {
+      await advanceTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Log Album Button');
+    expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(true);
+
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Manual Adds');
   });
 
   it('remembers the sidebar toggle requirement when returning to the sidebar step', async () => {
