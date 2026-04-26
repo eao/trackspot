@@ -228,20 +228,19 @@ const TOUR_STEPS = [
     effect: prepareSidebarStep,
   },
   {
+    id: 'quick-actions-toggle',
+    title: 'Quick Actions Toolbar Toggle',
+    body: 'Click this button whenever you want to show or hide the quick actions toolbar.',
+    anchor: '#btn-toggle-u-buttons',
+    highlight: '#btn-toggle-u-buttons',
+    effect: prepareCollectionList,
+  },
+  {
     id: 'quick-actions',
     title: 'Quick Actions Toolbar',
     body: 'The quick actions toolbar can be toggled independently from the sidebar for the controls you use most.',
-    anchor: '#btn-toggle-u-buttons',
-    highlight: '#btn-toggle-u-buttons',
-    effect: prepareQuickActionsStep,
-  },
-  {
-    id: 'compact-controls',
-    title: 'Tuck Controls Away',
-    body: 'When you want the full collection width back, the sidebar and quick actions toolbar can both get out of the way.',
     anchor: TOP_BAR_TOUR_ANCHOR,
-    highlight: ['#btn-toggle-u-buttons', '#btn-toggle-sidebar'],
-    effect: prepareCompactControlsStep,
+    effect: prepareQuickActionsStep,
   },
   {
     id: 'log-album-button',
@@ -249,7 +248,7 @@ const TOUR_STEPS = [
     body: 'This button opens the manual album form when you want to add something yourself.',
     anchor: '#btn-log-new',
     highlight: '#btn-log-new',
-    effect: prepareCollectionList,
+    effect: prepareLogAlbumButtonStep,
   },
   {
     id: 'manual-modal',
@@ -485,7 +484,7 @@ async function prepareQuickActionsStep() {
   setUButtons(true);
 }
 
-async function prepareCompactControlsStep() {
+async function prepareLogAlbumButtonStep() {
   await prepareQuickActionsStep();
   await flushTourSidebarTransitionReset();
   setUButtons(false);

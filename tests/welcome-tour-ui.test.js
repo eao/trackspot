@@ -230,7 +230,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 11; i += 1) {
+    for (let i = 0; i < 12; i += 1) {
       globalThis.document.querySelector('[data-action="next"]')?.click();
       await flushTourStep();
     }
@@ -427,8 +427,8 @@ describe('welcome tour UI preparation', () => {
 
       const expectedTitles = [
         'Sidebar',
+        'Quick Actions Toolbar Toggle',
         'Quick Actions Toolbar',
-        'Tuck Controls Away',
         'Log Album Button',
         'Manual Adds',
         'Settings & More Button',
@@ -450,5 +450,20 @@ describe('welcome tour UI preparation', () => {
     } finally {
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     }
+  });
+
+  it('contracts sidebar and quick actions on the log album button step', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 13; i += 1) {
+      globalThis.document.querySelector('[data-action="next"]')?.click();
+      await flushTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Log Album Button');
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+    expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(false);
+    expect(setUButtonsMock).toHaveBeenLastCalledWith(false);
   });
 });
