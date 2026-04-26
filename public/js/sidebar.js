@@ -41,6 +41,15 @@ function getCurrentCollectionView() {
   return state.navigation?.collectionView || state.view || 'list';
 }
 
+function syncCollectionViewButtons(view) {
+  const page = state.navigation?.page || 'collection';
+  if (page !== 'collection') return;
+  el.btnViewList?.classList.toggle('active', view === 'list');
+  el.btnViewGrid?.classList.toggle('active', view === 'grid');
+  el.btnStats?.classList.remove('active');
+  el.btnWrapped?.classList.remove('active');
+}
+
 function ensureSidebarVisibleForCollection(sidebarEl) {
   if (!(sidebarEl instanceof Element)) return;
   sidebarEl.classList.remove('startup-hidden');
@@ -752,6 +761,7 @@ export function applyCollectionViewState(view, options = {}) {
   if (!preservePage) {
     resetPagination();
   }
+  syncCollectionViewButtons(view);
 
   document.body.classList.toggle('collection-view-grid', view === 'grid');
   document.body.classList.toggle('view-grid', view === 'grid');

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const stateMock = {
+  navigation: {
+    page: 'collection',
+    collectionView: 'grid',
+  },
   view: 'grid',
   reserveSidebarSpace: false,
   filters: {
@@ -21,6 +25,8 @@ const elMock = {
   viewGrid: null,
   btnViewList: null,
   btnViewGrid: null,
+  btnStats: null,
+  btnWrapped: null,
   sortFieldBtn: null,
   sortFieldDropdown: null,
   sortOrder: null,
@@ -134,6 +140,8 @@ describe('sidebar animation state cleanup', () => {
     globalThis.document.body.innerHTML = `
       <button id="btn-view-list"></button>
       <button id="btn-view-grid"></button>
+      <button id="btn-stats" class="active"></button>
+      <button id="btn-wrapped"></button>
       <button id="sort-order"></button>
       <button id="u-btn-sort-order"></button>
       <button id="filter-rated-btn"></button>
@@ -153,10 +161,14 @@ describe('sidebar animation state cleanup', () => {
     `;
 
     stateMock.view = 'grid';
+    stateMock.navigation.page = 'collection';
+    stateMock.navigation.collectionView = 'grid';
     stateMock.reserveSidebarSpace = false;
 
     elMock.btnViewList = globalThis.document.getElementById('btn-view-list');
     elMock.btnViewGrid = globalThis.document.getElementById('btn-view-grid');
+    elMock.btnStats = globalThis.document.getElementById('btn-stats');
+    elMock.btnWrapped = globalThis.document.getElementById('btn-wrapped');
     elMock.sortOrder = globalThis.document.getElementById('sort-order');
     elMock.uBtnSortOrder = globalThis.document.getElementById('u-btn-sort-order');
     elMock.filterRatedBtn = globalThis.document.getElementById('filter-rated-btn');
@@ -171,6 +183,8 @@ describe('sidebar animation state cleanup', () => {
     elMock.sortFieldBtn = globalThis.document.getElementById('sort-field-btn');
     elMock.sortFieldDropdown = globalThis.document.getElementById('sort-field-dropdown');
     elMock.viewGrid = globalThis.document.getElementById('view-grid');
+
+    globalThis.document.querySelector('.sidebar').getAnimations = () => [];
 
     const card = globalThis.document.createElement('div');
     card.className = 'album-card';
@@ -249,5 +263,22 @@ describe('sidebar animation state cleanup', () => {
 
     expect(sidebar.classList.contains('startup-hidden')).toBe(false);
     expect(sidebar.style.visibility).toBe('');
+  });
+
+  it('syncs top-bar collection view highlights when applying collection view state directly', async () => {
+    elMock.btnViewGrid.classList.add('active');
+
+    const { applyCollectionViewState } = await import('../public/js/sidebar.js');
+
+    applyCollectionViewState('list', { load: false, suppressTransitions: true });
+
+    expect(elMock.btnViewList.classList.contains('active')).toBe(true);
+    expect(elMock.btnViewGrid.classList.contains('active')).toBe(false);
+    expect(elMock.btnStats.classList.contains('active')).toBe(false);
+
+    applyCollectionViewState('grid', { load: false, suppressTransitions: true });
+
+    expect(elMock.btnViewList.classList.contains('active')).toBe(false);
+    expect(elMock.btnViewGrid.classList.contains('active')).toBe(true);
   });
 });

@@ -364,6 +364,7 @@ async function prepareCollectionGrid() {
   closeModal();
   await setPage('collection', { historyMode: null, skipCollectionLoad: true, suppressTransitions: true });
   applyCollectionViewState('grid', { load: false, suppressTransitions: true, preservePage: true });
+  setUButtons(false);
   setDemoAlbums();
 }
 
