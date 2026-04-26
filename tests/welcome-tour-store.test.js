@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const serverModulePaths = [
@@ -81,6 +81,7 @@ afterEach(() => {
   delete process.env.DATA_DIR;
   delete process.env.PREFERENCES_PATH;
   resetServerModules();
+  vi.useRealTimers();
 });
 
 describe('welcome tour store', () => {
@@ -129,6 +130,34 @@ describe('welcome tour store', () => {
       rating: null,
     });
     expect(rows[0].image_path).toBe('images/welcome-placeholder-spotify-album.jpg');
+  });
+
+  it('seeds welcome sample listen dates in the current year without future dates', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 0, 20, 12, 0, 0));
+    const { dbModule, welcomeStore } = loadContext();
+
+    welcomeStore.insertWelcomeSamples();
+    const rows = dbModule.db.prepare(`
+      SELECT album_name, status, planned_at, listened_at
+      FROM albums
+      ORDER BY id ASC
+    `).all();
+
+    expect(rows).toEqual([
+      {
+        album_name: 'Placeholder Spotify Import',
+        status: 'completed',
+        planned_at: null,
+        listened_at: '2026-01-15',
+      },
+      {
+        album_name: 'Placeholder Manual Log',
+        status: 'dropped',
+        planned_at: null,
+        listened_at: '2026-01-20',
+      },
+    ]);
   });
 
   it('allows a later real import of the Spotify URI used by the placeholder link', async () => {

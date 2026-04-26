@@ -18,7 +18,36 @@ import { invalidateDashboardCache } from './dashboard.js';
 
 const MOBILE_WARNING_WIDTH = 780;
 const LOCK_HEARTBEAT_MS = 10000;
-const DEMO_YEAR = new Date().getFullYear();
+
+function padDatePart(value) {
+  return String(value).padStart(2, '0');
+}
+
+function formatDemoDate(year, month, day) {
+  return `${year}-${padDatePart(month)}-${padDatePart(day)}`;
+}
+
+function getPastOrTodayDemoDate(now, month, day) {
+  const year = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const currentDay = now.getDate();
+  const isFutureInCurrentYear = month > currentMonth
+    || (month === currentMonth && day > currentDay);
+  return isFutureInCurrentYear
+    ? formatDemoDate(year, currentMonth, currentDay)
+    : formatDemoDate(year, month, day);
+}
+
+function getDemoAlbumDates(now = new Date()) {
+  return {
+    year: now.getFullYear(),
+    spotifyListenedAt: getPastOrTodayDemoDate(now, 1, 15),
+    manualListenedAt: getPastOrTodayDemoDate(now, 2, 1),
+  };
+}
+
+const DEMO_DATES = getDemoAlbumDates();
+const DEMO_YEAR = DEMO_DATES.year;
 
 const DEMO_ALBUMS = [
   {
@@ -49,7 +78,7 @@ const DEMO_ALBUMS = [
     rating: 92,
     notes: 'This sample behaves like a Spotify import: imported metadata is read-only, while your listening details stay editable.',
     planned_at: null,
-    listened_at: `${DEMO_YEAR}-01-15`,
+    listened_at: DEMO_DATES.spotifyListenedAt,
     repeats: 0,
     priority: 0,
     source: 'spotify',
@@ -85,7 +114,7 @@ const DEMO_ALBUMS = [
     rating: null,
     notes: 'Manual logs are for albums you want to enter yourself. You can edit their title, artist, dates, links, and art.',
     planned_at: null,
-    listened_at: `${DEMO_YEAR}-02-01`,
+    listened_at: DEMO_DATES.manualListenedAt,
     repeats: 0,
     priority: 1,
     source: 'manual',

@@ -17,6 +17,32 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function padDatePart(value) {
+  return String(value).padStart(2, '0');
+}
+
+function formatSampleDate(year, month, day) {
+  return `${year}-${padDatePart(month)}-${padDatePart(day)}`;
+}
+
+function getPastOrTodaySampleDate(now, month, day) {
+  const year = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const currentDay = now.getDate();
+  const isFutureInCurrentYear = month > currentMonth
+    || (month === currentMonth && day > currentDay);
+  return isFutureInCurrentYear
+    ? formatSampleDate(year, currentMonth, currentDay)
+    : formatSampleDate(year, month, day);
+}
+
+function getWelcomeSampleDates(now = new Date()) {
+  return {
+    spotifyListenedAt: getPastOrTodaySampleDate(now, 1, 15),
+    manualListenedAt: getPastOrTodaySampleDate(now, 2, 1),
+  };
+}
+
 function pruneExpiredLocks(now = Date.now()) {
   for (const [sessionId, lock] of activeLocks.entries()) {
     if (!lock || lock.expiresAt <= now) {
@@ -114,6 +140,7 @@ function copySampleArt(assetName, destinationName) {
 }
 
 function buildWelcomeSamples() {
+  const sampleDates = getWelcomeSampleDates();
   return [
     {
       welcome_sample_key: SAMPLE_KEYS.SPOTIFY,
@@ -142,7 +169,7 @@ function buildWelcomeSamples() {
       rating: 92,
       notes: 'This sample behaves like a Spotify import: imported metadata is read-only, while your listening details stay editable.',
       planned_at: null,
-      listened_at: `${new Date().getFullYear()}-01-15`,
+      listened_at: sampleDates.spotifyListenedAt,
       repeats: 0,
       priority: 0,
       source: 'spotify',
@@ -176,7 +203,7 @@ function buildWelcomeSamples() {
       rating: null,
       notes: 'Manual logs are for albums you want to enter yourself. You can edit their title, artist, dates, links, and art.',
       planned_at: null,
-      listened_at: `${new Date().getFullYear()}-02-01`,
+      listened_at: sampleDates.manualListenedAt,
       repeats: 0,
       priority: 1,
       source: 'manual',
