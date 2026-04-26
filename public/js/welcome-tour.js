@@ -436,6 +436,41 @@ async function flushTourSidebarTransitionReset() {
   }
 }
 
+async function stageTourSidebarAnimationStart(collapsed) {
+  const sidebar = document.querySelector('.sidebar');
+  const content = document.querySelector('.content');
+  if (sidebar instanceof HTMLElement) {
+    sidebar.style.transition = 'none';
+  }
+  if (content instanceof HTMLElement) {
+    content.style.transition = 'none';
+  }
+
+  setTourSidebarCollapsed(collapsed);
+
+  if (sidebar instanceof Element) {
+    void sidebar.getBoundingClientRect();
+  }
+  if (content instanceof Element) {
+    void content.getBoundingClientRect();
+  }
+
+  await nextAnimationFrame();
+
+  if (sidebar instanceof HTMLElement) {
+    sidebar.style.transition = '';
+  }
+  if (content instanceof HTMLElement) {
+    content.style.transition = '';
+  }
+
+  await nextAnimationFrame();
+
+  if (sidebar instanceof Element) {
+    void sidebar.getBoundingClientRect();
+  }
+}
+
 async function prepareCollectionList(options = {}) {
   const {
     sidebarCollapsed = true,
@@ -451,8 +486,7 @@ async function prepareCollectionList(options = {}) {
   await setPage('collection', { historyMode: null, skipCollectionLoad: true, suppressTransitions: true });
   applyCollectionViewState('list', { load: false, suppressTransitions: true, preservePage: true });
   if (shouldAnimateSidebarChange) {
-    setTourSidebarCollapsed(!sidebarCollapsed);
-    await flushTourSidebarTransitionReset();
+    await stageTourSidebarAnimationStart(!sidebarCollapsed);
   }
   setTourSidebarCollapsed(sidebarCollapsed);
   setUButtons(uButtonsEnabled);
