@@ -489,21 +489,20 @@ async function prepareListResetStep(step, context = {}) {
   });
 }
 
-async function prepareSidebarStep(step, context = {}) {
-  const preserveCurrentSidebarState = context.direction < 0;
-  const sidebarCollapsed = preserveCurrentSidebarState
-    ? document.body.classList.contains('sidebar-collapsed')
-    : true;
-  await prepareCollectionList({ sidebarCollapsed, uButtonsEnabled: false });
-  if (preserveCurrentSidebarState) return;
-  await flushTourSidebarTransitionReset();
-  setTourSidebarCollapsed(false);
+async function prepareSidebarStep() {
+  await prepareCollectionList({
+    animateSidebarChange: true,
+    sidebarCollapsed: false,
+    uButtonsEnabled: false,
+  });
 }
 
 async function prepareQuickActionsStep() {
-  const sidebarCollapsed = document.body.classList.contains('sidebar-collapsed');
-  await prepareCollectionList({ sidebarCollapsed, uButtonsEnabled: false });
-  await flushTourSidebarTransitionReset();
+  await prepareCollectionList({
+    animateSidebarChange: true,
+    sidebarCollapsed: false,
+    uButtonsEnabled: false,
+  });
   setUButtons(true);
 }
 

@@ -240,7 +240,7 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
   });
 
-  it('reveals quick actions without reopening an already collapsed sidebar', async () => {
+  it('reveals quick actions with the sidebar out', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
@@ -249,7 +249,7 @@ describe('welcome tour UI preparation', () => {
     }
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
-    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
     expect(setUButtonsMock).toHaveBeenLastCalledWith(true);
   });
 
@@ -273,7 +273,7 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
   });
 
-  it('allows the sidebar to be toggled on the sidebar step without reopening it on the next step', async () => {
+  it('slides the sidebar back out on the quick actions step if it was toggled away', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
@@ -289,7 +289,7 @@ describe('welcome tour UI preparation', () => {
     await advanceTourStep();
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
-    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
   });
 
   it('requires the log album button click and advances into the manual modal', async () => {
