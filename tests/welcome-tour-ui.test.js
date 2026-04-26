@@ -124,6 +124,16 @@ async function flushTourStep() {
   await new Promise(resolve => setTimeout(resolve, 0));
 }
 
+async function advanceTourStep() {
+  const next = globalThis.document.querySelector('[data-action="next"]');
+  if (next?.disabled) {
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+  } else {
+    next?.click();
+  }
+  await flushTourStep();
+}
+
 describe('welcome tour UI preparation', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -176,8 +186,7 @@ describe('welcome tour UI preparation', () => {
 
     await startWelcomeTour({ replay: true });
     for (let i = 0; i < 7; i += 1) {
-      globalThis.document.querySelector('[data-action="next"]')?.click();
-      await flushTourStep();
+      await advanceTourStep();
     }
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Grid View');
@@ -218,8 +227,7 @@ describe('welcome tour UI preparation', () => {
 
     await startWelcomeTour({ replay: true });
     for (let i = 0; i < 10; i += 1) {
-      globalThis.document.querySelector('[data-action="next"]')?.click();
-      await flushTourStep();
+      await advanceTourStep();
     }
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
@@ -231,13 +239,89 @@ describe('welcome tour UI preparation', () => {
 
     await startWelcomeTour({ replay: true });
     for (let i = 0; i < 12; i += 1) {
-      globalThis.document.querySelector('[data-action="next"]')?.click();
-      await flushTourStep();
+      await advanceTourStep();
     }
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
     expect(setUButtonsMock).toHaveBeenLastCalledWith(true);
+  });
+
+  it('requires clicking the sidebar toggle highlight before advancing', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 9; i += 1) {
+      await advanceTourStep();
+    }
+
+    const next = globalThis.document.querySelector('[data-action="next"]');
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar Toggle');
+    expect(next?.disabled).toBe(true);
+
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
+  });
+
+  it('allows the sidebar to be toggled on the sidebar step before resetting it on the next step', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 10; i += 1) {
+      await advanceTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+
+    await advanceTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar Toggle');
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
+  });
+
+  it('requires clicking the quick actions toolbar toggle highlight before advancing', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 11; i += 1) {
+      await advanceTourStep();
+    }
+
+    const next = globalThis.document.querySelector('[data-action="next"]');
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar Toggle');
+    expect(next?.disabled).toBe(true);
+
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
+    expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(true);
+  });
+
+  it('leaves quick actions hidden on the log album button step when the toolbar was toggled off', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 12; i += 1) {
+      await advanceTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
+    globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+    expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(false);
+
+    await advanceTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Log Album Button');
+    expect(globalThis.document.body.classList.contains('u-buttons-enabled')).toBe(false);
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
   });
 
   it('positions top bar button tour cards below the button with right edges aligned', async () => {
@@ -299,8 +383,7 @@ describe('welcome tour UI preparation', () => {
 
       await startWelcomeTour({ replay: true });
       for (let i = 0; i < 6; i += 1) {
-        globalThis.document.querySelector('[data-action="next"]')?.click();
-        await flushTourStep();
+        await advanceTourStep();
       }
 
       const card = globalThis.document.querySelector('.welcome-tour-card');
@@ -347,8 +430,7 @@ describe('welcome tour UI preparation', () => {
 
       await startWelcomeTour({ replay: true });
       for (let i = 0; i < 6; i += 1) {
-        globalThis.document.querySelector('[data-action="next"]')?.click();
-        await flushTourStep();
+        await advanceTourStep();
       }
 
       const highlight = globalThis.document.querySelector('.welcome-tour-highlight');
@@ -421,8 +503,7 @@ describe('welcome tour UI preparation', () => {
 
       await startWelcomeTour({ replay: true });
       for (let i = 0; i < 10; i += 1) {
-        globalThis.document.querySelector('[data-action="next"]')?.click();
-        await flushTourStep();
+        await advanceTourStep();
       }
 
       const expectedTitles = [
@@ -443,8 +524,7 @@ describe('welcome tour UI preparation', () => {
         expect(card?.style.getPropertyValue('--welcome-tour-left')).toBe('560px');
         expect(card?.style.getPropertyValue('--welcome-tour-top')).toBe('64px');
         if (title !== expectedTitles.at(-1)) {
-          globalThis.document.querySelector('[data-action="next"]')?.click();
-          await flushTourStep();
+          await advanceTourStep();
         }
       }
     } finally {
@@ -457,8 +537,7 @@ describe('welcome tour UI preparation', () => {
 
     await startWelcomeTour({ replay: true });
     for (let i = 0; i < 13; i += 1) {
-      globalThis.document.querySelector('[data-action="next"]')?.click();
-      await flushTourStep();
+      await advanceTourStep();
     }
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Log Album Button');

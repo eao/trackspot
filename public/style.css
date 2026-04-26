@@ -162,6 +162,7 @@ a:hover {
 
 .welcome-tour-highlight {
   position: fixed;
+  pointer-events: none;
   border: 2px solid var(--accent);
   border-radius: 10px;
   box-shadow:
@@ -169,6 +170,11 @@ a:hover {
     0 0 22px color-mix(in srgb, var(--accent) 58%, transparent),
     inset 0 0 0 1px color-mix(in srgb, white 35%, transparent);
   animation: welcome-tour-highlight-pulse 1.45s ease-in-out infinite;
+}
+
+.welcome-tour-highlight-interactive {
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 @keyframes welcome-tour-highlight-pulse {

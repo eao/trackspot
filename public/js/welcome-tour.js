@@ -218,6 +218,8 @@ const TOUR_STEPS = [
     body: 'Click this button whenever you want to expand or contract the sidebar.',
     anchor: '#btn-toggle-sidebar',
     highlight: '#btn-toggle-sidebar',
+    highlightAction: 'sidebar-toggle',
+    requireHighlightAction: true,
     effect: prepareCollectionList,
   },
   {
@@ -225,6 +227,8 @@ const TOUR_STEPS = [
     title: 'Sidebar',
     body: 'The sidebar holds search, filters, and sorting. It can be shown or tucked away whenever you need more space.',
     anchor: TOP_BAR_TOUR_ANCHOR,
+    highlight: '#btn-toggle-sidebar',
+    highlightAction: 'sidebar-toggle',
     effect: prepareSidebarStep,
   },
   {
@@ -233,13 +237,17 @@ const TOUR_STEPS = [
     body: 'Click this button whenever you want to show or hide the quick actions toolbar.',
     anchor: '#btn-toggle-u-buttons',
     highlight: '#btn-toggle-u-buttons',
-    effect: prepareCollectionList,
+    highlightAction: 'quick-actions-toggle',
+    requireHighlightAction: true,
+    effect: prepareQuickActionsToggleStep,
   },
   {
     id: 'quick-actions',
     title: 'Quick Actions Toolbar',
     body: 'The quick actions toolbar can be toggled independently from the sidebar for the controls you use most.',
     anchor: TOP_BAR_TOUR_ANCHOR,
+    highlight: '#btn-toggle-u-buttons',
+    highlightAction: 'quick-actions-toggle',
     effect: prepareQuickActionsStep,
   },
   {
@@ -331,6 +339,7 @@ let statusCache = null;
 let inertSnapshots = [];
 let heartbeatGeneration = 0;
 let isFinishingTour = false;
+let stepHighlightActionComplete = false;
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -438,6 +447,7 @@ async function flushTourSidebarTransitionReset() {
 async function prepareCollectionList(options = {}) {
   const {
     sidebarCollapsed = true,
+    uButtonsEnabled = false,
   } = options;
 
   closeSettings();
@@ -446,7 +456,7 @@ async function prepareCollectionList(options = {}) {
   await setPage('collection', { historyMode: null, skipCollectionLoad: true, suppressTransitions: true });
   applyCollectionViewState('list', { load: false, suppressTransitions: true, preservePage: true });
   setTourSidebarCollapsed(sidebarCollapsed);
-  setUButtons(false);
+  setUButtons(uButtonsEnabled);
   setDemoAlbums();
 }
 
@@ -478,16 +488,27 @@ async function prepareSidebarStep() {
   setTourSidebarCollapsed(false);
 }
 
-async function prepareQuickActionsStep() {
+async function prepareQuickActionsToggleStep() {
   await prepareCollectionList({ sidebarCollapsed: false });
+  await flushTourSidebarTransitionReset();
+  setTourSidebarCollapsed(false);
+}
+
+async function prepareQuickActionsStep() {
+  await prepareCollectionList();
+  await flushTourSidebarTransitionReset();
+  setTourSidebarCollapsed(false);
   await flushTourSidebarTransitionReset();
   setUButtons(true);
 }
 
 async function prepareLogAlbumButtonStep() {
-  await prepareQuickActionsStep();
+  const quickActionsEnabled = document.body.classList.contains('u-buttons-enabled');
+  await prepareCollectionList({ sidebarCollapsed: false, uButtonsEnabled: quickActionsEnabled });
   await flushTourSidebarTransitionReset();
-  setUButtons(false);
+  if (quickActionsEnabled) {
+    setUButtons(false);
+  }
   setTourSidebarCollapsed(true);
 }
 
@@ -660,10 +681,26 @@ function positionHighlights(step) {
     const target = document.querySelector(selector);
     if (!(target instanceof Element)) return;
     const rect = target.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
 
     const highlight = document.createElement('div');
     highlight.className = 'welcome-tour-highlight';
+    if (step.highlightAction) {
+      highlight.classList.add('welcome-tour-highlight-interactive');
+      highlight.setAttribute('role', 'button');
+      highlight.setAttribute('aria-label', target.getAttribute('title') || step.title || 'Tour action');
+      highlight.tabIndex = 0;
+      const runAction = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        handleHighlightAction(step);
+      };
+      highlight.addEventListener('click', runAction);
+      highlight.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          runAction(event);
+        }
+      });
+    }
     const pad = 6;
     highlight.style.left = `${rect.left - pad}px`;
     highlight.style.top = `${rect.top - pad}px`;
@@ -671,6 +708,23 @@ function positionHighlights(step) {
     highlight.style.height = `${rect.height + pad * 2}px`;
     highlightLayer.appendChild(highlight);
   });
+}
+
+function handleHighlightAction(step) {
+  if (!state.welcomeTour.active || !step?.highlightAction) return;
+
+  if (step.highlightAction === 'sidebar-toggle') {
+    setTourSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
+  } else if (step.highlightAction === 'quick-actions-toggle') {
+    setUButtons(!document.body.classList.contains('u-buttons-enabled'));
+  }
+
+  if (step.requireHighlightAction) {
+    stepHighlightActionComplete = true;
+    void showStep(currentStepIndex + 1);
+  } else {
+    requestAnimationFrame(() => positionHighlights(step));
+  }
 }
 
 function positionCard(step) {
@@ -743,6 +797,7 @@ function renderStep(step) {
     : '';
   const finalActions = `${sampleWarning}<button class="btn btn-secondary" data-action="empty">Start with empty collection</button><button class="btn btn-primary" data-action="samples">Add sample albums</button>`;
 
+  positionHighlights(null);
   card.className = 'welcome-tour-card';
   card.innerHTML = `
     <div class="welcome-tour-kicker">${step.final ? 'Ready to start' : `Step ${progress}`}</div>
@@ -754,7 +809,7 @@ function renderStep(step) {
     </div>` : `<div class="welcome-tour-actions">
       <button class="btn btn-secondary welcome-tour-skip" data-action="skip">Skip tour</button>
       <button class="btn btn-ghost" data-action="back"${currentStepIndex === 0 ? ' disabled' : ''}>Back</button>
-      <button class="btn btn-primary" data-action="next">Next</button>
+      <button class="btn btn-primary" data-action="next"${step.requireHighlightAction && !stepHighlightActionComplete ? ' disabled' : ''}>Next</button>
     </div>`}
   `;
 
@@ -763,6 +818,7 @@ function renderStep(step) {
   card.querySelector('[data-action="skip"]')?.addEventListener('click', () => skipTour());
   card.querySelector('[data-action="empty"]')?.addEventListener('click', () => finishTour({ markComplete: true }));
   card.querySelector('[data-action="samples"]')?.addEventListener('click', () => finishTour({ markComplete: true, addSamples: true }));
+  positionHighlights(step);
   requestAnimationFrame(() => {
     positionCard(step);
     positionHighlights(step);
@@ -773,6 +829,7 @@ function renderStep(step) {
 async function showStep(index) {
   currentStepIndex = Math.max(0, Math.min(index, TOUR_STEPS.length - 1));
   const step = TOUR_STEPS[currentStepIndex];
+  stepHighlightActionComplete = false;
   try {
     await step.effect(step);
   } catch (error) {
