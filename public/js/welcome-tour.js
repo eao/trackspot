@@ -11,6 +11,8 @@ import {
   openSettings,
   refreshWelcomeTourSettings,
   restorePersonalizationFromStorage,
+  setEarlyWrappedEnabled,
+  setQuickActionsToolbarVisibilityMode,
   setUButtons,
 } from './settings.js';
 import { applyPreferencesToState } from './preferences.js';
@@ -648,9 +650,12 @@ function captureSnapshot() {
     sort: cloneJson(state.sort),
     navigation: cloneJson(state.navigation),
     view: state.view,
+    earlyWrapped: state.earlyWrapped,
+    quickActionsToolbarVisibilityMode: state.quickActionsToolbarVisibilityMode,
     bodyClasses: {
       sidebarCollapsed: document.body.classList.contains('sidebar-collapsed'),
       uButtonsEnabled: document.body.classList.contains('u-buttons-enabled'),
+      uButtonsHoverOnly: document.body.classList.contains('u-buttons-hover-only'),
       collectionViewGrid: document.body.classList.contains('collection-view-grid'),
       viewGrid: document.body.classList.contains('view-grid'),
     },
@@ -666,6 +671,13 @@ async function restoreSnapshot() {
   closeModal();
   restoreStorageSnapshot(snapshot.storage);
   await restorePersonalizationFromStorage();
+  setEarlyWrappedEnabled(snapshot.earlyWrapped, { persist: false });
+  setQuickActionsToolbarVisibilityMode(
+    snapshot.quickActionsToolbarVisibilityMode === 'hover' || snapshot.bodyClasses.uButtonsHoverOnly
+      ? 'hover'
+      : 'visible',
+    { persist: false },
+  );
   state.albums = snapshot.albums;
   state.albumsLoaded = snapshot.albumsLoaded;
   state.albumsLoading = snapshot.albumsLoading;
@@ -762,6 +774,8 @@ export async function startWelcomeTour(options = {}) {
   state.welcomeTour.lockSessionId = null;
   snapshot = captureSnapshot();
   skippedToFinal = false;
+  setEarlyWrappedEnabled(false, { persist: false });
+  setQuickActionsToolbarVisibilityMode('visible', { persist: false });
   neutralizeFilters();
   createOverlay();
   setAppInert(true);
