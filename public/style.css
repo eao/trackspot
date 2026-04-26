@@ -153,10 +153,44 @@ a:hover {
   background: rgba(0, 0, 0, 0.18);
 }
 
+.welcome-tour-highlight-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.welcome-tour-highlight {
+  position: fixed;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent),
+    0 0 22px color-mix(in srgb, var(--accent) 58%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, white 35%, transparent);
+  animation: welcome-tour-highlight-pulse 1.45s ease-in-out infinite;
+}
+
+@keyframes welcome-tour-highlight-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent),
+      0 0 18px color-mix(in srgb, var(--accent) 48%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, white 28%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 7px color-mix(in srgb, var(--accent) 26%, transparent),
+      0 0 30px color-mix(in srgb, var(--accent) 68%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, white 42%, transparent);
+  }
+}
+
 .welcome-tour-card {
   position: fixed;
   top: var(--welcome-tour-top, 112px);
   left: var(--welcome-tour-left, calc(100vw - min(420px, 92vw) - 28px));
+  z-index: 2;
   width: min(420px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   overflow: auto;

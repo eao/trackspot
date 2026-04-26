@@ -193,6 +193,7 @@ const TOUR_STEPS = [
     title: 'List View',
     body: 'List view is the denser collection view, with album details, notes, year, and dates arranged for scanning.',
     anchor: '#btn-view-list',
+    highlight: '#btn-view-list',
     effect: prepareCollectionList,
   },
   {
@@ -200,7 +201,24 @@ const TOUR_STEPS = [
     title: 'Grid View',
     body: 'Grid view puts the art first when you want to browse your collection visually.',
     anchor: '#btn-view-grid',
+    highlight: '#btn-view-grid',
     effect: prepareCollectionGrid,
+  },
+  {
+    id: 'list-reset',
+    title: 'Back to List View',
+    body: 'We will reset to list view for the rest of the tour, where the sidebar and logging controls are easiest to see.',
+    anchor: '#btn-view-list',
+    highlight: '#btn-view-list',
+    effect: prepareCollectionList,
+  },
+  {
+    id: 'sidebar-toggle',
+    title: 'Sidebar Toggle',
+    body: 'Click this button whenever you want to expand or contract the sidebar.',
+    anchor: '#btn-toggle-sidebar',
+    highlight: '#btn-toggle-sidebar',
+    effect: prepareCollectionList,
   },
   {
     id: 'sidebar',
@@ -213,8 +231,25 @@ const TOUR_STEPS = [
     id: 'quick-actions',
     title: 'Quick Actions Toolbar',
     body: 'The quick actions toolbar can be toggled independently from the sidebar for the controls you use most.',
-    anchor: TOP_BAR_TOUR_ANCHOR,
+    anchor: '#btn-toggle-u-buttons',
+    highlight: '#btn-toggle-u-buttons',
     effect: prepareQuickActionsStep,
+  },
+  {
+    id: 'compact-controls',
+    title: 'Tuck Controls Away',
+    body: 'When you want the full collection width back, the sidebar and quick actions toolbar can both get out of the way.',
+    anchor: TOP_BAR_TOUR_ANCHOR,
+    highlight: ['#btn-toggle-u-buttons', '#btn-toggle-sidebar'],
+    effect: prepareCompactControlsStep,
+  },
+  {
+    id: 'log-album-button',
+    title: 'Log Album Button',
+    body: 'This button opens the manual album form when you want to add something yourself.',
+    anchor: '#btn-log-new',
+    highlight: '#btn-log-new',
+    effect: prepareCollectionList,
   },
   {
     id: 'manual-modal',
@@ -224,11 +259,27 @@ const TOUR_STEPS = [
     effect: prepareManualModalStep,
   },
   {
+    id: 'settings-button',
+    title: 'Settings & More Button',
+    body: 'This button opens the settings area for preferences, imports, exports, backups, and reset tools.',
+    anchor: '#btn-settings',
+    highlight: '#btn-settings',
+    effect: prepareCollectionList,
+  },
+  {
     id: 'settings',
     title: 'Settings',
     body: 'Settings covers preferences, paging, quick actions, import/export, backups, and reset tools.',
     anchor: TOP_BAR_TOUR_ANCHOR,
     effect: prepareSettingsStep,
+  },
+  {
+    id: 'personalization-button',
+    title: 'Personalization Button',
+    body: 'This button opens the personalization controls for color schemes, backgrounds, opacity, and Themes.',
+    anchor: '#btn-personalization',
+    highlight: '#btn-personalization',
+    effect: prepareCollectionList,
   },
   {
     id: 'personalization',
@@ -242,6 +293,7 @@ const TOUR_STEPS = [
     title: 'Stats',
     body: 'Stats turns your logged albums into a dashboard once your real collection starts to grow.',
     anchor: '#btn-stats',
+    highlight: '#btn-stats',
     effect: prepareStatsStep,
   },
   {
@@ -249,12 +301,20 @@ const TOUR_STEPS = [
     title: 'Wrapped',
     body: 'Wrapped is intentionally under wraps until the year is ready, but this is where your annual retrospective will live.',
     anchor: '#btn-wrapped',
+    highlight: '#btn-wrapped',
     effect: prepareWrappedStep,
+  },
+  {
+    id: 'spicetify',
+    title: 'Spicetify Setup',
+    body: 'Spotify desktop imports use the Spicetify extension. That setup flow will live here once it is ready.',
+    placement: 'center',
+    effect: prepareCollectionList,
   },
   {
     id: 'final',
     title: 'Ready to Start',
-    body: 'You can add the placeholder albums to play around, or start with an empty collection. Spotify imports will use the Spicetify extension once that install flow is ready.',
+    body: 'You can add the placeholder albums to play around, or start with an empty collection.',
     placement: 'center',
     final: true,
     effect: prepareCollectionList,
@@ -263,6 +323,7 @@ const TOUR_STEPS = [
 
 let overlay = null;
 let card = null;
+let highlightLayer = null;
 let currentStepIndex = 0;
 let snapshot = null;
 let skippedToFinal = false;
@@ -424,6 +485,13 @@ async function prepareQuickActionsStep() {
   setUButtons(true);
 }
 
+async function prepareCompactControlsStep() {
+  await prepareQuickActionsStep();
+  await flushTourSidebarTransitionReset();
+  setUButtons(false);
+  setTourSidebarCollapsed(true);
+}
+
 async function prepareManualModalStep() {
   await prepareCollectionList();
   openLogModal();
@@ -459,8 +527,11 @@ function createOverlay() {
   overlay = document.createElement('div');
   overlay.id = 'welcome-tour-overlay';
   overlay.className = 'welcome-tour-overlay';
+  highlightLayer = document.createElement('div');
+  highlightLayer.className = 'welcome-tour-highlight-layer';
   card = document.createElement('div');
   card.className = 'welcome-tour-card';
+  overlay.appendChild(highlightLayer);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
 }
@@ -575,6 +646,32 @@ function removeOverlay() {
   overlay?.remove();
   overlay = null;
   card = null;
+  highlightLayer = null;
+}
+
+function getStepHighlightSelectors(step) {
+  if (!step?.highlight) return [];
+  return Array.isArray(step.highlight) ? step.highlight : [step.highlight];
+}
+
+function positionHighlights(step) {
+  if (!highlightLayer) return;
+  highlightLayer.innerHTML = '';
+  getStepHighlightSelectors(step).forEach(selector => {
+    const target = document.querySelector(selector);
+    if (!(target instanceof Element)) return;
+    const rect = target.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const highlight = document.createElement('div');
+    highlight.className = 'welcome-tour-highlight';
+    const pad = 6;
+    highlight.style.left = `${rect.left - pad}px`;
+    highlight.style.top = `${rect.top - pad}px`;
+    highlight.style.width = `${rect.width + pad * 2}px`;
+    highlight.style.height = `${rect.height + pad * 2}px`;
+    highlightLayer.appendChild(highlight);
+  });
 }
 
 function positionCard(step) {
@@ -619,6 +716,7 @@ function positionCard(step) {
 }
 
 function renderWarning() {
+  positionHighlights(null);
   card.className = 'welcome-tour-card welcome-tour-card-centered';
   card.style.setProperty('--welcome-tour-card-bg-opacity', '96%');
   card.innerHTML = `
@@ -648,11 +746,11 @@ function renderStep(step) {
 
   card.className = 'welcome-tour-card';
   card.innerHTML = `
-    <div class="welcome-tour-kicker">${step.final ? 'Spicetify setup' : `Step ${progress}`}</div>
+    <div class="welcome-tour-kicker">${step.final ? 'Ready to start' : `Step ${progress}`}</div>
     <h2>${step.title}</h2>
     <p>${step.body}</p>
     ${step.final ? `<div class="welcome-tour-cta">
-      <p>The Spicetify extension install link will live here once it is ready.</p>
+      <p>Choose an empty collection, or add the placeholders so you can keep exploring.</p>
       <div class="welcome-tour-actions">${finalActions}</div>
     </div>` : `<div class="welcome-tour-actions">
       <button class="btn btn-secondary welcome-tour-skip" data-action="skip">Skip tour</button>
@@ -666,7 +764,10 @@ function renderStep(step) {
   card.querySelector('[data-action="skip"]')?.addEventListener('click', () => skipTour());
   card.querySelector('[data-action="empty"]')?.addEventListener('click', () => finishTour({ markComplete: true }));
   card.querySelector('[data-action="samples"]')?.addEventListener('click', () => finishTour({ markComplete: true, addSamples: true }));
-  requestAnimationFrame(() => positionCard(step));
+  requestAnimationFrame(() => {
+    positionCard(step);
+    positionHighlights(step);
+  });
   focusTourControl();
 }
 
@@ -935,7 +1036,10 @@ export function initWelcomeTourEvents() {
   window.addEventListener('resize', () => {
     const step = TOUR_STEPS[currentStepIndex];
     if (state.welcomeTour.active && step) {
-      requestAnimationFrame(() => positionCard(step));
+      requestAnimationFrame(() => {
+        positionCard(step);
+        positionHighlights(step);
+      });
     }
   });
 }

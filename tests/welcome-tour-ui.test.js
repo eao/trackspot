@@ -137,10 +137,15 @@ describe('welcome tour UI preparation', () => {
     globalThis.document.body.className = '';
     globalThis.document.body.innerHTML = `
       <header class="header">
-        <button id="btn-view-list"></button>
-        <button id="btn-view-grid"></button>
+        <button id="btn-toggle-u-buttons"></button>
+        <button id="btn-toggle-sidebar"></button>
+        <button id="btn-log-new"></button>
+        <button id="btn-settings"></button>
+        <button id="btn-personalization"></button>
         <button id="btn-stats"></button>
         <button id="btn-wrapped"></button>
+        <button id="btn-view-list"></button>
+        <button id="btn-view-grid"></button>
       </header>
       <aside class="sidebar"></aside>
       <div id="u-buttons"></div>
@@ -212,7 +217,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 8; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
       globalThis.document.querySelector('[data-action="next"]')?.click();
       await flushTourStep();
     }
@@ -225,7 +230,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 9; i += 1) {
+    for (let i = 0; i < 11; i += 1) {
       globalThis.document.querySelector('[data-action="next"]')?.click();
       await flushTourStep();
     }
@@ -258,6 +263,18 @@ describe('welcome tour UI preparation', () => {
           right: 980,
           bottom: 50,
           left: 940,
+          width: 40,
+          height: 40,
+        };
+      }
+      if (this.matches?.('header button')) {
+        return {
+          x: 100,
+          y: 10,
+          top: 10,
+          right: 140,
+          bottom: 50,
+          left: 100,
           width: 40,
           height: 40,
         };
@@ -295,28 +312,17 @@ describe('welcome tour UI preparation', () => {
     }
   });
 
-  it('places the skip tour button at the left of normal step actions', async () => {
-    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
-
-    await startWelcomeTour({ replay: true });
-    await flushTourStep();
-
-    const firstAction = globalThis.document.querySelector('.welcome-tour-actions button');
-    expect(firstAction?.textContent).toBe('Skip tour');
-    expect(firstAction?.classList.contains('welcome-tour-skip')).toBe(true);
-  });
-
-  it('positions sidebar, toolbar, and modal steps with the top bar cards', async () => {
+  it('highlights top bar buttons with an accent overlay', async () => {
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     Element.prototype.getBoundingClientRect = function getBoundingClientRect() {
-      if (this.id === 'btn-view-grid') {
+      if (this.id === 'btn-view-list') {
         return {
-          x: 940,
+          x: 860,
           y: 10,
           top: 10,
-          right: 980,
+          right: 900,
           bottom: 50,
-          left: 940,
+          left: 860,
           width: 40,
           height: 40,
         };
@@ -340,7 +346,81 @@ describe('welcome tour UI preparation', () => {
       const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
       await startWelcomeTour({ replay: true });
-      for (let i = 0; i < 8; i += 1) {
+      for (let i = 0; i < 6; i += 1) {
+        globalThis.document.querySelector('[data-action="next"]')?.click();
+        await flushTourStep();
+      }
+
+      const highlight = globalThis.document.querySelector('.welcome-tour-highlight');
+      expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('List View');
+      expect(highlight).not.toBeNull();
+      expect(highlight?.style.left).toBe('854px');
+      expect(highlight?.style.top).toBe('4px');
+      expect(highlight?.style.width).toBe('52px');
+      expect(highlight?.style.height).toBe('52px');
+    } finally {
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
+  });
+
+  it('places the skip tour button at the left of normal step actions', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    const firstAction = globalThis.document.querySelector('.welcome-tour-actions button');
+    expect(firstAction?.textContent).toBe('Skip tour');
+    expect(firstAction?.classList.contains('welcome-tour-skip')).toBe(true);
+  });
+
+  it('positions control and modal steps with the top bar cards', async () => {
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.id === 'btn-view-grid') {
+        return {
+          x: 940,
+          y: 10,
+          top: 10,
+          right: 980,
+          bottom: 50,
+          left: 940,
+          width: 40,
+          height: 40,
+        };
+      }
+      if (this.matches?.('header button')) {
+        return {
+          x: 100,
+          y: 10,
+          top: 10,
+          right: 140,
+          bottom: 50,
+          left: 100,
+          width: 40,
+          height: 40,
+        };
+      }
+      if (this.classList?.contains('welcome-tour-card')) {
+        return {
+          x: 0,
+          y: 0,
+          top: 0,
+          right: 420,
+          bottom: 160,
+          left: 0,
+          width: 420,
+          height: 160,
+        };
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+
+    try {
+      const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+      await startWelcomeTour({ replay: true });
+      for (let i = 0; i < 10; i += 1) {
         globalThis.document.querySelector('[data-action="next"]')?.click();
         await flushTourStep();
       }
@@ -348,8 +428,12 @@ describe('welcome tour UI preparation', () => {
       const expectedTitles = [
         'Sidebar',
         'Quick Actions Toolbar',
+        'Tuck Controls Away',
+        'Log Album Button',
         'Manual Adds',
+        'Settings & More Button',
         'Settings',
+        'Personalization Button',
         'Personalization',
       ];
 
