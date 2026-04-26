@@ -230,7 +230,7 @@ describe('welcome tour UI preparation', () => {
       await flushTourStep();
     }
 
-    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions');
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Quick Actions Toolbar');
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
     expect(setUButtonsMock).toHaveBeenLastCalledWith(true);
   });
@@ -304,5 +304,67 @@ describe('welcome tour UI preparation', () => {
     const firstAction = globalThis.document.querySelector('.welcome-tour-actions button');
     expect(firstAction?.textContent).toBe('Skip tour');
     expect(firstAction?.classList.contains('welcome-tour-skip')).toBe(true);
+  });
+
+  it('positions sidebar, toolbar, and modal steps with the top bar cards', async () => {
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.id === 'btn-view-grid') {
+        return {
+          x: 940,
+          y: 10,
+          top: 10,
+          right: 980,
+          bottom: 50,
+          left: 940,
+          width: 40,
+          height: 40,
+        };
+      }
+      if (this.classList?.contains('welcome-tour-card')) {
+        return {
+          x: 0,
+          y: 0,
+          top: 0,
+          right: 420,
+          bottom: 160,
+          left: 0,
+          width: 420,
+          height: 160,
+        };
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+
+    try {
+      const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+      await startWelcomeTour({ replay: true });
+      for (let i = 0; i < 8; i += 1) {
+        globalThis.document.querySelector('[data-action="next"]')?.click();
+        await flushTourStep();
+      }
+
+      const expectedTitles = [
+        'Sidebar',
+        'Quick Actions Toolbar',
+        'Manual Adds',
+        'Settings',
+        'Personalization',
+      ];
+
+      for (const title of expectedTitles) {
+        const card = globalThis.document.querySelector('.welcome-tour-card');
+        expect(card?.querySelector('h2')?.textContent).toBe(title);
+        expect(card?.style.getPropertyValue('--welcome-tour-left')).toBe('560px');
+        expect(card?.style.getPropertyValue('--welcome-tour-top')).toBe('64px');
+        if (title !== expectedTitles.at(-1)) {
+          globalThis.document.querySelector('[data-action="next"]')?.click();
+          await flushTourStep();
+        }
+      }
+    } finally {
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
   });
 });

@@ -21,6 +21,7 @@ import { syncAppShellLayout } from './app-shell.js';
 
 const MOBILE_WARNING_WIDTH = 780;
 const LOCK_HEARTBEAT_MS = 10000;
+const TOP_BAR_TOUR_ANCHOR = '#btn-view-grid';
 
 function nextAnimationFrame() {
   return new Promise(resolve => {
@@ -205,35 +206,35 @@ const TOUR_STEPS = [
     id: 'sidebar',
     title: 'Sidebar',
     body: 'The sidebar holds search, filters, and sorting. It can be shown or tucked away whenever you need more space.',
-    anchor: '.sidebar',
+    anchor: TOP_BAR_TOUR_ANCHOR,
     effect: prepareSidebarStep,
   },
   {
     id: 'quick-actions',
-    title: 'Quick Actions',
+    title: 'Quick Actions Toolbar',
     body: 'The quick actions toolbar can be toggled independently from the sidebar for the controls you use most.',
-    anchor: '#u-buttons',
+    anchor: TOP_BAR_TOUR_ANCHOR,
     effect: prepareQuickActionsStep,
   },
   {
     id: 'manual-modal',
     title: 'Manual Adds',
     body: 'Manual additions are entered here. Spotify imports come from the Spicetify extension, while this modal is for albums you want to log yourself.',
-    anchor: '#modal-overlay .modal',
+    anchor: TOP_BAR_TOUR_ANCHOR,
     effect: prepareManualModalStep,
   },
   {
     id: 'settings',
     title: 'Settings',
     body: 'Settings covers preferences, paging, quick actions, import/export, backups, and reset tools.',
-    anchor: '#settings-overlay .modal',
+    anchor: TOP_BAR_TOUR_ANCHOR,
     effect: prepareSettingsStep,
   },
   {
     id: 'personalization',
     title: 'Personalization',
     body: 'Personalization combines color schemes, background images, opacity presets, and Themes you can switch between all at once.',
-    anchor: '#personalization-overlay .modal',
+    anchor: TOP_BAR_TOUR_ANCHOR,
     effect: preparePersonalizationStep,
   },
   {
