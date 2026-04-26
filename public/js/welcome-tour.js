@@ -428,9 +428,30 @@ async function flushTourSidebarTransitionReset() {
   }
 }
 
+function getTourSidebarTransition(targetCollapsed) {
+  const isGrid = document.body.classList.contains('collection-view-grid');
+  const transformDuration = isGrid
+    ? (targetCollapsed ? '0.18s' : '0.51s')
+    : '0.25s';
+  return `transform ${transformDuration} ease, padding-top 0.25s ease, top 0.25s ease, opacity 0.15s ease`;
+}
+
+function armTourSidebarTransition(targetCollapsed) {
+  const sidebar = document.querySelector('.sidebar');
+  if (!(sidebar instanceof HTMLElement)) return;
+  const transition = getTourSidebarTransition(targetCollapsed);
+  sidebar.style.transition = transition;
+  window.setTimeout(() => {
+    if (sidebar.style.transition === transition) {
+      sidebar.style.transition = '';
+    }
+  }, 620);
+}
+
 async function stageTourCollectionAnimationStart(options = {}) {
   const {
     sidebarCollapsed,
+    targetSidebarCollapsed = sidebarCollapsed,
     uButtonsEnabled,
     stageSidebar = false,
     stageUButtons = false,
@@ -461,7 +482,7 @@ async function stageTourCollectionAnimationStart(options = {}) {
   await nextAnimationFrame();
 
   if ((stageSidebar || stageUButtons) && sidebar instanceof HTMLElement) {
-    sidebar.style.transition = '';
+    sidebar.style.transition = getTourSidebarTransition(targetSidebarCollapsed);
   }
   if (stageSidebar && content instanceof HTMLElement) {
     content.style.transition = '';
@@ -494,6 +515,7 @@ async function prepareCollectionView(view, options = {}) {
   if (shouldAnimateSidebarChange || shouldAnimateUButtonsChange) {
     await stageTourCollectionAnimationStart({
       sidebarCollapsed: !sidebarCollapsed,
+      targetSidebarCollapsed: sidebarCollapsed,
       uButtonsEnabled: wasUButtonsEnabled,
       stageSidebar: shouldAnimateSidebarChange,
       stageUButtons: shouldAnimateUButtonsChange,
@@ -501,6 +523,9 @@ async function prepareCollectionView(view, options = {}) {
   }
   setTourSidebarCollapsed(sidebarCollapsed);
   setUButtons(uButtonsEnabled);
+  if (shouldAnimateSidebarChange || shouldAnimateUButtonsChange) {
+    armTourSidebarTransition(sidebarCollapsed);
+  }
   setDemoAlbums();
 }
 
