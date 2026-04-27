@@ -238,7 +238,7 @@ const TOUR_STEPS = [
   {
     id: 'manual-modal',
     title: 'Manual Album Log',
-    body: 'This is what the window for manually logging albums looks like. It\'s a lot to fill in, but many fields are optional. And for Spotify imports, the majority of this information gets auto-filled.',
+    body: 'This is what the window for manually logging albums looks like. It looks like a lot to fill in, but almost all fields are optional. And for Spotify imports, the majority of this information gets auto-filled.',
     anchor: TOP_BAR_TOUR_ANCHOR,
     effect: prepareManualModalStep,
   },
