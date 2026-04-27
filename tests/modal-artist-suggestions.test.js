@@ -104,6 +104,9 @@ describe('manual log artist suggestions', () => {
     elMock.stepDetails.className = 'hidden';
     elMock.btnSave.className = 'hidden';
     elMock.btnModalDelete.className = '';
+    elMock.fieldRepeatsRow.className = '';
+    elMock.fieldPriorityRow.className = '';
+    elMock.fieldPlannedAtRow.className = '';
   });
 
   it('populates artist suggestions from artists already in the database', async () => {
@@ -137,6 +140,25 @@ describe('manual log artist suggestions', () => {
       planned_at: '',
       listened_at: '2026-04-15',
     });
+  });
+
+  it('applies repeat and priority field settings in the manual log modal', async () => {
+    localStorage.setItem('ts_showRepeatsField', '0');
+    localStorage.removeItem('ts_showPriorityField');
+    stateMock.modal.mode = 'log';
+
+    const { syncAlbumModalFieldVisibility } = await import('../public/js/modal.js');
+    syncAlbumModalFieldVisibility();
+
+    expect(elMock.fieldRepeatsRow.classList.contains('hidden')).toBe(true);
+    expect(elMock.fieldPriorityRow.classList.contains('hidden')).toBe(true);
+
+    localStorage.setItem('ts_showRepeatsField', '1');
+    localStorage.setItem('ts_showPriorityField', '1');
+    syncAlbumModalFieldVisibility();
+
+    expect(elMock.fieldRepeatsRow.classList.contains('hidden')).toBe(false);
+    expect(elMock.fieldPriorityRow.classList.contains('hidden')).toBe(false);
   });
 
   it('shows track count only for manual entries and hydrates the existing value', async () => {

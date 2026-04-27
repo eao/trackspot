@@ -328,6 +328,8 @@ function initEvents() {
   el.btnTrackCountDown.addEventListener('click', () => nudgeNumberInput(el.metaTrackCount, -1));
   el.btnRepeatsUp.addEventListener('click', () => nudgeNumberInput(el.inputRepeats, 1));
   el.btnRepeatsDown.addEventListener('click', () => nudgeNumberInput(el.inputRepeats, -1));
+  el.btnPriorityUp.addEventListener('click', () => nudgeNumberInput(el.inputPriority, 1));
+  el.btnPriorityDown.addEventListener('click', () => nudgeNumberInput(el.inputPriority, -1));
 
   el.metaArtUpload.addEventListener('change', e => {
     handleImageUpload(e.target.files[0]);

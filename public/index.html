@@ -480,7 +480,19 @@
           <div id="field-priority-row" class="user-fields-row">
             <div class="field-group field-group-small">
               <label class="field-label">Priority</label>
-              <input id="input-priority" class="input" type="number" min="0" value="0" />
+              <div class="spinner-input-wrap">
+                <input id="input-priority" class="input input-with-spinner" type="number" min="0" value="0" />
+                <div class="custom-spinner-group" aria-hidden="true">
+                  <div class="custom-spinner">
+                    <button id="btn-priority-up" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Increase priority">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-up-icon lucide-chevron-up"><path d="m18 15-6-6-6 6"/></svg>
+                    </button>
+                    <button id="btn-priority-down" class="custom-spinner-btn" type="button" tabindex="-1" aria-label="Decrease priority">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down-icon lucide-chevron-down"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -730,7 +742,7 @@
             <div class="settings-row">
               <div class="settings-row-info">
                 <span class="settings-row-label">Show repeat listens field</span>
-                <span class="settings-row-desc">Reveals the <em>"Repeat listens"</em> field in the album edit modal.</span>
+                <span class="settings-row-desc">Reveals the <em>"Repeat listens"</em> field in the album modal.</span>
               </div>
               <label class="settings-toggle">
                 <input type="checkbox" id="toggle-show-repeats-field" />
@@ -740,7 +752,7 @@
             <div class="settings-row">
               <div class="settings-row-info">
                 <span class="settings-row-label">Show priority field</span>
-                <span class="settings-row-desc">Reveals the <em>"Priority"</em> field in the album edit modal.</span>
+                <span class="settings-row-desc">Reveals the <em>"Priority"</em> field in the album modal.</span>
               </div>
               <label class="settings-toggle">
                 <input type="checkbox" id="toggle-show-priority-field" />

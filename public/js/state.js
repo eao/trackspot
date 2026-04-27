@@ -330,6 +330,8 @@ export const el = {
   btnRepeatsDown:  document.getElementById('btn-repeats-down'),
   fieldPriorityRow: document.getElementById('field-priority-row'),
   inputPriority:   document.getElementById('input-priority'),
+  btnPriorityUp:   document.getElementById('btn-priority-up'),
+  btnPriorityDown: document.getElementById('btn-priority-down'),
 
   // Art action buttons (edit modal)
   btnRefetchArt:      document.getElementById('btn-refetch-art'),

@@ -3448,7 +3448,7 @@ export function setShowPriorityField(enabled) {
   el.toggleShowPriorityField.checked = enabled;
   localStorage.setItem(LS_SHOW_PRIORITY_FIELD, enabled ? '1' : '0');
 
-  if (state.modal.open && state.modal.mode === 'edit') {
+  if (state.modal.open) {
     import('./modal.js').then(module => module.syncAlbumModalFieldVisibility()).catch(() => {});
   }
 }
@@ -3457,7 +3457,7 @@ export function setShowRepeatsField(enabled) {
   el.toggleShowRepeatsField.checked = enabled;
   localStorage.setItem(LS_SHOW_REPEATS_FIELD, enabled ? '1' : '0');
 
-  if (state.modal.open && state.modal.mode === 'edit') {
+  if (state.modal.open) {
     import('./modal.js').then(module => module.syncAlbumModalFieldVisibility()).catch(() => {});
   }
 }

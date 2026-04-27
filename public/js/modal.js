@@ -242,11 +242,11 @@ export function populateDetailsFields(album, isManual) {
 }
 
 export function syncAlbumModalFieldVisibility() {
-  const showRepeatsInEdit = localStorage.getItem(LS_SHOW_REPEATS_FIELD) !== '0';
-  const showPriorityInEdit = localStorage.getItem(LS_SHOW_PRIORITY_FIELD) === '1';
+  const showRepeatsField = localStorage.getItem(LS_SHOW_REPEATS_FIELD) !== '0';
+  const showPriorityField = localStorage.getItem(LS_SHOW_PRIORITY_FIELD) === '1';
   const showPlannedAtField = localStorage.getItem(LS_SHOW_PLANNED_AT_FIELD) === '1';
-  const hideRepeats = state.modal.mode === 'edit' && !showRepeatsInEdit;
-  const hidePriority = state.modal.mode === 'edit' && !showPriorityInEdit;
+  const hideRepeats = !showRepeatsField;
+  const hidePriority = !showPriorityField;
   const hidePlannedAt = !showPlannedAtField;
   el.fieldRepeatsRow.classList.toggle('hidden', hideRepeats);
   el.fieldPriorityRow.classList.toggle('hidden', hidePriority);
