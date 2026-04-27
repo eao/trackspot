@@ -261,7 +261,7 @@ async function performNavigation(nextNavigation, options = {}) {
     cleanupDashboardPage(el.pageWrapped);
     applyCollectionViewState(normalized.collectionView, {
       suppressTransitions: suppressTransitions || initial || switchingPages || switchingCollectionViews,
-      preservePage: previousPage !== 'collection',
+      preservePage: previousPage !== 'collection' || switchingCollectionViews,
       load: !skipCollectionLoad,
     });
     if (renderToken !== navigationRenderToken) return;

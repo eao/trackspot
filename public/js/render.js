@@ -799,7 +799,7 @@ export function resetPagination() {
 }
 
 function getActivePerPage() {
-  return state.pagination.perPage[getCurrentCollectionView()];
+  return state.pagination.perPage.list;
 }
 
 function getDefaultAlbumListMeta() {

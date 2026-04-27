@@ -2930,8 +2930,16 @@ function getCurrentCollectionView() {
   return state.navigation?.collectionView || state.view || 'list';
 }
 
+function getPaginationSettingView() {
+  return 'list';
+}
+
+function getPageSettingViews() {
+  return ['list', 'grid'];
+}
+
 function getPageMode(view) {
-  return state.pagination.mode[view];
+  return state.pagination.mode[view] ?? state.pagination.mode[getPaginationSettingView()];
 }
 
 function getPageStorageKey(view) {
@@ -2960,6 +2968,10 @@ function getPageControls(view) {
       };
 }
 
+function hasPageControls(controls) {
+  return !!(controls.mode && controls.suggested && controls.customWrap && controls.custom);
+}
+
 function syncSuggestedPageCopy(view, controls) {
   const suggested = PAGE_SUGGESTED[view];
   const suggestedOption = controls.mode?.querySelector?.('option[value="suggested"]');
@@ -2974,6 +2986,7 @@ function syncSuggestedPageCopy(view, controls) {
 
 function syncPageControls(view) {
   const controls = getPageControls(view);
+  if (!hasPageControls(controls)) return;
   const mode = getPageMode(view);
   const perPage = state.pagination.perPage[view];
 
@@ -2987,43 +3000,45 @@ function syncPageControls(view) {
 
 function showCustomPageInput(view) {
   const controls = getPageControls(view);
+  if (!hasPageControls(controls)) return;
   controls.mode.value = 'custom';
   controls.suggested.classList.add('hidden');
   controls.customWrap.classList.remove('hidden');
 }
 
 export function applyPaginationSetting(view, mode, customValue = '') {
+  const settingView = getPaginationSettingView();
   let nextValue = null;
   const nextMode = mode === 'suggested' || mode === 'custom' ? mode : 'unlimited';
   if (mode === 'suggested') {
-    nextValue = PAGE_SUGGESTED[view];
+    nextValue = PAGE_SUGGESTED[settingView];
   } else if (mode === 'custom') {
     const parsed = parseInt(String(customValue).trim(), 10);
     if (!Number.isInteger(parsed) || parsed <= 0) {
-      showCustomPageInput(view);
+      showCustomPageInput(settingView);
       return false;
     }
     nextValue = parsed;
   }
 
-  state.pagination.perPage[view] = nextValue;
-  state.pagination.mode[view] = nextMode;
-  const storageKey = getPageStorageKey(view);
-  const modeStorageKey = getPageModeStorageKey(view);
+  getPageSettingViews().forEach(pageView => {
+    state.pagination.perPage[pageView] = nextValue;
+    state.pagination.mode[pageView] = nextMode;
+  });
+  const storageKey = getPageStorageKey(settingView);
+  const modeStorageKey = getPageModeStorageKey(settingView);
   if (nextValue === null) {
     localStorage.removeItem(storageKey);
   } else {
     localStorage.setItem(storageKey, String(nextValue));
   }
   localStorage.setItem(modeStorageKey, nextMode);
+  localStorage.removeItem(LS_PAGE_SIZE_GRID);
+  localStorage.removeItem(LS_PAGE_MODE_GRID);
 
-  syncPageControls(view);
+  getPageSettingViews().forEach(syncPageControls);
   resetPagination();
-  if (getCurrentCollectionView() === view) {
-    loadAlbums();
-  } else {
-    render();
-  }
+  loadAlbums();
   return true;
 }
 
@@ -3074,27 +3089,38 @@ export function initPaginationSettings() {
   const storedPageSizeGrid = localStorage.getItem(LS_PAGE_SIZE_GRID);
   const storedPageModeList = localStorage.getItem(LS_PAGE_MODE_LIST);
   const storedPageModeGrid = localStorage.getItem(LS_PAGE_MODE_GRID);
+  const hasCanonicalPagination = storedPageSizeList !== null || storedPageModeList !== null;
+  const storedPageSize = hasCanonicalPagination ? storedPageSizeList : storedPageSizeGrid;
+  const storedPageMode = hasCanonicalPagination ? storedPageModeList : storedPageModeGrid;
 
-  state.pagination.perPage.list = parseStoredPageSize(storedPageSizeList);
-  state.pagination.perPage.grid = parseStoredPageSize(storedPageSizeGrid);
-  state.pagination.mode.list = parseStoredPageMode(storedPageModeList);
-  state.pagination.mode.grid = parseStoredPageMode(storedPageModeGrid);
+  let sharedPageSize = parseStoredPageSize(storedPageSize);
+  let sharedPageMode = parseStoredPageMode(storedPageMode);
   state.pagination.showPageCount = localStorage.getItem(LS_SHOW_PAGE_COUNT) !== '0';
   state.pagination.showFirstLastButtons = localStorage.getItem(LS_SHOW_FIRST_LAST_PAGES) === '1';
   state.pagination.visibilityMode = localStorage.getItem(LS_PAGE_CONTROL_VISIBILITY) === 'static' ? 'static' : 'hover';
 
-  if (storedPageSizeList === null && storedPageModeList === null) {
-    state.pagination.perPage.list = PAGE_SUGGESTED.list;
-    state.pagination.mode.list = 'suggested';
-  } else if (state.pagination.perPage.list === null) {
-    state.pagination.mode.list = 'unlimited';
+  if (storedPageSize === null && storedPageMode === null) {
+    sharedPageSize = PAGE_SUGGESTED.list;
+    sharedPageMode = 'suggested';
+  } else if (sharedPageMode === 'suggested') {
+    sharedPageSize = PAGE_SUGGESTED.list;
+  } else if (sharedPageSize === null) {
+    sharedPageMode = 'unlimited';
   }
 
-  if (storedPageSizeGrid === null && storedPageModeGrid === null) {
-    state.pagination.perPage.grid = PAGE_SUGGESTED.grid;
-    state.pagination.mode.grid = 'suggested';
-  } else if (state.pagination.perPage.grid === null) {
-    state.pagination.mode.grid = 'unlimited';
+  getPageSettingViews().forEach(view => {
+    state.pagination.perPage[view] = sharedPageSize;
+    state.pagination.mode[view] = sharedPageMode;
+  });
+  if (storedPageSizeGrid !== null || storedPageModeGrid !== null) {
+    if (sharedPageSize === null) {
+      localStorage.removeItem(LS_PAGE_SIZE_LIST);
+    } else {
+      localStorage.setItem(LS_PAGE_SIZE_LIST, String(sharedPageSize));
+    }
+    localStorage.setItem(LS_PAGE_MODE_LIST, sharedPageMode);
+    localStorage.removeItem(LS_PAGE_SIZE_GRID);
+    localStorage.removeItem(LS_PAGE_MODE_GRID);
   }
 
   syncPageControls('list');
@@ -3112,9 +3138,9 @@ export function initPaginationSettings() {
     applyPaginationSetting('list', el.pageModeList.value);
   });
 
-  el.pageModeGrid.addEventListener('change', () => {
+  el.pageModeGrid?.addEventListener('change', () => {
     if (el.pageModeGrid.value === 'custom') {
-      showCustomPageInput('grid');
+      showCustomPageInput('list');
       el.pageCustomGrid.focus();
       return;
     }
@@ -3124,7 +3150,7 @@ export function initPaginationSettings() {
   el.pageCustomList.addEventListener('change', () => {
     if (!applyPaginationSetting('list', 'custom', el.pageCustomList.value)) el.pageCustomList.focus();
   });
-  el.pageCustomGrid.addEventListener('change', () => {
+  el.pageCustomGrid?.addEventListener('change', () => {
     if (!applyPaginationSetting('grid', 'custom', el.pageCustomGrid.value)) el.pageCustomGrid.focus();
   });
 
@@ -3134,7 +3160,7 @@ export function initPaginationSettings() {
       if (!applyPaginationSetting('list', 'custom', el.pageCustomList.value)) el.pageCustomList.focus();
     }
   });
-  el.pageCustomGrid.addEventListener('keydown', e => {
+  el.pageCustomGrid?.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       e.preventDefault();
       if (!applyPaginationSetting('grid', 'custom', el.pageCustomGrid.value)) el.pageCustomGrid.focus();
@@ -3143,6 +3169,7 @@ export function initPaginationSettings() {
 
   function nudgePageCustom(view, delta) {
     const controls = getPageControls(view);
+    if (!hasPageControls(controls)) return;
     const min = controls.custom.min === '' ? 1 : parseInt(controls.custom.min, 10);
     const currentRaw = controls.custom.value.trim();
     const current = currentRaw === '' ? null : parseInt(currentRaw, 10);
@@ -3154,8 +3181,8 @@ export function initPaginationSettings() {
 
   el.btnPageCustomListUp.addEventListener('click', () => nudgePageCustom('list', 1));
   el.btnPageCustomListDown.addEventListener('click', () => nudgePageCustom('list', -1));
-  el.btnPageCustomGridUp.addEventListener('click', () => nudgePageCustom('grid', 1));
-  el.btnPageCustomGridDown.addEventListener('click', () => nudgePageCustom('grid', -1));
+  el.btnPageCustomGridUp?.addEventListener('click', () => nudgePageCustom('grid', 1));
+  el.btnPageCustomGridDown?.addEventListener('click', () => nudgePageCustom('grid', -1));
 
   el.toggleFirstLastPageButtons.addEventListener('change', () => {
     setShowFirstLastPageButtons(el.toggleFirstLastPageButtons.checked);
@@ -3517,17 +3544,17 @@ export function resetAllSettings() {
   state.pagination.showFirstLastButtons = false;
   state.pagination.visibilityMode = 'hover';
   el.pageModeList.value = 'suggested';
-  el.pageModeGrid.value = 'suggested';
+  if (el.pageModeGrid) el.pageModeGrid.value = 'suggested';
   el.pageCustomList.value = '';
-  el.pageCustomGrid.value = '';
+  if (el.pageCustomGrid) el.pageCustomGrid.value = '';
   el.toggleShowPageCount.checked = true;
   el.selectPageControlVisibility.value = 'hover';
   el.pageSuggestedList.classList.remove('hidden');
-  el.pageSuggestedGrid.classList.remove('hidden');
+  el.pageSuggestedGrid?.classList.remove('hidden');
   el.pageCustomWrapList.classList.add('hidden');
-  el.pageCustomWrapGrid.classList.add('hidden');
+  el.pageCustomWrapGrid?.classList.add('hidden');
   el.pageSuggestedList.value = String(PAGE_SUGGESTED.list);
-  el.pageSuggestedGrid.value = String(PAGE_SUGGESTED.grid);
+  if (el.pageSuggestedGrid) el.pageSuggestedGrid.value = String(PAGE_SUGGESTED.grid);
   el.toggleFirstLastPageButtons.checked = false;
   resetPagination();
 

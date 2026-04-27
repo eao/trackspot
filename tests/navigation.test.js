@@ -227,7 +227,7 @@ describe('navigation routing', () => {
 
     expect(applyCollectionViewStateMock).toHaveBeenCalledWith('grid', expect.objectContaining({
       suppressTransitions: true,
-      preservePage: false,
+      preservePage: true,
       load: true,
     }));
   });

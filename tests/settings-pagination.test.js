@@ -154,20 +154,22 @@ describe('applyPaginationSetting', () => {
 
     expect(result).toBe(true);
     expect(stateMock.pagination.perPage.list).toBe(18);
+    expect(stateMock.pagination.perPage.grid).toBe(18);
     expect(loadAlbumsMock).toHaveBeenCalledOnce();
     expect(renderMock).not.toHaveBeenCalled();
     expect(resetPaginationMock).toHaveBeenCalledOnce();
   });
 
-  it('only rerenders locally when changing pagination for an inactive view', async () => {
+  it('applies grid pagination changes to the shared setting', async () => {
     const { applyPaginationSetting } = await import('../public/js/settings.js');
 
     const result = applyPaginationSetting('grid', 'suggested');
 
     expect(result).toBe(true);
+    expect(stateMock.pagination.perPage.list).toBe(18);
     expect(stateMock.pagination.perPage.grid).toBe(18);
-    expect(renderMock).toHaveBeenCalledOnce();
-    expect(loadAlbumsMock).not.toHaveBeenCalled();
+    expect(loadAlbumsMock).toHaveBeenCalledOnce();
+    expect(renderMock).not.toHaveBeenCalled();
   });
 
   it('defaults both views to suggested pagination when nothing is stored yet', async () => {
