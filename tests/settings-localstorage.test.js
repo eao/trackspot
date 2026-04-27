@@ -1169,6 +1169,80 @@ describe('theme background application', () => {
     expect(stateMock.personalization.appliedThemeId).toBe(imageTheme.id);
     expect(globalThis.document.documentElement.style.getPropertyValue('--ts-background-rendered-opacity')).toBe('0.45');
   });
+
+  it('keeps the theme opacity preset active when another preset has identical values', async () => {
+    const glassOpacity = {
+      header: 35,
+      quickActionsToolbar: 50,
+      sidebar: 60,
+      rowHeaderBackground: 35,
+      row: 35,
+      rowArt: 85,
+      rowText: 100,
+      card: 25,
+      cardArt: 85,
+      cardText: 100,
+      styleBackgroundGradient: 0,
+    };
+    const glassReference = {
+      id: 'glass-reference',
+      name: 'glass-reference',
+      includedWithApp: false,
+      canEdit: true,
+      canDelete: true,
+      opacity: glassOpacity,
+    };
+    const glass = {
+      id: 'glass',
+      name: 'Glass',
+      includedWithApp: true,
+      canEdit: false,
+      canDelete: false,
+      opacity: glassOpacity,
+    };
+    const theme = {
+      id: 'borealis-tunic',
+      name: 'Borealis Tunic',
+      description: 'Aurora theme.',
+      previewImage: null,
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: glass.id,
+      primaryBackgroundSelection: null,
+      primaryBackgroundDisplay: {
+        positionX: 'center',
+        positionY: 'center',
+        fill: 'cover',
+        customScale: 1,
+      },
+      secondaryBackgroundSelection: null,
+      secondaryBackgroundDisplay: {
+        positionX: 'right',
+        positionY: 'top',
+        fill: 'original-size',
+        customScale: 1,
+      },
+      backgroundImageOpacity: 50,
+      backgroundImageBlur: 0,
+      secondaryBackgroundImageOpacity: 100,
+      secondaryBackgroundImageBlur: 0,
+      includedWithApp: true,
+      canEdit: false,
+      canDelete: false,
+    };
+
+    stateMock.personalization.opacityPresets = [glassReference, glass];
+    stateMock.personalization.opacityPresetsLoaded = true;
+    stateMock.personalization.themes = [theme];
+    stateMock.personalization.themesLoaded = true;
+
+    const { applyTheme } = await import('../public/js/settings.js');
+    await applyTheme(theme);
+
+    expect(stateMock.personalization.activeOpacityPresetId).toBe(glass.id);
+    expect(elMock.personalizationOpacityPresetSelect.value).toBe(glass.id);
+    expect(stateMock.personalization.appliedThemeDirty).toBe(false);
+    expect(elMock.personalizationThemeSelectionWarning.textContent).toBe('');
+  });
 });
 
 describe('default theme initialization', () => {

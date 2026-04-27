@@ -872,7 +872,11 @@ function compareIncludedFirstByName(left, right) {
 }
 
 function syncActiveOpacityPreset() {
-  const match = getAllOpacityPresets().find(preset => opacityMatches(preset.opacity, state.personalization.opacity)) ?? null;
+  const presets = getAllOpacityPresets();
+  const activePreset = presets.find(preset => preset.id === state.personalization.activeOpacityPresetId) ?? null;
+  const match = activePreset && opacityMatches(activePreset.opacity, state.personalization.opacity)
+    ? activePreset
+    : presets.find(preset => opacityMatches(preset.opacity, state.personalization.opacity)) ?? null;
   state.personalization.activeOpacityPresetId = match?.id ?? null;
 }
 
@@ -1596,6 +1600,7 @@ export async function applyTheme(theme) {
   }
 
   state.personalization.selectedThemeId = theme.id;
+  state.personalization.activeOpacityPresetId = theme.opacityPresetId;
   populateThemeDraftFromTheme(theme);
   syncThemeUi();
 
