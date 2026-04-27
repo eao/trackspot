@@ -99,7 +99,7 @@ The app is designed for local/trusted use. There is **no auth layer**.
 - `public/index.html`: single HTML shell, large inline bootstrap script for initial body classes/CSS vars, all DOM IDs used by JS
 - `public/style.css`: main stylesheet
 - `public/js/app.js`: top-level initialization and event binding
-- `public/js/state.js`: central shared state, DOM refs, constants, localStorage keys
+- `public/js/state.js`: central shared state, DOM refs, constants, and remaining localStorage keys
 - `public/js/render.js`: album loading and collection rendering
 - `public/js/sidebar.js`: filters, sorting, presets, sidebar UI state
 - `public/js/modal.js`: add/edit/delete flow
@@ -169,11 +169,14 @@ Notes:
 
 ## Repo-Specific Conventions
 
-### localStorage
+### Preferences and localStorage
 
-- Keys meant to be cleared by "Reset all settings" use the `ts_` prefix
-- Named constants for storage keys live in `public/js/state.js`
-- If a key should survive resets, do **not** give it the normal reset-managed prefix without understanding the consequences
+- Durable app preferences are primarily server-backed through `server/preferences-store.js`, `server/routes/preferences.js`, and `public/js/preferences.js`.
+- `data/preferences.json` currently owns global preference state such as complex statuses, wrapped/welcome-tour preferences, saved filter/sort preset, layout/display settings, pagination settings, modal field visibility, content width, and quick-action toolbar layout/visibility.
+- Some older `localStorage` keys are intentionally migrated once by `migrateLocalStoragePreferencesToServer()` and then removed after a successful preference patch.
+- Remaining `localStorage` usage should be limited to early startup/cache values, per-browser/session state, or intentionally local controls. Examples include sidebar collapsed state, debug/wipe controls, CSV import notification state, personalization/theme startup cache, and welcome-tour temporary snapshots.
+- Keys meant to be cleared by "Reset all settings" use the `ts_` prefix. If a key should survive resets, do **not** give it the normal reset-managed prefix without understanding the consequences.
+- Named constants for remaining storage keys live in `public/js/state.js`; avoid adding new durable settings there unless they truly need to stay browser-local.
 
 ### Themes and personalization
 
@@ -203,7 +206,7 @@ Notes:
   - persisted user data under `data/`
 - When changing DB schema behavior, inspect `server/db.js` carefully and run relevant tests such as backup/restore, imports, and migration-focused tests.
 - When changing frontend navigation, startup flow, personalization, or collection rendering, expect cross-module coupling and check related tests.
-- When changing the welcome tour, remember that it temporarily mutates frontend state, navigation, filters, themes, modal visibility, localStorage-backed settings, and server album-mutation locks. Verify restore behavior from collection and non-collection launch pages such as `/collection/list`, `/stats`, and `/wrapped`.
+- When changing the welcome tour, remember that it temporarily mutates frontend state, navigation, filters, themes, modal visibility, preferences, remaining localStorage-backed UI/cache state, and server album-mutation locks. Verify restore behavior from collection and non-collection launch pages such as `/collection/list`, `/stats`, and `/wrapped`.
 - Keep welcome tour cleanup robust around async failures: lock heartbeats, completion calls, and sample insertion should not leave the app locked, marked complete incorrectly, or visually restored to the wrong page. Escape/focus handling should preserve tour-owned UI and not close underlying modals/settings panels while a step is anchored to them.
 - Welcome tour sample warnings should reflect actual sample presence, not only historical "samples added" preferences.
 
