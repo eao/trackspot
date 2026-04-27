@@ -106,7 +106,8 @@ describe('welcome tour store', () => {
     const first = welcomeStore.insertWelcomeSamples();
     const second = welcomeStore.insertWelcomeSamples();
     const rows = dbModule.db.prepare(`
-      SELECT album_name, spotify_album_id, album_link, source, welcome_sample_key, image_path, status, rating
+      SELECT album_name, spotify_album_id, album_link, source, welcome_sample_key, image_path, status, rating,
+        notes, release_date, release_year, track_count, duration_ms
       FROM albums
       ORDER BY id ASC
     `).all();
@@ -123,11 +124,17 @@ describe('welcome tour store', () => {
       welcome_sample_key: 'spotify-placeholder',
       status: 'completed',
       rating: 92,
+      notes: 'This placeholder album behaves like a import from Spotify via the Spicetify extension. Imported metadata is read-only, but your listening details stay editable.',
+      release_date: '1962-01-01',
+      release_year: 1962,
+      track_count: 3,
+      duration_ms: 2101839,
     });
     expect(rows[1]).toMatchObject({
       album_name: 'Placeholder Manual Log',
       status: 'dropped',
       rating: null,
+      notes: 'Manual logs are albums you have entered yourself. You can edit their title, artist, dates, links, art, etc.',
     });
     expect(rows[0].image_path).toBe('images/welcome-placeholder-spotify-album.jpg');
   });
