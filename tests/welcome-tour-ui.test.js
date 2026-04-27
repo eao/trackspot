@@ -637,6 +637,11 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.querySelector('[data-action="samples"]')).not.toBeNull();
     expect(globalThis.document.querySelector('[data-action="empty"]')).not.toBeNull();
     expect(globalThis.document.querySelector('[data-action="next"]')).toBeNull();
+    expect(Array.from(globalThis.document.querySelectorAll('.welcome-tour-actions button')).map(button => button.textContent)).toEqual([
+      'Back',
+      'Add placeholders',
+      'Start empty',
+    ]);
 
     globalThis.document.querySelector('[data-action="samples"]')?.click();
     await flushTourStep();

@@ -872,17 +872,18 @@ function renderStep(step) {
   const sampleWarning = alreadyAdded
     ? '<p class="welcome-tour-note">Adding sample albums again will delete any existing welcome samples and add fresh copies.</p>'
     : '';
-  const choiceActions = `${sampleWarning}<button class="btn btn-secondary" data-action="empty">Start with empty collection</button><button class="btn btn-primary" data-action="samples">Add sample albums</button>`;
+  const choiceActions = `${sampleWarning}<div class="welcome-tour-actions">
+        <button class="btn btn-ghost" data-action="back">Back</button>
+        <button class="btn btn-primary" data-action="samples">Add placeholders</button>
+        <button class="btn btn-secondary" data-action="empty">Start empty</button>
+      </div>`;
   const normalActions = `<div class="welcome-tour-actions">
       <button class="btn btn-secondary welcome-tour-skip" data-action="skip">Skip tour</button>
       <button class="btn btn-ghost" data-action="back"${currentStepIndex === 0 ? ' disabled' : ''}>Back</button>
       <button class="btn btn-primary" data-action="next"${step.requireHighlightAction && !stepHighlightActionComplete ? ' disabled' : ''}>Next</button>
     </div>`;
   const choiceStepActions = `<div class="welcome-tour-cta">
-      <div class="welcome-tour-actions">
-        <button class="btn btn-ghost" data-action="back">Back</button>
-        ${choiceActions}
-      </div>
+      ${choiceActions}
     </div>`;
   const finalStepActions = `<div class="welcome-tour-cta">
       <div class="welcome-tour-actions">
