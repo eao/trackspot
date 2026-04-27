@@ -139,7 +139,7 @@ export const state = {
     lockSessionId: null,
   },
 
-  // Complex status filters (loaded from localStorage at init).
+  // Complex status filters (loaded from server preferences at init).
   complexStatuses: [],
 
   // U-shaped button config (order + enabled). Loaded from localStorage at init.
@@ -536,7 +536,6 @@ export const IMPORT_TYPE_FILTER_LABELS = {
 export const LS_PREFIX = 'ts_';
 
 export const FILTER_PRESET_KEY    = 'ts_filterPreset';
-export const LS_COMPLEX_STATUSES  = 'ts_complexStatuses';
 export const LS_U_BUTTONS         = 'ts_uButtons';
 export const LS_QUICK_ACTIONS_VISIBILITY = 'ts_quickActionsVisibility';
 export const LS_DEBUG_CONTROLS    = 'ts_debugControls';
@@ -569,7 +568,6 @@ export const LS_BACKGROUND_IMAGE_SELECTION = 'ts_backgroundImageSelection';
 export const LS_BACKGROUND_IMAGE_DISPLAY = 'ts_backgroundImageDisplay';
 export const LS_SECONDARY_BACKGROUND_IMAGE_SELECTION = 'ts_secondaryBackgroundImageSelection';
 export const LS_SECONDARY_BACKGROUND_IMAGE_DISPLAY = 'ts_secondaryBackgroundImageDisplay';
-export const LS_OPACITY_PRESETS = 'ts_opacityPresets';
 export const LS_OPACITY_CONTROLS_EXPANDED = 'ts_opacityControlsExpanded';
 export const LS_APPLIED_THEME_ID = 'ts_appliedThemeId';
 

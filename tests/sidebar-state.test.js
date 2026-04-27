@@ -63,7 +63,6 @@ vi.mock('../public/js/state.js', () => ({
   RATED_FILTER_ICONS: {
     both: '<svg></svg>',
   },
-  LS_COMPLEX_STATUSES: 'ts_complexStatuses',
   LS_U_BUTTONS: 'ts_uButtons',
   LS_U_BUTTONS_ENABLED_LIST: 'ts_uButtonsEnabledList',
   LS_U_BUTTONS_ENABLED_GRID: 'ts_uButtonsEnabledGrid',

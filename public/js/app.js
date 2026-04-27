@@ -42,7 +42,7 @@ import {
 } from './settings.js';
 import { syncAppShellLayout } from './app-shell.js';
 import { setCollectionView, setPage, syncNavigationFromLocation } from './navigation.js';
-import { fetchPreferences } from './preferences.js';
+import { fetchPreferences, migrateLocalStoragePreferencesToServer } from './preferences.js';
 import { persistWrappedName, setWrappedName, syncWrappedNameSettingsInput } from './wrapped-name.js';
 import { initHeaderScrollTracking } from './header-scroll.js';
 import { getSteppedContentWidthPx } from './layout-width.js';
@@ -594,6 +594,13 @@ async function init() {
     state.accentPeriod = true;
     state.earlyWrapped = false;
     state.seasonalThemeHistory = {};
+  }
+  if (state.preferencesHydrated) {
+    try {
+      await migrateLocalStoragePreferencesToServer();
+    } catch (error) {
+      console.error('Failed to migrate local preferences:', error);
+    }
   }
   const defaultStatusFilter = state.complexStatuses.find(cs => cs.id === 'cs_listened')?.id ?? 'completed';
 

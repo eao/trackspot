@@ -3063,7 +3063,12 @@ export function setShowPageCount(enabled) {
 export function setPageControlVisibilityMode(mode) {
   state.pagination.visibilityMode = mode === 'static' ? 'static' : 'hover';
   el.selectPageControlVisibility.value = state.pagination.visibilityMode;
-  localStorage.setItem(LS_PAGE_CONTROL_VISIBILITY, state.pagination.visibilityMode);
+  localStorage.removeItem(LS_PAGE_CONTROL_VISIBILITY);
+  patchPreferences({
+    pageControlVisibility: state.pagination.visibilityMode,
+  }).catch(error => {
+    console.error('Failed to save page control visibility:', error);
+  });
   render();
 }
 
@@ -3075,12 +3080,19 @@ export function setQuickActionsToolbarVisibilityMode(mode, options = {}) {
   }
   document.body.classList.toggle('u-buttons-hover-only', state.quickActionsToolbarVisibilityMode === 'hover');
   if (persist) {
-    localStorage.setItem(LS_QUICK_ACTIONS_VISIBILITY, state.quickActionsToolbarVisibilityMode);
+    localStorage.removeItem(LS_QUICK_ACTIONS_VISIBILITY);
+    patchPreferences({
+      quickActionsToolbarVisibility: state.quickActionsToolbarVisibilityMode,
+    }).catch(error => {
+      console.error('Failed to save quick actions toolbar visibility:', error);
+    });
   }
 }
 
 export function initQuickActionsToolbarSettings() {
-  const storedVisibility = localStorage.getItem(LS_QUICK_ACTIONS_VISIBILITY);
+  const storedVisibility = state.preferencesHydrated
+    ? state.quickActionsToolbarVisibilityMode
+    : localStorage.getItem(LS_QUICK_ACTIONS_VISIBILITY);
   setQuickActionsToolbarVisibilityMode(storedVisibility === 'hover' ? 'hover' : 'visible', { persist: false });
 
   el.selectQuickActionsVisibility?.addEventListener('change', () => {
@@ -3101,7 +3113,10 @@ export function initPaginationSettings() {
   let sharedPageMode = parseStoredPageMode(storedPageMode);
   state.pagination.showPageCount = localStorage.getItem(LS_SHOW_PAGE_COUNT) !== '0';
   state.pagination.showFirstLastButtons = localStorage.getItem(LS_SHOW_FIRST_LAST_PAGES) === '1';
-  state.pagination.visibilityMode = localStorage.getItem(LS_PAGE_CONTROL_VISIBILITY) === 'static' ? 'static' : 'hover';
+  const storedVisibilityMode = state.preferencesHydrated
+    ? state.pagination.visibilityMode
+    : localStorage.getItem(LS_PAGE_CONTROL_VISIBILITY);
+  state.pagination.visibilityMode = storedVisibilityMode === 'static' ? 'static' : 'hover';
 
   if (storedPageSize === null && storedPageMode === null) {
     sharedPageSize = PAGE_SUGGESTED.list;
@@ -3403,7 +3418,8 @@ function syncContentWidthControls() {
   el.inputContentWidth.value = String(state.contentWidthPx);
 }
 
-export function setContentWidthPx(value) {
+export function setContentWidthPx(value, options = {}) {
+  const { persist = true } = options;
   const parsed = validateContentWidthPx(value);
   if (parsed === null) {
     syncContentWidthControls();
@@ -3411,15 +3427,22 @@ export function setContentWidthPx(value) {
   }
 
   state.contentWidthPx = parsed;
-  localStorage.setItem(LS_CONTENT_WIDTH, String(parsed));
+  localStorage.removeItem(LS_CONTENT_WIDTH);
   syncContentWidthControls();
   syncAppShellLayout();
+  if (persist) {
+    patchPreferences({
+      contentWidthPx: state.contentWidthPx,
+    }).catch(error => {
+      console.error('Failed to save content width:', error);
+    });
+  }
   return true;
 }
 
 export function restoreContentWidthSettings() {
   state.contentWidthPx = parseStoredContentWidthPx(
-    localStorage.getItem(LS_CONTENT_WIDTH),
+    state.preferencesHydrated ? state.contentWidthPx : localStorage.getItem(LS_CONTENT_WIDTH),
     DEFAULT_CONTENT_WIDTH_PX,
   );
   syncContentWidthControls();
@@ -3516,7 +3539,7 @@ export function resetAllSettings() {
   setEarlyWrappedEnabled(false, { persist: false });
   closeEarlyWrappedConfirmation();
   setWrappedName('');
-  setContentWidthPx(DEFAULT_CONTENT_WIDTH_PX);
+  setContentWidthPx(DEFAULT_CONTENT_WIDTH_PX, { persist: false });
   applyColorSchemePreset(DEFAULT_COLOR_SCHEME_PRESET_ID);
   applyCustomThemeCss('', '', { persist: true, syncUi: true });
   resetPersonalizationOpacity();
@@ -3605,6 +3628,9 @@ export function resetAllSettings() {
     earlyWrapped: false,
     seasonalThemeHistory: {},
     wrappedName: '',
+    contentWidthPx: DEFAULT_CONTENT_WIDTH_PX,
+    pageControlVisibility: 'hover',
+    quickActionsToolbarVisibility: 'visible',
   }).catch(error => {
     console.error('Failed to reset server-backed preferences:', error);
   });

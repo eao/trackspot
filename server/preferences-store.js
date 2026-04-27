@@ -10,6 +10,10 @@ const DEFAULT_COMPLEX_STATUSES = [
 ];
 
 const VALID_STATUSES = ['completed', 'planned', 'dropped'];
+const DEFAULT_CONTENT_WIDTH_PX = 1000;
+const MIN_CONTENT_WIDTH_PX = 600;
+const VALID_PAGE_CONTROL_VISIBILITY = ['hover', 'static'];
+const VALID_QUICK_ACTIONS_VISIBILITY = ['visible', 'hover'];
 
 function createStoreError(status, message) {
   const error = new Error(message);
@@ -91,6 +95,22 @@ function normalizeOptionalTimestamp(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function normalizeContentWidthPx(value) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isInteger(parsed)) return DEFAULT_CONTENT_WIDTH_PX;
+  if (parsed === 0) return 0;
+  if (parsed < MIN_CONTENT_WIDTH_PX) return DEFAULT_CONTENT_WIDTH_PX;
+  return parsed;
+}
+
+function normalizePageControlVisibility(value) {
+  return VALID_PAGE_CONTROL_VISIBILITY.includes(value) ? value : 'hover';
+}
+
+function normalizeQuickActionsToolbarVisibility(value) {
+  return VALID_QUICK_ACTIONS_VISIBILITY.includes(value) ? value : 'visible';
+}
+
 function normalizePreferences(rawValue = {}) {
   return {
     complexStatuses: normalizeComplexStatuses(rawValue.complexStatuses),
@@ -102,6 +122,9 @@ function normalizePreferences(rawValue = {}) {
     welcomeTourCompletedAt: normalizeOptionalTimestamp(rawValue.welcomeTourCompletedAt),
     welcomeTourSkippedAt: normalizeOptionalTimestamp(rawValue.welcomeTourSkippedAt),
     welcomeSamplesAddedAt: normalizeOptionalTimestamp(rawValue.welcomeSamplesAddedAt),
+    contentWidthPx: normalizeContentWidthPx(rawValue.contentWidthPx),
+    pageControlVisibility: normalizePageControlVisibility(rawValue.pageControlVisibility),
+    quickActionsToolbarVisibility: normalizeQuickActionsToolbarVisibility(rawValue.quickActionsToolbarVisibility),
   };
 }
 
@@ -152,5 +175,8 @@ module.exports = {
   normalizeSeasonalThemeHistory,
   normalizeWrappedName,
   normalizeOptionalTimestamp,
+  normalizeContentWidthPx,
+  normalizePageControlVisibility,
+  normalizeQuickActionsToolbarVisibility,
   createStoreError,
 };

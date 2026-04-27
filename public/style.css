@@ -433,6 +433,12 @@ body.u-buttons-enabled.u-buttons-hover-only .u-buttons:has(.u-btn:focus-visible)
   opacity: var(--ts-opacity-quick-actions-toolbar-alpha);
 }
 
+@media (hover: none), (pointer: coarse) {
+  body.u-buttons-enabled.u-buttons-hover-only .u-buttons {
+    opacity: var(--ts-opacity-quick-actions-toolbar-alpha);
+  }
+}
+
 body.header-hidden .u-buttons {
   top: 0;
 }
@@ -1183,7 +1189,7 @@ select.input {
   height: 15px;
 }
 
-@media (hover: none) {
+@media (hover: none), (pointer: coarse) {
   .page-controls {
     opacity: 1;
   }

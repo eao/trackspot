@@ -259,7 +259,6 @@ vi.mock('../public/js/state.js', () => ({
   LS_BACKGROUND_IMAGE_DISPLAY: 'ts_backgroundImageDisplay',
   LS_SECONDARY_BACKGROUND_IMAGE_SELECTION: 'ts_secondaryBackgroundImageSelection',
   LS_SECONDARY_BACKGROUND_IMAGE_DISPLAY: 'ts_secondaryBackgroundImageDisplay',
-  LS_OPACITY_PRESETS: 'ts_opacityPresets',
   LS_OPACITY_CONTROLS_EXPANDED: 'ts_opacityControlsExpanded',
   LS_APPLIED_THEME_ID: 'ts_appliedThemeId',
   DEFAULT_COLOR_SCHEME_PRESET_ID: 'bunan-blue',
@@ -528,7 +527,7 @@ describe('resetAllSettings', () => {
 
     expect(stateMock.contentWidthPx).toBe(1000);
     expect(elMock.inputContentWidth.value).toBe('1000');
-    expect(localStorage.getItem('ts_contentWidth')).toBe('1000');
+    expect(localStorage.getItem('ts_contentWidth')).toBeNull();
   });
 
   it('restores quick actions toolbar visibility to visible', async () => {
@@ -614,17 +613,6 @@ describe('content width settings', () => {
     expect(stateMock.contentWidthPx).toBe(3400);
     expect(elMock.inputContentWidth.value).toBe('3400');
     expect(syncAppShellLayoutMock).toHaveBeenCalled();
-  });
-
-  it('ignores legacy saved mode/custom values when the new key is missing', async () => {
-    localStorage.setItem('ts_contentWidthMode', 'custom');
-    localStorage.setItem('ts_contentWidthCustom', '3400');
-    const { restoreContentWidthSettings } = await import('../public/js/settings.js');
-
-    restoreContentWidthSettings();
-
-    expect(stateMock.contentWidthPx).toBe(1000);
-    expect(elMock.inputContentWidth.value).toBe('1000');
   });
 
   it('restores saved personalization opacity values from localStorage', async () => {

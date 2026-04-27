@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const stateMock = {
+const {
+  stateMock,
+  patchPreferencesMock,
+} = vi.hoisted(() => ({
+  patchPreferencesMock: vi.fn(),
+  stateMock: {
   view: 'list',
   pagination: {
     currentPage: 3,
@@ -20,7 +25,8 @@ const stateMock = {
     backgrounds: { userImages: [], presetImages: [], loading: false },
     secondaryBackgrounds: { userImages: [], presetImages: [], loading: false },
   },
-};
+  },
+}));
 
 const makeClassList = () => ({
   toggle: vi.fn(),
@@ -130,7 +136,7 @@ vi.mock('../public/js/app-shell.js', () => ({
 }));
 
 vi.mock('../public/js/preferences.js', () => ({
-  patchPreferences: vi.fn(),
+  patchPreferences: patchPreferencesMock,
 }));
 
 describe('applyPaginationSetting', () => {
@@ -139,6 +145,8 @@ describe('applyPaginationSetting', () => {
     renderMock.mockReset();
     loadAlbumsMock.mockReset();
     resetPaginationMock.mockReset();
+    patchPreferencesMock.mockReset();
+    patchPreferencesMock.mockResolvedValue({});
     stateMock.view = 'list';
     stateMock.pagination.currentPage = 3;
     stateMock.pagination.perPage = { list: null, grid: null };
@@ -203,6 +211,22 @@ describe('applyPaginationSetting', () => {
     expect(stateMock.quickActionsToolbarVisibilityMode).toBe('hover');
     expect(elMock.selectQuickActionsVisibility.value).toBe('hover');
     expect(document.body.classList.contains('u-buttons-hover-only')).toBe(true);
-    expect(localStorage.getItem('ts_quickActionsVisibility')).toBe('hover');
+    expect(localStorage.getItem('ts_quickActionsVisibility')).toBeNull();
+    expect(patchPreferencesMock).toHaveBeenCalledWith({
+      quickActionsToolbarVisibility: 'hover',
+    });
+  });
+
+  it('saves page control visibility to server preferences', async () => {
+    const { setPageControlVisibilityMode } = await import('../public/js/settings.js');
+
+    setPageControlVisibilityMode('static');
+
+    expect(stateMock.pagination.visibilityMode).toBe('static');
+    expect(elMock.selectPageControlVisibility.value).toBe('static');
+    expect(localStorage.getItem('ts_pageControlVisibility')).toBeNull();
+    expect(patchPreferencesMock).toHaveBeenCalledWith({
+      pageControlVisibility: 'static',
+    });
   });
 });

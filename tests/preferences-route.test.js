@@ -83,6 +83,9 @@ describe('preferences route', () => {
       welcomeTourCompletedAt: null,
       welcomeTourSkippedAt: null,
       welcomeSamplesAddedAt: null,
+      contentWidthPx: 1000,
+      pageControlVisibility: 'hover',
+      quickActionsToolbarVisibility: 'visible',
     });
   });
 
@@ -105,6 +108,9 @@ describe('preferences route', () => {
           christmas: 2026,
         },
         wrappedName: 'Erik',
+        contentWidthPx: 1600,
+        pageControlVisibility: 'static',
+        quickActionsToolbarVisibility: 'hover',
       },
     }, res, error => { throw error; });
 
@@ -125,6 +131,9 @@ describe('preferences route', () => {
       welcomeTourCompletedAt: null,
       welcomeTourSkippedAt: null,
       welcomeSamplesAddedAt: null,
+      contentWidthPx: 1600,
+      pageControlVisibility: 'static',
+      quickActionsToolbarVisibility: 'hover',
     });
 
     const readHandler = getRouteHandler(preferencesRouter, 'get', '/');
