@@ -161,6 +161,7 @@ describe('welcome tour UI preparation', () => {
     applyCollectionViewStateMock.mockClear();
     localStorage.clear();
     globalThis.document.body.className = '';
+    globalThis.scrollTo = vi.fn();
     globalThis.document.body.innerHTML = `
       <header class="header">
         <button id="btn-toggle-u-buttons"></button>
@@ -632,13 +633,41 @@ describe('welcome tour UI preparation', () => {
     await flushTourStep();
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Get Ready to Start');
-    expect(globalThis.document.querySelector('[data-action="samples"]')).toBeNull();
+    expect(globalThis.document.querySelector('[data-action="skip"]')).toBeNull();
+    expect(globalThis.document.querySelector('[data-action="samples"]')).not.toBeNull();
+    expect(globalThis.document.querySelector('[data-action="empty"]')).not.toBeNull();
+    expect(globalThis.document.querySelector('[data-action="next"]')).toBeNull();
 
-    globalThis.document.querySelector('[data-action="next"]')?.click();
+    globalThis.document.querySelector('[data-action="samples"]')?.click();
     await flushTourStep();
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Spicetify Setup');
-    expect(globalThis.document.querySelector('[data-action="samples"]')).not.toBeNull();
+    expect(globalThis.document.querySelector('[data-action="samples"]')).toBeNull();
+    expect(globalThis.document.querySelector('[data-action="finish"]')).not.toBeNull();
+  });
+
+  it('waits until finish tour to apply the ending sample choice', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+    apiFetchMock.mockClear();
+
+    globalThis.document.querySelector('[data-action="skip"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="samples"]')?.click();
+    await flushTourStep();
+
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/samples', expect.anything());
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/complete', expect.anything());
+
+    globalThis.document.querySelector('[data-action="finish"]')?.click();
+    await flushTourStep();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/samples', { method: 'POST' });
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/complete', expect.objectContaining({
+      method: 'POST',
+    }));
   });
 
   it('positions control and modal steps with the top bar cards', async () => {
@@ -734,9 +763,11 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 19; i += 1) {
+    for (let i = 0; i < 18; i += 1) {
       await advanceTourStep();
     }
+    globalThis.document.querySelector('[data-action="empty"]')?.click();
+    await flushTourStep();
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Spicetify Setup');
     expect(globalThis.document.body.classList.contains('collection-view-grid')).toBe(false);

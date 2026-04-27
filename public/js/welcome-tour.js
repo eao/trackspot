@@ -299,6 +299,7 @@ const TOUR_STEPS = [
     title: 'Get Ready to Start',
     body: 'We\'re almost at the end. To get you started, you can add these two placeholder albums to play around with, or just start with an empty collection.',
     placement: 'center',
+    choice: true,
     effect: prepareCollectionList,
   },
   {
@@ -324,6 +325,7 @@ let heartbeatGeneration = 0;
 let isFinishingTour = false;
 let stepHighlightActionComplete = false;
 let completedRequiredStepIds = new Set();
+let endingSampleChoice = null;
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -650,7 +652,7 @@ function getTourFocusableElements() {
 
 function focusTourControl() {
   const focusable = getTourFocusableElements();
-  const preferred = card?.querySelector('[data-action="next"], [data-action="continue"], [data-action="samples"], [data-action="empty"]');
+  const preferred = card?.querySelector('[data-action="next"], [data-action="continue"], [data-action="finish"], [data-action="samples"], [data-action="empty"]');
   if (preferred instanceof HTMLElement && !preferred.disabled) {
     preferred.focus();
     return;
@@ -709,6 +711,11 @@ function showTourError(message) {
   } else {
     card.appendChild(error);
   }
+}
+
+function chooseTourEnding(addSamplesChoice) {
+  endingSampleChoice = addSamplesChoice ? 'samples' : 'empty';
+  void showStep(currentStepIndex + 1);
 }
 
 function setTourControlsDisabled(disabled) {
@@ -865,29 +872,43 @@ function renderStep(step) {
   const sampleWarning = alreadyAdded
     ? '<p class="welcome-tour-note">Adding sample albums again will delete any existing welcome samples and add fresh copies.</p>'
     : '';
-  const finalActions = `${sampleWarning}<button class="btn btn-secondary" data-action="empty">Start with empty collection</button><button class="btn btn-primary" data-action="samples">Add sample albums</button>`;
+  const choiceActions = `${sampleWarning}<button class="btn btn-secondary" data-action="empty">Start with empty collection</button><button class="btn btn-primary" data-action="samples">Add sample albums</button>`;
+  const normalActions = `<div class="welcome-tour-actions">
+      <button class="btn btn-secondary welcome-tour-skip" data-action="skip">Skip tour</button>
+      <button class="btn btn-ghost" data-action="back"${currentStepIndex === 0 ? ' disabled' : ''}>Back</button>
+      <button class="btn btn-primary" data-action="next"${step.requireHighlightAction && !stepHighlightActionComplete ? ' disabled' : ''}>Next</button>
+    </div>`;
+  const choiceStepActions = `<div class="welcome-tour-cta">
+      <div class="welcome-tour-actions">
+        <button class="btn btn-ghost" data-action="back">Back</button>
+        ${choiceActions}
+      </div>
+    </div>`;
+  const finalStepActions = `<div class="welcome-tour-cta">
+      <div class="welcome-tour-actions">
+        <button class="btn btn-ghost" data-action="back">Back</button>
+        <button class="btn btn-primary" data-action="finish"${endingSampleChoice ? '' : ' disabled'}>Finish tour</button>
+      </div>
+    </div>`;
 
   positionHighlights(null);
   card.className = 'welcome-tour-card';
   card.innerHTML = `
-    <div class="welcome-tour-kicker">${step.final ? 'Ready to start' : `Step ${progress}`}</div>
+    <div class="welcome-tour-kicker">${step.final ? 'Finish tour' : `Step ${progress}`}</div>
     <h2>${step.title}</h2>
     <p>${step.body}</p>
-    ${step.final ? `<div class="welcome-tour-cta">
-      <p>Choose an empty collection, or add the placeholders so you can keep exploring.</p>
-      <div class="welcome-tour-actions">${finalActions}</div>
-    </div>` : `<div class="welcome-tour-actions">
-      <button class="btn btn-secondary welcome-tour-skip" data-action="skip">Skip tour</button>
-      <button class="btn btn-ghost" data-action="back"${currentStepIndex === 0 ? ' disabled' : ''}>Back</button>
-      <button class="btn btn-primary" data-action="next"${step.requireHighlightAction && !stepHighlightActionComplete ? ' disabled' : ''}>Next</button>
-    </div>`}
+    ${step.final ? finalStepActions : (step.choice ? choiceStepActions : normalActions)}
   `;
 
   card.querySelector('[data-action="back"]')?.addEventListener('click', () => showStep(currentStepIndex - 1));
   card.querySelector('[data-action="next"]')?.addEventListener('click', () => showStep(currentStepIndex + 1));
   card.querySelector('[data-action="skip"]')?.addEventListener('click', () => skipTour());
-  card.querySelector('[data-action="empty"]')?.addEventListener('click', () => finishTour({ markComplete: true }));
-  card.querySelector('[data-action="samples"]')?.addEventListener('click', () => finishTour({ markComplete: true, addSamples: true }));
+  card.querySelector('[data-action="empty"]')?.addEventListener('click', () => chooseTourEnding(false));
+  card.querySelector('[data-action="samples"]')?.addEventListener('click', () => chooseTourEnding(true));
+  card.querySelector('[data-action="finish"]')?.addEventListener('click', () => finishTour({
+    markComplete: true,
+    addSamples: endingSampleChoice === 'samples',
+  }));
   positionHighlights(step);
   requestAnimationFrame(() => {
     positionCard(step);
@@ -1105,6 +1126,7 @@ async function finishTour(options = {}) {
     const restoredPage = await restoreSnapshot();
     snapshot = null;
     skippedToFinal = false;
+    endingSampleChoice = null;
     completedRequiredStepIds.clear();
     if (!restoreOnly && shouldAddSamples && restoredPage === 'collection') {
       await loadAlbums();
@@ -1135,6 +1157,7 @@ export async function startWelcomeTour(options = {}) {
   state.welcomeTour.lockSessionId = null;
   snapshot = captureSnapshot();
   skippedToFinal = false;
+  endingSampleChoice = null;
   completedRequiredStepIds = new Set();
   setEarlyWrappedEnabled(false, { persist: false });
   setQuickActionsToolbarVisibilityMode('visible', { persist: false });
