@@ -139,7 +139,7 @@ const TOUR_STEPS = [
   {
     id: 'welcome',
     title: 'Welcome to Trackspot',
-    body: 'We will take a quick lap through the app with two temporary placeholder albums. You can skip ahead whenever you want.',
+    body: 'This welcome tour will show you how to navigate around Trackspot. You can skip to the end of the tour whenever you want.',
     placement: 'center',
     effect: prepareCollectionList,
   },
@@ -191,7 +191,7 @@ const TOUR_STEPS = [
   {
     id: 'list',
     title: 'List View',
-    body: 'List view is the denser collection view, with album details, notes, year, and dates arranged for scanning.',
+    body: 'List view shows your data in rows. This allows for a lot of information to be displayed, including album duration, personal notes, and date logged.',
     anchor: '#btn-view-list',
     highlight: '#btn-view-list',
     effect: prepareCollectionList,
@@ -199,7 +199,7 @@ const TOUR_STEPS = [
   {
     id: 'grid',
     title: 'Grid View',
-    body: 'Grid view puts the art first when you want to browse your collection visually.',
+    body: 'Grid view is more compact, prioritizing the album art.',
     anchor: '#btn-view-grid',
     highlight: '#btn-view-grid',
     effect: prepareGridStep,
@@ -207,7 +207,7 @@ const TOUR_STEPS = [
   {
     id: 'sidebar',
     title: 'Sidebar',
-    body: 'The sidebar holds search, filters, and sorting. Toggle it at least once before continuing; you can leave it open or tucked away.',
+    body: 'The sidebar has different options for searching, filtering, and sorting. It can be toggled at any time. Press the sidebar toggle button at least once to continue.',
     anchor: TOP_BAR_TOUR_ANCHOR,
     highlight: '#btn-toggle-sidebar',
     highlightAction: 'sidebar-toggle',
@@ -217,7 +217,7 @@ const TOUR_STEPS = [
   {
     id: 'quick-actions',
     title: 'Quick Actions Toolbar',
-    body: 'The quick actions toolbar can be toggled independently from the sidebar for the controls you use most. Toggle it at least once before continuing.',
+    body: 'If you don\'t want to have the full sidebar out, you can use the quick actions toolbar for access to some key controls. Toggle it at least once before continuing.',
     anchor: TOP_BAR_TOUR_ANCHOR,
     highlight: '#btn-toggle-u-buttons',
     highlightAction: 'quick-actions-toggle',
@@ -227,7 +227,7 @@ const TOUR_STEPS = [
   {
     id: 'log-album-button',
     title: 'Log Album Button',
-    body: 'This button opens the manual album form when you want to add something yourself.',
+    body: 'This button opens the Log Album window, which lets you manually enter details for an album that isn\'t on Spotify. Press the button to continue.',
     anchor: '#btn-log-new',
     highlight: '#btn-log-new',
     highlightAction: 'log-album-open',
@@ -237,15 +237,15 @@ const TOUR_STEPS = [
   },
   {
     id: 'manual-modal',
-    title: 'Manual Adds',
-    body: 'Manual additions are entered here. Spotify imports come from the Spicetify extension, while this modal is for albums you want to log yourself.',
+    title: 'Manual Album Log',
+    body: 'This is what the window for manually logging albums looks like. It\'s a lot to fill in, but many fields are optional. And for Spotify imports, the majority of this information gets auto-filled.',
     anchor: TOP_BAR_TOUR_ANCHOR,
     effect: prepareManualModalStep,
   },
   {
     id: 'settings-button',
     title: 'Settings & More Button',
-    body: 'Click this button to open the settings area for preferences, imports, exports, backups, and reset tools.',
+    body: 'This button opens the Settings & More window, which contains settings... and more. Press the button to continue.',
     anchor: '#btn-settings',
     highlight: '#btn-settings',
     highlightAction: 'settings-open',
@@ -255,15 +255,15 @@ const TOUR_STEPS = [
   },
   {
     id: 'settings',
-    title: 'Settings',
-    body: 'Settings covers preferences, paging, quick actions, import/export, backups, and reset tools.',
+    title: 'Settings & More',
+    body: 'The Settings & More window contains a ton of different settings as well as the controls for export/import functionality.',
     anchor: TOP_BAR_TOUR_ANCHOR,
     effect: prepareSettingsStep,
   },
   {
     id: 'personalization-button',
     title: 'Personalization Button',
-    body: 'Click this button to open the personalization controls for color schemes, backgrounds, opacity, and Themes.',
+    body: 'This button opens the Personalization window, which contains the controls for themes, color schemes, background images, opacity values, and custom CSS.',
     anchor: '#btn-personalization',
     highlight: '#btn-personalization',
     highlightAction: 'personalization-open',
@@ -274,14 +274,14 @@ const TOUR_STEPS = [
   {
     id: 'personalization',
     title: 'Personalization',
-    body: 'Personalization combines color schemes, background images, opacity presets, and Themes you can switch between all at once.',
+    body: 'You can customize Trackspot to look nearly however you want. The easiest way to change the look of the app is by switching themes. A theme is a preset containing a color scheme, optional background image, and interface opacity values, letting you change everything in one fell swoop. You can use any of the included themes or make your own.',
     anchor: TOP_BAR_TOUR_ANCHOR,
     effect: preparePersonalizationStep,
   },
   {
     id: 'stats',
     title: 'Stats',
-    body: 'Stats turns your logged albums into a dashboard once your real collection starts to grow.',
+    body: 'Once you have some real albums, the Stats page will let you look at the shape of your library.',
     anchor: '#btn-stats',
     highlight: '#btn-stats',
     effect: prepareStatsStep,
@@ -289,22 +289,22 @@ const TOUR_STEPS = [
   {
     id: 'wrapped',
     title: 'Wrapped',
-    body: 'Wrapped is intentionally under wraps until the year is ready, but this is where your annual retrospective will live.',
+    body: 'Wrapped is a year-end wrapup that unlocks on January 1 of the following year. Log a bunch this year so you can share all your activity with your friends!',
     anchor: '#btn-wrapped',
     highlight: '#btn-wrapped',
     effect: prepareWrappedStep,
   },
   {
-    id: 'spicetify',
-    title: 'Spicetify Setup',
-    body: 'Spotify desktop imports use the Spicetify extension. That setup flow will live here once it is ready.',
+    id: 'penultimate',
+    title: 'Get Ready to Start',
+    body: 'We\'re almost at the end. To get you started, you can add these two placeholder albums to play around with, or just start with an empty collection.',
     placement: 'center',
     effect: prepareCollectionList,
   },
   {
-    id: 'final',
-    title: 'Ready to Start',
-    body: 'You can add the placeholder albums to play around, or start with an empty collection.',
+    id: 'spicetify',
+    title: 'Spicetify Setup',
+    body: 'Insert Spicetify extension call to action here.',
     placement: 'center',
     final: true,
     effect: prepareCollectionList,
@@ -1117,7 +1117,8 @@ async function finishTour(options = {}) {
 
 function skipTour() {
   skippedToFinal = true;
-  showStep(TOUR_STEPS.length - 1);
+  const penultimateIndex = TOUR_STEPS.findIndex(step => step.id === 'penultimate');
+  showStep(penultimateIndex >= 0 ? penultimateIndex : Math.max(TOUR_STEPS.length - 2, 0));
 }
 
 export async function startWelcomeTour(options = {}) {

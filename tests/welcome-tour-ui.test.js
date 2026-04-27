@@ -355,7 +355,7 @@ describe('welcome tour UI preparation', () => {
     globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
     await flushTourStep();
 
-    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Manual Adds');
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Manual Album Log');
   });
 
   it('remembers the sidebar toggle requirement when returning to the sidebar step', async () => {
@@ -470,7 +470,7 @@ describe('welcome tour UI preparation', () => {
     globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
     await flushTourStep();
 
-    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Settings');
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Settings & More');
   });
 
   it('requires the personalization button click and advances into personalization', async () => {
@@ -622,6 +622,25 @@ describe('welcome tour UI preparation', () => {
     expect(firstAction?.classList.contains('welcome-tour-skip')).toBe(true);
   });
 
+  it('skips to the penultimate step before the final spicetify step', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    globalThis.document.querySelector('[data-action="skip"]')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Get Ready to Start');
+    expect(globalThis.document.querySelector('[data-action="samples"]')).toBeNull();
+
+    globalThis.document.querySelector('[data-action="next"]')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Spicetify Setup');
+    expect(globalThis.document.querySelector('[data-action="samples"]')).not.toBeNull();
+  });
+
   it('positions control and modal steps with the top bar cards', async () => {
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     Element.prototype.getBoundingClientRect = function getBoundingClientRect() {
@@ -676,9 +695,9 @@ describe('welcome tour UI preparation', () => {
         'Sidebar',
         'Quick Actions Toolbar',
         'Log Album Button',
-        'Manual Adds',
+        'Manual Album Log',
         'Settings & More Button',
-        'Settings',
+        'Settings & More',
         'Personalization Button',
         'Personalization',
       ];
@@ -715,7 +734,7 @@ describe('welcome tour UI preparation', () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
     await startWelcomeTour({ replay: true });
-    for (let i = 0; i < 18; i += 1) {
+    for (let i = 0; i < 19; i += 1) {
       await advanceTourStep();
     }
 
