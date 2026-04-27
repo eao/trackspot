@@ -224,6 +224,22 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
   });
 
+  it('orders welcome demo albums by logged date descending', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    expect(stateMock.sort).toEqual({
+      field: 'date_listened_planned',
+      order: 'desc',
+    });
+    expect(stateMock.albums.map(album => album.album_name)).toEqual([
+      'Placeholder Manual Log',
+      'Placeholder Spotify Import',
+    ]);
+  });
+
   it('does not reserve sidebar space while the tour sidebar is collapsed', async () => {
     stateMock.reserveSidebarSpace = true;
     globalThis.document.body.classList.add('reserve-sidebar-space');

@@ -365,8 +365,18 @@ function getAlbumListMeta() {
   };
 }
 
+function getAlbumLoggedSortValue(album) {
+  return album.listened_at || album.planned_at || '';
+}
+
+function getSortedDemoAlbums() {
+  return DEMO_ALBUMS
+    .map(album => ({ ...cloneJson(album) }))
+    .sort((a, b) => getAlbumLoggedSortValue(b).localeCompare(getAlbumLoggedSortValue(a)));
+}
+
 function setDemoAlbums() {
-  state.albums = DEMO_ALBUMS.map(album => ({ ...cloneJson(album) }));
+  state.albums = getSortedDemoAlbums();
   state.albumDetailsCache = Object.fromEntries(state.albums.map(album => [album.id, album]));
   state.albumListMeta = getAlbumListMeta();
   state.albumsLoaded = true;
