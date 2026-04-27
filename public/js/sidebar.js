@@ -408,27 +408,30 @@ export function initComplexStatuses() {
 // U-shaped button management
 // ---------------------------------------------------------------------------
 
-export function loadUButtons() {
-  if (Array.isArray(state.uButtons) && state.uButtons.length) {
+export function loadUButtons(options = {}) {
+  const { preferState = true, preferStorage = true } = options;
+  if (preferState && Array.isArray(state.uButtons) && state.uButtons.length) {
     const result = state.uButtons.filter(b => U_BUTTON_DEFS.some(d => d.id === b.id));
     U_BUTTON_DEFS.forEach(def => {
       if (!result.find(b => b.id === def.id)) result.push({ id: def.id, enabled: true });
     });
     return result;
   }
-  try {
-    const stored = localStorage.getItem(LS_U_BUTTONS);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      // Merge stored order/enabled state with canonical defs, appending any new ones.
-      const result = parsed.filter(b => U_BUTTON_DEFS.some(d => d.id === b.id));
-      U_BUTTON_DEFS.forEach(def => {
-        if (!result.find(b => b.id === def.id)) result.push({ id: def.id, enabled: true });
-      });
-      return result;
+  if (preferStorage) {
+    try {
+      const stored = localStorage.getItem(LS_U_BUTTONS);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Merge stored order/enabled state with canonical defs, appending any new ones.
+        const result = parsed.filter(b => U_BUTTON_DEFS.some(d => d.id === b.id));
+        U_BUTTON_DEFS.forEach(def => {
+          if (!result.find(b => b.id === def.id)) result.push({ id: def.id, enabled: true });
+        });
+        return result;
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
   return U_BUTTON_DEFS.map(d => ({ id: d.id, enabled: true }));
 }

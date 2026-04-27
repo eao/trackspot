@@ -8,10 +8,14 @@
 </head>
 <body class="page-collection">
   <script>
-    var _v=localStorage.getItem('ts_uButtonsEnabledList');if(_v==='1') document.body.classList.add('u-buttons-enabled');
-    var _qav=localStorage.getItem('ts_quickActionsVisibility');if(_qav==='hover') document.body.classList.add('u-buttons-hover-only');
+    var _path=(window.location.pathname||'/').split('/').filter(Boolean);
+    var _cv=_path[0]==='collection'&&_path[1]==='grid'?'grid':'list';
+    var _spc={};try{_spc=JSON.parse(localStorage.getItem('ts_startupPreferencesCache')||'{}')||{};}catch(_e0){}
+    var _ubc=_cv==='grid'?_spc.uButtonsEnabledGrid:_spc.uButtonsEnabledList;
+    var _v=localStorage.getItem(_cv==='grid'?'ts_uButtonsEnabledGrid':'ts_uButtonsEnabledList');if(_v===null&&typeof _ubc==='boolean') _v=_ubc?'1':'0';if(_v==='1') document.body.classList.add('u-buttons-enabled');
+    var _qav=localStorage.getItem('ts_quickActionsVisibility');if(_qav===null&&(_spc.quickActionsToolbarVisibility==='hover'||_spc.quickActionsToolbarVisibility==='visible')) _qav=_spc.quickActionsToolbarVisibility;if(_qav==='hover') document.body.classList.add('u-buttons-hover-only');
     var _s=localStorage.getItem('ts_sidebarCollapsedList');if(_s==='1') document.body.classList.add('sidebar-collapsed');
-    var _r=localStorage.getItem('ts_reserveSidebarSpace');if(_r==='1') document.body.classList.add('reserve-sidebar-space');
+    var _r=localStorage.getItem('ts_reserveSidebarSpace');if(_r===null&&typeof _spc.reserveSidebarSpace==='boolean') _r=_spc.reserveSidebarSpace?'1':'0';if(_r==='1') document.body.classList.add('reserve-sidebar-space');
     var _ap=localStorage.getItem('ts_accentPeriod');if(_ap!=='0') document.body.classList.add('accent-period-enabled');
     var _po={};try{_po=JSON.parse(localStorage.getItem('ts_personalizationOpacity')||'{}')||{};}catch(_e){}
     var _pbs=null;try{_pbs=JSON.parse(localStorage.getItem('ts_backgroundImageSelection')||'null');}catch(_e2){}
@@ -95,7 +99,8 @@
     document.documentElement.style.setProperty('--ts-secondary-background-position-x', _sbgx);
     document.documentElement.style.setProperty('--ts-secondary-background-position-y', _sbgy);
     document.documentElement.style.setProperty('--ts-secondary-background-size', _tsResolveBgSize(_sbgf,_sbgScale,_sbs));
-    var _cw=parseInt(localStorage.getItem('ts_contentWidth')||'',10);if(!Number.isInteger(_cw)||(_cw!==0&&_cw<600)) _cw=1000;
+    var _cwRaw=localStorage.getItem('ts_contentWidth');if(_cwRaw===null&&(_spc.contentWidthPx===0||Number.isInteger(_spc.contentWidthPx))) _cwRaw=String(_spc.contentWidthPx);
+    var _cw=parseInt(_cwRaw||'',10);if(!Number.isInteger(_cw)||(_cw!==0&&_cw<600)) _cw=1000;
     var _vw=document.documentElement.clientWidth||window.innerWidth||0;
     var _sw=220;
     var _ol=!!(window.matchMedia&&window.matchMedia('(hover: none) and (pointer: coarse)').matches)&&_vw<=760;
@@ -119,13 +124,11 @@
         _ci=_cc<=_sr?_cc:Math.max(0,_tg-_pl);
       }
     }
-    var _path=(window.location.pathname||'/').split('/').filter(Boolean);
     var _pg='collection';
     if(_path[0]==='stats'&&_path.length===1) _pg='stats';
     else if(_path[0]==='wrapped'&&_path.length<=2) _pg='wrapped';
     document.body.classList.remove('page-collection','page-stats','page-wrapped');
     document.body.classList.add('page-'+_pg);
-    var _cv=_path[0]==='collection'&&_path[1]==='grid'?'grid':'list';
     if(_pg==='collection'&&_cv==='grid') document.body.classList.add('collection-view-grid');
     var _cm=_pg==='collection'?(_cw===0?'none':_cw+'px'):'none';
     var _initialInset=_pg==='collection'?_ci:0;

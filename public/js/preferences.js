@@ -29,9 +29,22 @@ import {
 } from './layout-width.js';
 
 const LS_ACCENT_PERIOD = 'ts_accentPeriod';
+const LS_STARTUP_PREFERENCES_CACHE = 'ts_startupPreferencesCache';
+let preferencePatchQueue = Promise.resolve();
 
 function cacheAccentPeriodPreference(enabled) {
   localStorage.setItem(LS_ACCENT_PERIOD, enabled ? '1' : '0');
+}
+
+function writeStartupPreferencesCacheFromState() {
+  const cache = {
+    contentWidthPx: state.contentWidthPx,
+    quickActionsToolbarVisibility: state.quickActionsToolbarVisibilityMode,
+    reserveSidebarSpace: !!state.reserveSidebarSpace,
+    uButtonsEnabledList: !!state.uButtonsEnabled?.list,
+    uButtonsEnabledGrid: !!state.uButtonsEnabled?.grid,
+  };
+  localStorage.setItem(LS_STARTUP_PREFERENCES_CACHE, JSON.stringify(cache));
 }
 
 export function getDefaultPreferences() {
@@ -211,6 +224,7 @@ export function applyPreferencesToState(preferences = {}) {
     list: !!preferences.uButtonsEnabledList,
     grid: !!preferences.uButtonsEnabledGrid,
   };
+  writeStartupPreferencesCacheFromState();
 }
 
 export async function fetchPreferences() {
@@ -220,13 +234,19 @@ export async function fetchPreferences() {
   return preferences;
 }
 
-export async function patchPreferences(patch = {}) {
-  const response = await apiFetch('/api/preferences', {
+export async function patchPreferences(patch = {}, options = {}) {
+  const { apply = false } = options;
+  writeStartupPreferencesCacheFromState();
+  const request = preferencePatchQueue.catch(() => {}).then(() => apiFetch('/api/preferences', {
     method: 'PATCH',
     body: JSON.stringify(patch),
-  });
+  }));
+  preferencePatchQueue = request.catch(() => {});
+  const response = await request;
   const preferences = response?.preferences ?? getDefaultPreferences();
-  applyPreferencesToState(preferences);
+  if (apply) {
+    applyPreferencesToState(preferences);
+  }
   return preferences;
 }
 
@@ -327,7 +347,7 @@ export async function migrateLocalStoragePreferencesToServer() {
 
   if (!Object.keys(patch).length) return null;
 
-  const preferences = await patchPreferences(patch);
+  const preferences = await patchPreferences(patch, { apply: true });
   [
     LS_CONTENT_WIDTH,
     LS_PAGE_CONTROL_VISIBILITY,

@@ -3688,7 +3688,8 @@ export function resetAllSettings() {
   syncAppShellLayout();
 
   // Reset U-buttons (default order/all enabled, per-view defaults).
-  state.uButtons = loadUButtons();
+  state.uButtons = loadUButtons({ preferState: false, preferStorage: false });
+  state.uButtonsEnabled = { list: false, grid: false };
   setQuickActionsToolbarVisibilityMode('visible', { persist: false });
   const defaultOn = false;
   setUButtons(defaultOn);
