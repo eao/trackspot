@@ -263,7 +263,7 @@ const TOUR_STEPS = [
   {
     id: 'personalization-button',
     title: 'Personalization Button',
-    body: 'This button opens the Personalization window, which contains the controls for themes, color schemes, background images, opacity values, and custom CSS.',
+    body: 'This button opens the Personalization window, which contains the controls for themes, color schemes, background images, opacity values, and custom CSS. Press the button to continue.',
     anchor: '#btn-personalization',
     highlight: '#btn-personalization',
     highlightAction: 'personalization-open',
