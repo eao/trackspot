@@ -419,28 +419,38 @@ function initSettings() {
   initPersonalizationSettings();
 
   // Restore repeats-field toggle.
-  const showRepeatsOn = localStorage.getItem(LS_SHOW_REPEATS_FIELD) !== '0';
+  const showRepeatsOn = state.preferencesHydrated
+    ? state.showRepeatsField
+    : localStorage.getItem(LS_SHOW_REPEATS_FIELD) !== '0';
   el.toggleShowRepeatsField.checked = showRepeatsOn;
-  setShowRepeatsField(showRepeatsOn);
+  setShowRepeatsField(showRepeatsOn, { persist: false });
 
   // Restore priority-field toggle.
-  const showPriorityOn = localStorage.getItem(LS_SHOW_PRIORITY_FIELD) === '1';
+  const showPriorityOn = state.preferencesHydrated
+    ? state.showPriorityField
+    : localStorage.getItem(LS_SHOW_PRIORITY_FIELD) === '1';
   el.toggleShowPriorityField.checked = showPriorityOn;
-  setShowPriorityField(showPriorityOn);
+  setShowPriorityField(showPriorityOn, { persist: false });
 
   // Restore re-fetch art toggle.
-  const showRefetchArtOn = localStorage.getItem(LS_SHOW_REFETCH_ART) === '1';
+  const showRefetchArtOn = state.preferencesHydrated
+    ? state.showRefetchArt
+    : localStorage.getItem(LS_SHOW_REFETCH_ART) === '1';
   el.toggleShowRefetchArt.checked = showRefetchArtOn;
-  setShowRefetchArtButton(showRefetchArtOn);
+  setShowRefetchArtButton(showRefetchArtOn, { persist: false });
 
-  const showPlannedAtOn = localStorage.getItem(LS_SHOW_PLANNED_AT_FIELD) === '1';
+  const showPlannedAtOn = state.preferencesHydrated
+    ? state.showPlannedAtField
+    : localStorage.getItem(LS_SHOW_PLANNED_AT_FIELD) === '1';
   el.toggleShowPlannedAtField.checked = showPlannedAtOn;
-  setShowPlannedAtField(showPlannedAtOn);
+  setShowPlannedAtField(showPlannedAtOn, { persist: false });
 
   // Restore list-art enlarge toggle.
-  const listArtEnlargeOn = localStorage.getItem(LS_LIST_ART_ENLARGE) !== '0';
+  const listArtEnlargeOn = state.preferencesHydrated
+    ? state.listArtClickToEnlarge
+    : localStorage.getItem(LS_LIST_ART_ENLARGE) !== '0';
   el.toggleListArtEnlarge.checked = listArtEnlargeOn;
-  setListArtClickToEnlarge(listArtEnlargeOn);
+  setListArtClickToEnlarge(listArtEnlargeOn, { persist: false });
 
   // Restore sidebar state for initial view (list, default showing).
   const sidebarStorageKey = initialCollectionView === 'grid' ? LS_SIDEBAR_COLLAPSED_GRID : LS_SIDEBAR_COLLAPSED_LIST;
@@ -451,9 +461,11 @@ function initSettings() {
   document.body.classList.toggle('view-grid', initialCollectionView === 'grid');
 
   // Restore reserved sidebar space toggle.
-  const reserveSidebarSpaceOn = localStorage.getItem(LS_RESERVE_SIDEBAR_SPACE) === '1';
+  const reserveSidebarSpaceOn = state.preferencesHydrated
+    ? state.reserveSidebarSpace
+    : localStorage.getItem(LS_RESERVE_SIDEBAR_SPACE) === '1';
   el.toggleReserveSidebarSpace.checked = reserveSidebarSpaceOn;
-  setReserveSidebarSpace(reserveSidebarSpaceOn);
+  setReserveSidebarSpace(reserveSidebarSpaceOn, { persist: false });
 
   // Restore seasonal auto-theme toggle.
   el.toggleGrinchMode.checked = state.grinchMode;
@@ -475,17 +487,21 @@ function initSettings() {
 
   // Restore U-buttons state for initial view (list, default hidden).
   // Suppress CSS transitions for the initial state so there's no slide-in on load.
+  state.uButtons = loadUButtons();
   const uButtonsStorageKey = initialCollectionView === 'grid' ? LS_U_BUTTONS_ENABLED_GRID : LS_U_BUTTONS_ENABLED_LIST;
   const uButtonsStored = localStorage.getItem(uButtonsStorageKey);
-  const uButtonsOn = uButtonsStored === null ? false : uButtonsStored !== '0';
-  state.uButtons = loadUButtons();
+  const uButtonsOn = state.preferencesHydrated
+    ? !!state.uButtonsEnabled?.[initialCollectionView]
+    : uButtonsStored === null ? false : uButtonsStored !== '0';
   setUButtons(uButtonsOn);
   renderUButtonBar();
   initUButtons();
 
   // Restore header scroll behavior.
-  const headerScrollStored = localStorage.getItem(LS_HEADER_SCROLL) ?? 'smart';
-  setHeaderScrollMode(headerScrollStored);
+  const headerScrollStored = state.preferencesHydrated
+    ? state.headerScrollMode
+    : localStorage.getItem(LS_HEADER_SCROLL) ?? 'smart';
+  setHeaderScrollMode(headerScrollStored, { persist: false });
 
   el.selectHeaderScroll.addEventListener('change', () => {
     setHeaderScrollMode(el.selectHeaderScroll.value);
@@ -604,21 +620,23 @@ async function init() {
   }
   const defaultStatusFilter = state.complexStatuses.find(cs => cs.id === 'cs_listened')?.id ?? 'completed';
 
-  if (!localStorage.getItem(FILTER_PRESET_KEY)) {
+  if (!state.savedFilterPreset && !localStorage.getItem(FILTER_PRESET_KEY)) {
     saveDefaultFilterPreset(defaultStatusFilter);
   }
 
   // Apply saved filter preset if one exists.
-  const savedPreset = localStorage.getItem(FILTER_PRESET_KEY);
+  const savedPreset = state.savedFilterPreset || localStorage.getItem(FILTER_PRESET_KEY);
   if (savedPreset) {
     try {
-      const { filters, sort } = JSON.parse(savedPreset);
+      const { filters, sort } = typeof savedPreset === 'string'
+        ? JSON.parse(savedPreset)
+        : savedPreset;
       state.filters = { ...state.filters, ...filters };
       state.sort    = normalizeSortState({ ...state.sort, ...sort });
-      localStorage.setItem(FILTER_PRESET_KEY, JSON.stringify({
+      state.savedFilterPreset = {
         filters: { ...state.filters },
         sort: { ...state.sort },
-      }));
+      };
     } catch {
       const defaultPreset = getDefaultFilterPreset(defaultStatusFilter);
       state.filters = { ...state.filters, ...defaultPreset.filters };

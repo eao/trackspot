@@ -3031,14 +3031,16 @@ export function applyPaginationSetting(view, mode, customValue = '') {
   });
   const storageKey = getPageStorageKey(settingView);
   const modeStorageKey = getPageModeStorageKey(settingView);
-  if (nextValue === null) {
-    localStorage.removeItem(storageKey);
-  } else {
-    localStorage.setItem(storageKey, String(nextValue));
-  }
-  localStorage.setItem(modeStorageKey, nextMode);
+  localStorage.removeItem(storageKey);
+  localStorage.removeItem(modeStorageKey);
   localStorage.removeItem(LS_PAGE_SIZE_GRID);
   localStorage.removeItem(LS_PAGE_MODE_GRID);
+  patchPreferences({
+    paginationMode: nextMode,
+    paginationPageSize: nextValue,
+  }).catch(error => {
+    console.error('Failed to save pagination preference:', error);
+  });
 
   getPageSettingViews().forEach(syncPageControls);
   resetPagination();
@@ -3049,14 +3051,24 @@ export function applyPaginationSetting(view, mode, customValue = '') {
 export function setShowFirstLastPageButtons(enabled) {
   state.pagination.showFirstLastButtons = enabled;
   el.toggleFirstLastPageButtons.checked = enabled;
-  localStorage.setItem(LS_SHOW_FIRST_LAST_PAGES, enabled ? '1' : '0');
+  localStorage.removeItem(LS_SHOW_FIRST_LAST_PAGES);
+  patchPreferences({
+    showFirstLastPages: state.pagination.showFirstLastButtons,
+  }).catch(error => {
+    console.error('Failed to save first/last page button preference:', error);
+  });
   render();
 }
 
 export function setShowPageCount(enabled) {
   state.pagination.showPageCount = enabled;
   el.toggleShowPageCount.checked = enabled;
-  localStorage.setItem(LS_SHOW_PAGE_COUNT, enabled ? '1' : '0');
+  localStorage.removeItem(LS_SHOW_PAGE_COUNT);
+  patchPreferences({
+    showPageCount: state.pagination.showPageCount,
+  }).catch(error => {
+    console.error('Failed to save page count preference:', error);
+  });
   render();
 }
 
@@ -3101,18 +3113,30 @@ export function initQuickActionsToolbarSettings() {
 }
 
 export function initPaginationSettings() {
-  const storedPageSizeList = localStorage.getItem(LS_PAGE_SIZE_LIST);
-  const storedPageSizeGrid = localStorage.getItem(LS_PAGE_SIZE_GRID);
-  const storedPageModeList = localStorage.getItem(LS_PAGE_MODE_LIST);
-  const storedPageModeGrid = localStorage.getItem(LS_PAGE_MODE_GRID);
+  const storedPageSizeList = state.preferencesHydrated
+    ? (state.pagination.perPage.list === null ? null : String(state.pagination.perPage.list))
+    : localStorage.getItem(LS_PAGE_SIZE_LIST);
+  const storedPageSizeGrid = state.preferencesHydrated
+    ? (state.pagination.perPage.grid === null ? null : String(state.pagination.perPage.grid))
+    : localStorage.getItem(LS_PAGE_SIZE_GRID);
+  const storedPageModeList = state.preferencesHydrated
+    ? state.pagination.mode.list
+    : localStorage.getItem(LS_PAGE_MODE_LIST);
+  const storedPageModeGrid = state.preferencesHydrated
+    ? state.pagination.mode.grid
+    : localStorage.getItem(LS_PAGE_MODE_GRID);
   const hasCanonicalPagination = storedPageSizeList !== null || storedPageModeList !== null;
   const storedPageSize = hasCanonicalPagination ? storedPageSizeList : storedPageSizeGrid;
   const storedPageMode = hasCanonicalPagination ? storedPageModeList : storedPageModeGrid;
 
   let sharedPageSize = parseStoredPageSize(storedPageSize);
   let sharedPageMode = parseStoredPageMode(storedPageMode);
-  state.pagination.showPageCount = localStorage.getItem(LS_SHOW_PAGE_COUNT) !== '0';
-  state.pagination.showFirstLastButtons = localStorage.getItem(LS_SHOW_FIRST_LAST_PAGES) === '1';
+  state.pagination.showPageCount = state.preferencesHydrated
+    ? state.pagination.showPageCount
+    : localStorage.getItem(LS_SHOW_PAGE_COUNT) !== '0';
+  state.pagination.showFirstLastButtons = state.preferencesHydrated
+    ? state.pagination.showFirstLastButtons
+    : localStorage.getItem(LS_SHOW_FIRST_LAST_PAGES) === '1';
   const storedVisibilityMode = state.preferencesHydrated
     ? state.pagination.visibilityMode
     : localStorage.getItem(LS_PAGE_CONTROL_VISIBILITY);
@@ -3131,7 +3155,7 @@ export function initPaginationSettings() {
     state.pagination.perPage[view] = sharedPageSize;
     state.pagination.mode[view] = sharedPageMode;
   });
-  if (storedPageSizeGrid !== null || storedPageModeGrid !== null) {
+  if (!state.preferencesHydrated && (storedPageSizeGrid !== null || storedPageModeGrid !== null)) {
     if (sharedPageSize === null) {
       localStorage.removeItem(LS_PAGE_SIZE_LIST);
     } else {
@@ -3351,18 +3375,34 @@ export function setShowWipeDb(enabled) {
   localStorage.setItem(LS_SHOW_WIPE_DB, enabled ? '1' : '0');
 }
 
-export function setListArtClickToEnlarge(enabled) {
+export function setListArtClickToEnlarge(enabled, options = {}) {
+  const { persist = true } = options;
   state.listArtClickToEnlarge = enabled;
   el.toggleListArtEnlarge.checked = enabled;
-  localStorage.setItem(LS_LIST_ART_ENLARGE, enabled ? '1' : '0');
+  localStorage.removeItem(LS_LIST_ART_ENLARGE);
+  if (persist) {
+    patchPreferences({
+      listArtClickToEnlarge: state.listArtClickToEnlarge,
+    }).catch(error => {
+      console.error('Failed to save list art enlarge preference:', error);
+    });
+  }
   render();
 }
 
-export function setReserveSidebarSpace(enabled) {
+export function setReserveSidebarSpace(enabled, options = {}) {
+  const { persist = true } = options;
   state.reserveSidebarSpace = enabled;
   document.body.classList.toggle('reserve-sidebar-space', enabled);
   el.toggleReserveSidebarSpace.checked = enabled;
-  localStorage.setItem(LS_RESERVE_SIDEBAR_SPACE, enabled ? '1' : '0');
+  localStorage.removeItem(LS_RESERVE_SIDEBAR_SPACE);
+  if (persist) {
+    patchPreferences({
+      reserveSidebarSpace: state.reserveSidebarSpace,
+    }).catch(error => {
+      console.error('Failed to save reserve sidebar space preference:', error);
+    });
+  }
   syncAppShellLayout();
 }
 
@@ -3449,36 +3489,72 @@ export function restoreContentWidthSettings() {
   syncAppShellLayout();
 }
 
-export function setShowRefetchArtButton(enabled) {
+export function setShowRefetchArtButton(enabled, options = {}) {
+  const { persist = true } = options;
+  state.showRefetchArt = !!enabled;
   el.toggleShowRefetchArt.checked = enabled;
-  localStorage.setItem(LS_SHOW_REFETCH_ART, enabled ? '1' : '0');
+  localStorage.removeItem(LS_SHOW_REFETCH_ART);
+  if (persist) {
+    patchPreferences({
+      showRefetchArt: state.showRefetchArt,
+    }).catch(error => {
+      console.error('Failed to save refetch art visibility preference:', error);
+    });
+  }
 
   if (state.modal.open && state.modal.mode === 'edit') {
     import('./modal-art.js').then(module => module.showArtButtons()).catch(() => {});
   }
 }
 
-export function setShowPlannedAtField(enabled) {
+export function setShowPlannedAtField(enabled, options = {}) {
+  const { persist = true } = options;
+  state.showPlannedAtField = !!enabled;
   el.toggleShowPlannedAtField.checked = enabled;
-  localStorage.setItem(LS_SHOW_PLANNED_AT_FIELD, enabled ? '1' : '0');
+  localStorage.removeItem(LS_SHOW_PLANNED_AT_FIELD);
+  if (persist) {
+    patchPreferences({
+      showPlannedAtField: state.showPlannedAtField,
+    }).catch(error => {
+      console.error('Failed to save planned-date field visibility preference:', error);
+    });
+  }
 
   if (state.modal.open) {
     import('./modal.js').then(module => module.syncAlbumModalFieldVisibility()).catch(() => {});
   }
 }
 
-export function setShowPriorityField(enabled) {
+export function setShowPriorityField(enabled, options = {}) {
+  const { persist = true } = options;
+  state.showPriorityField = !!enabled;
   el.toggleShowPriorityField.checked = enabled;
-  localStorage.setItem(LS_SHOW_PRIORITY_FIELD, enabled ? '1' : '0');
+  localStorage.removeItem(LS_SHOW_PRIORITY_FIELD);
+  if (persist) {
+    patchPreferences({
+      showPriorityField: state.showPriorityField,
+    }).catch(error => {
+      console.error('Failed to save priority field visibility preference:', error);
+    });
+  }
 
   if (state.modal.open) {
     import('./modal.js').then(module => module.syncAlbumModalFieldVisibility()).catch(() => {});
   }
 }
 
-export function setShowRepeatsField(enabled) {
+export function setShowRepeatsField(enabled, options = {}) {
+  const { persist = true } = options;
+  state.showRepeatsField = !!enabled;
   el.toggleShowRepeatsField.checked = enabled;
-  localStorage.setItem(LS_SHOW_REPEATS_FIELD, enabled ? '1' : '0');
+  localStorage.removeItem(LS_SHOW_REPEATS_FIELD);
+  if (persist) {
+    patchPreferences({
+      showRepeatsField: state.showRepeatsField,
+    }).catch(error => {
+      console.error('Failed to save repeats field visibility preference:', error);
+    });
+  }
 
   if (state.modal.open) {
     import('./modal.js').then(module => module.syncAlbumModalFieldVisibility()).catch(() => {});
@@ -3495,12 +3571,24 @@ export function setDebugMode(enabled) {
 
 export function setUButtons(enabled) {
   document.body.classList.toggle('u-buttons-enabled', enabled);
+  const view = getCurrentCollectionView();
+  if (state.uButtonsEnabled) {
+    state.uButtonsEnabled[view] = !!enabled;
+  }
   renderUButtonList();
 }
 
-export function setHeaderScrollMode(mode) {
+export function setHeaderScrollMode(mode, options = {}) {
+  const { persist = true } = options;
   state.headerScrollMode = mode;
-  localStorage.setItem(LS_HEADER_SCROLL, mode);
+  localStorage.removeItem(LS_HEADER_SCROLL);
+  if (persist) {
+    patchPreferences({
+      headerScrollMode: state.headerScrollMode,
+    }).catch(error => {
+      console.error('Failed to save header scroll preference:', error);
+    });
+  }
   el.selectHeaderScroll.value = mode;
   syncHeaderScrollBaseline({
     currentY: window.scrollY || 0,
@@ -3520,17 +3608,17 @@ export function resetAllSettings() {
 
   // Reset debug mode.
   el.toggleShowRepeatsField.checked = true;
-  setShowRepeatsField(true);
+  setShowRepeatsField(true, { persist: false });
   el.toggleShowPriorityField.checked = false;
-  setShowPriorityField(false);
+  setShowPriorityField(false, { persist: false });
   el.toggleShowRefetchArt.checked = false;
-  setShowRefetchArtButton(false);
+  setShowRefetchArtButton(false, { persist: false });
   el.toggleShowPlannedAtField.checked = false;
-  setShowPlannedAtField(false);
+  setShowPlannedAtField(false, { persist: false });
   el.toggleListArtEnlarge.checked = true;
-  setListArtClickToEnlarge(true);
+  setListArtClickToEnlarge(true, { persist: false });
   el.toggleReserveSidebarSpace.checked = false;
-  setReserveSidebarSpace(false);
+  setReserveSidebarSpace(false, { persist: false });
   if (el.toggleGrinchMode) el.toggleGrinchMode.checked = false;
   setGrinchMode(false);
   if (el.toggleAccentPeriod) el.toggleAccentPeriod.checked = true;
@@ -3590,7 +3678,7 @@ export function resetAllSettings() {
   el.settingsWipeSection.classList.add('hidden');
 
   // Reset header scroll mode.
-  setHeaderScrollMode('smart');
+  setHeaderScrollMode('smart', { persist: false });
 
   // Reset sidebar to default for current view (list: showing, grid: hidden).
   const defaultCollectionView = getCurrentCollectionView();
@@ -3631,6 +3719,21 @@ export function resetAllSettings() {
     contentWidthPx: DEFAULT_CONTENT_WIDTH_PX,
     pageControlVisibility: 'hover',
     quickActionsToolbarVisibility: 'visible',
+    filterPreset: getDefaultFilterPreset(defaultStatusFilter),
+    headerScrollMode: 'smart',
+    listArtClickToEnlarge: true,
+    reserveSidebarSpace: false,
+    paginationMode: 'suggested',
+    paginationPageSize: PAGE_SUGGESTED.list,
+    showFirstLastPages: false,
+    showPageCount: true,
+    showRepeatsField: true,
+    showPriorityField: false,
+    showRefetchArt: false,
+    showPlannedAtField: false,
+    uButtons: state.uButtons,
+    uButtonsEnabledList: false,
+    uButtonsEnabledGrid: false,
   }).catch(error => {
     console.error('Failed to reset server-backed preferences:', error);
   });

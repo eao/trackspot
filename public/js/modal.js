@@ -2,7 +2,7 @@
 // Log/edit/delete modals and art actions.
 // =============================================================================
 
-import { state, el, apiFetch, LS_SHOW_REPEATS_FIELD, LS_SHOW_PRIORITY_FIELD, LS_SHOW_PLANNED_AT_FIELD } from './state.js';
+import { state, el, apiFetch } from './state.js';
 import {
   formatArtists, formatDuration, parseDurationInput, artUrl,
   todayISO, parseArtistInput, escHtml, normalizeAlbumTypeForStorage, formatAlbumTypeForDisplay, deriveArtistNames,
@@ -242,9 +242,9 @@ export function populateDetailsFields(album, isManual) {
 }
 
 export function syncAlbumModalFieldVisibility() {
-  const showRepeatsField = localStorage.getItem(LS_SHOW_REPEATS_FIELD) !== '0';
-  const showPriorityField = localStorage.getItem(LS_SHOW_PRIORITY_FIELD) === '1';
-  const showPlannedAtField = localStorage.getItem(LS_SHOW_PLANNED_AT_FIELD) === '1';
+  const showRepeatsField = state.showRepeatsField !== false;
+  const showPriorityField = state.showPriorityField === true;
+  const showPlannedAtField = state.showPlannedAtField === true;
   const hideRepeats = !showRepeatsField;
   const hidePriority = !showPriorityField;
   const hidePlannedAt = !showPlannedAtField;

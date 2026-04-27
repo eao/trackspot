@@ -2,7 +2,7 @@
 // Art action buttons for the edit modal.
 // =============================================================================
 
-import { state, el, apiFetch, LS_SHOW_REFETCH_ART } from './state.js';
+import { state, el, apiFetch } from './state.js';
 import { artUrl, normalizeAlbumClientShape } from './utils.js';
 import { loadAlbums } from './render.js';
 import { showError } from './modal.js';
@@ -16,7 +16,7 @@ export function showArtButtons() {
   const album = state.albums.find(a => a.id === state.modal.albumId)
     ?? state.albumDetailsCache[state.modal.albumId];
   const canRefetch = album && (album.image_url_large || album.image_url_medium || album.image_url_small);
-  const showRefetch = localStorage.getItem(LS_SHOW_REFETCH_ART) === '1';
+  const showRefetch = state.showRefetchArt === true;
   el.btnRefetchArt.classList.toggle('hidden', !canRefetch || !showRefetch);
   // Debug-only buttons.
   el.btnDeleteArt.classList.toggle('hidden', !state.debugMode);

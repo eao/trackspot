@@ -492,7 +492,7 @@ describe('resetAllSettings', () => {
     expect(stateMock.reserveSidebarSpace).toBe(false);
     expect(elMock.toggleReserveSidebarSpace.checked).toBe(false);
     expect(globalThis.document.body.classList.contains('reserve-sidebar-space')).toBe(false);
-    expect(localStorage.getItem('ts_reserveSidebarSpace')).toBe('0');
+    expect(localStorage.getItem('ts_reserveSidebarSpace')).toBeNull();
   });
 
   it('restores the accent period preference to its default on state', async () => {

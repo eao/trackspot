@@ -66,6 +66,7 @@ export const state = {
     field: 'date_listened_planned',
     order: 'desc',
   },
+  savedFilterPreset: null,
 
   navigation: {
     page: 'collection', // 'collection' | 'stats' | 'wrapped'
@@ -122,6 +123,10 @@ export const state = {
   headerScrollMode: 'smart',
   listArtClickToEnlarge: true,
   reserveSidebarSpace: false,
+  showRepeatsField: true,
+  showPriorityField: false,
+  showRefetchArt: false,
+  showPlannedAtField: false,
   preferencesHydrated: false,
   grinchMode: false,
   accentPeriod: true,
@@ -144,6 +149,10 @@ export const state = {
 
   // U-shaped button config (order + enabled). Loaded from localStorage at init.
   uButtons: [],
+  uButtonsEnabled: {
+    list: false,
+    grid: false,
+  },
   quickActionsToolbarVisibilityMode: 'visible',
 
   // CSV import progress shown in Settings.

@@ -1,9 +1,27 @@
 import {
   apiFetch,
   state,
+  FILTER_PRESET_KEY,
+  LS_HEADER_SCROLL,
+  LS_LIST_ART_ENLARGE,
+  LS_RESERVE_SIDEBAR_SPACE,
+  LS_SHOW_REPEATS_FIELD,
+  LS_SHOW_PRIORITY_FIELD,
+  LS_SHOW_REFETCH_ART,
+  LS_SHOW_PLANNED_AT_FIELD,
+  LS_PAGE_SIZE_LIST,
+  LS_PAGE_SIZE_GRID,
+  LS_PAGE_MODE_LIST,
+  LS_PAGE_MODE_GRID,
+  LS_SHOW_FIRST_LAST_PAGES,
+  LS_SHOW_PAGE_COUNT,
+  LS_U_BUTTONS,
+  LS_U_BUTTONS_ENABLED_LIST,
+  LS_U_BUTTONS_ENABLED_GRID,
   LS_CONTENT_WIDTH,
   LS_PAGE_CONTROL_VISIBILITY,
   LS_QUICK_ACTIONS_VISIBILITY,
+  PAGE_SUGGESTED,
 } from './state.js';
 import {
   DEFAULT_CONTENT_WIDTH_PX,
@@ -33,11 +51,80 @@ export function getDefaultPreferences() {
     contentWidthPx: DEFAULT_CONTENT_WIDTH_PX,
     pageControlVisibility: 'hover',
     quickActionsToolbarVisibility: 'visible',
+    filterPreset: null,
+    headerScrollMode: 'smart',
+    listArtClickToEnlarge: true,
+    reserveSidebarSpace: false,
+    paginationMode: 'suggested',
+    paginationPageSize: PAGE_SUGGESTED.list,
+    showFirstLastPages: false,
+    showPageCount: true,
+    showRepeatsField: true,
+    showPriorityField: false,
+    showRefetchArt: false,
+    showPlannedAtField: false,
+    uButtons: [],
+    uButtonsEnabledList: false,
+    uButtonsEnabledGrid: false,
   };
 }
 
 function normalizeVisibilityMode(value, validModes, fallback) {
   return validModes.includes(value) ? value : fallback;
+}
+
+function normalizeHeaderScrollMode(value) {
+  return ['fixed', 'scroll', 'smart'].includes(value) ? value : 'smart';
+}
+
+function normalizePaginationMode(value) {
+  return ['suggested', 'custom', 'unlimited'].includes(value) ? value : 'suggested';
+}
+
+function parseStoredPageSize(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizePaginationPageSize(value, mode = 'suggested') {
+  const normalizedMode = normalizePaginationMode(mode);
+  if (normalizedMode === 'unlimited') return null;
+  if (normalizedMode === 'suggested') return PAGE_SUGGESTED.list;
+  return parseStoredPageSize(value) ?? PAGE_SUGGESTED.list;
+}
+
+function normalizeFilterPreset(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return {
+    filters: value.filters && typeof value.filters === 'object' && !Array.isArray(value.filters)
+      ? { ...value.filters }
+      : {},
+    sort: value.sort && typeof value.sort === 'object' && !Array.isArray(value.sort)
+      ? { ...value.sort }
+      : {},
+  };
+}
+
+function parseJsonStorageObject(key, fallback = null) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function parseJsonStorageArray(key, fallback = []) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export function applyPreferencesToState(preferences = {}) {
@@ -68,6 +155,9 @@ export function applyPreferencesToState(preferences = {}) {
   state.wrappedName = typeof preferences.wrappedName === 'string'
     ? preferences.wrappedName
     : defaults.wrappedName;
+  if (!state.welcomeTour || typeof state.welcomeTour !== 'object') {
+    state.welcomeTour = {};
+  }
   state.welcomeTour.completedAt = typeof preferences.welcomeTourCompletedAt === 'string'
     ? preferences.welcomeTourCompletedAt
     : null;
@@ -91,6 +181,36 @@ export function applyPreferencesToState(preferences = {}) {
     ['visible', 'hover'],
     defaults.quickActionsToolbarVisibility,
   );
+  state.savedFilterPreset = normalizeFilterPreset(preferences.filterPreset);
+  state.headerScrollMode = normalizeHeaderScrollMode(preferences.headerScrollMode);
+  state.listArtClickToEnlarge = preferences.listArtClickToEnlarge === undefined
+    ? true
+    : !!preferences.listArtClickToEnlarge;
+  state.reserveSidebarSpace = !!preferences.reserveSidebarSpace;
+  const paginationMode = normalizePaginationMode(preferences.paginationMode);
+  const paginationPageSize = normalizePaginationPageSize(preferences.paginationPageSize, paginationMode);
+  state.pagination.perPage.list = paginationPageSize;
+  state.pagination.perPage.grid = paginationPageSize;
+  state.pagination.mode.list = paginationMode;
+  state.pagination.mode.grid = paginationMode;
+  state.pagination.showFirstLastButtons = !!preferences.showFirstLastPages;
+  state.pagination.showPageCount = preferences.showPageCount === undefined
+    ? true
+    : !!preferences.showPageCount;
+  state.showRepeatsField = preferences.showRepeatsField === undefined ? true : !!preferences.showRepeatsField;
+  state.showPriorityField = !!preferences.showPriorityField;
+  state.showRefetchArt = !!preferences.showRefetchArt;
+  state.showPlannedAtField = !!preferences.showPlannedAtField;
+  state.uButtons = Array.isArray(preferences.uButtons)
+    ? preferences.uButtons.map(button => ({
+      id: typeof button?.id === 'string' ? button.id : '',
+      enabled: button?.enabled !== false,
+    })).filter(button => button.id)
+    : [];
+  state.uButtonsEnabled = {
+    list: !!preferences.uButtonsEnabledList,
+    grid: !!preferences.uButtonsEnabledGrid,
+  };
 }
 
 export async function fetchPreferences() {
@@ -138,11 +258,97 @@ export async function migrateLocalStoragePreferencesToServer() {
     );
   }
 
+  const filterPreset = parseJsonStorageObject(FILTER_PRESET_KEY);
+  if (filterPreset) {
+    patch.filterPreset = normalizeFilterPreset(filterPreset);
+  }
+
+  if (localStorage.getItem(LS_HEADER_SCROLL) !== null) {
+    patch.headerScrollMode = normalizeHeaderScrollMode(localStorage.getItem(LS_HEADER_SCROLL));
+  }
+
+  if (localStorage.getItem(LS_LIST_ART_ENLARGE) !== null) {
+    patch.listArtClickToEnlarge = localStorage.getItem(LS_LIST_ART_ENLARGE) !== '0';
+  }
+
+  if (localStorage.getItem(LS_RESERVE_SIDEBAR_SPACE) !== null) {
+    patch.reserveSidebarSpace = localStorage.getItem(LS_RESERVE_SIDEBAR_SPACE) === '1';
+  }
+
+  if (localStorage.getItem(LS_SHOW_REPEATS_FIELD) !== null) {
+    patch.showRepeatsField = localStorage.getItem(LS_SHOW_REPEATS_FIELD) !== '0';
+  }
+
+  if (localStorage.getItem(LS_SHOW_PRIORITY_FIELD) !== null) {
+    patch.showPriorityField = localStorage.getItem(LS_SHOW_PRIORITY_FIELD) === '1';
+  }
+
+  if (localStorage.getItem(LS_SHOW_REFETCH_ART) !== null) {
+    patch.showRefetchArt = localStorage.getItem(LS_SHOW_REFETCH_ART) === '1';
+  }
+
+  if (localStorage.getItem(LS_SHOW_PLANNED_AT_FIELD) !== null) {
+    patch.showPlannedAtField = localStorage.getItem(LS_SHOW_PLANNED_AT_FIELD) === '1';
+  }
+
+  const hasCanonicalPagination = localStorage.getItem(LS_PAGE_SIZE_LIST) !== null
+    || localStorage.getItem(LS_PAGE_MODE_LIST) !== null;
+  const storedPageSize = hasCanonicalPagination
+    ? localStorage.getItem(LS_PAGE_SIZE_LIST)
+    : localStorage.getItem(LS_PAGE_SIZE_GRID);
+  const storedPageMode = hasCanonicalPagination
+    ? localStorage.getItem(LS_PAGE_MODE_LIST)
+    : localStorage.getItem(LS_PAGE_MODE_GRID);
+  if (storedPageSize !== null || storedPageMode !== null) {
+    const paginationMode = normalizePaginationMode(storedPageMode);
+    patch.paginationMode = paginationMode;
+    patch.paginationPageSize = normalizePaginationPageSize(storedPageSize, paginationMode);
+  }
+
+  if (localStorage.getItem(LS_SHOW_FIRST_LAST_PAGES) !== null) {
+    patch.showFirstLastPages = localStorage.getItem(LS_SHOW_FIRST_LAST_PAGES) === '1';
+  }
+
+  if (localStorage.getItem(LS_SHOW_PAGE_COUNT) !== null) {
+    patch.showPageCount = localStorage.getItem(LS_SHOW_PAGE_COUNT) !== '0';
+  }
+
+  if (localStorage.getItem(LS_U_BUTTONS) !== null) {
+    patch.uButtons = parseJsonStorageArray(LS_U_BUTTONS);
+  }
+
+  if (localStorage.getItem(LS_U_BUTTONS_ENABLED_LIST) !== null) {
+    patch.uButtonsEnabledList = localStorage.getItem(LS_U_BUTTONS_ENABLED_LIST) !== '0';
+  }
+
+  if (localStorage.getItem(LS_U_BUTTONS_ENABLED_GRID) !== null) {
+    patch.uButtonsEnabledGrid = localStorage.getItem(LS_U_BUTTONS_ENABLED_GRID) !== '0';
+  }
+
   if (!Object.keys(patch).length) return null;
 
   const preferences = await patchPreferences(patch);
-  localStorage.removeItem(LS_CONTENT_WIDTH);
-  localStorage.removeItem(LS_PAGE_CONTROL_VISIBILITY);
-  localStorage.removeItem(LS_QUICK_ACTIONS_VISIBILITY);
+  [
+    LS_CONTENT_WIDTH,
+    LS_PAGE_CONTROL_VISIBILITY,
+    LS_QUICK_ACTIONS_VISIBILITY,
+    FILTER_PRESET_KEY,
+    LS_HEADER_SCROLL,
+    LS_LIST_ART_ENLARGE,
+    LS_RESERVE_SIDEBAR_SPACE,
+    LS_SHOW_REPEATS_FIELD,
+    LS_SHOW_PRIORITY_FIELD,
+    LS_SHOW_REFETCH_ART,
+    LS_SHOW_PLANNED_AT_FIELD,
+    LS_PAGE_SIZE_LIST,
+    LS_PAGE_SIZE_GRID,
+    LS_PAGE_MODE_LIST,
+    LS_PAGE_MODE_GRID,
+    LS_SHOW_FIRST_LAST_PAGES,
+    LS_SHOW_PAGE_COUNT,
+    LS_U_BUTTONS,
+    LS_U_BUTTONS_ENABLED_LIST,
+    LS_U_BUTTONS_ENABLED_GRID,
+  ].forEach(key => localStorage.removeItem(key));
   return preferences;
 }

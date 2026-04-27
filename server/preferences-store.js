@@ -12,8 +12,11 @@ const DEFAULT_COMPLEX_STATUSES = [
 const VALID_STATUSES = ['completed', 'planned', 'dropped'];
 const DEFAULT_CONTENT_WIDTH_PX = 1000;
 const MIN_CONTENT_WIDTH_PX = 600;
+const DEFAULT_PAGE_SIZE = 18;
 const VALID_PAGE_CONTROL_VISIBILITY = ['hover', 'static'];
 const VALID_QUICK_ACTIONS_VISIBILITY = ['visible', 'hover'];
+const VALID_HEADER_SCROLL_MODES = ['fixed', 'scroll', 'smart'];
+const VALID_PAGINATION_MODES = ['suggested', 'custom', 'unlimited'];
 
 function createStoreError(status, message) {
   const error = new Error(message);
@@ -111,7 +114,44 @@ function normalizeQuickActionsToolbarVisibility(value) {
   return VALID_QUICK_ACTIONS_VISIBILITY.includes(value) ? value : 'visible';
 }
 
+function normalizeHeaderScrollMode(value) {
+  return VALID_HEADER_SCROLL_MODES.includes(value) ? value : 'smart';
+}
+
+function normalizePaginationMode(value) {
+  return VALID_PAGINATION_MODES.includes(value) ? value : 'suggested';
+}
+
+function normalizePaginationPageSize(value, mode) {
+  if (mode === 'unlimited') return null;
+  if (mode === 'suggested') return DEFAULT_PAGE_SIZE;
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_PAGE_SIZE;
+}
+
+function cloneJsonObject(value, fallback = null) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeUButtons(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(item => item && typeof item === 'object' && !Array.isArray(item))
+    .map(item => ({
+      id: typeof item.id === 'string' ? item.id.trim() : '',
+      enabled: item.enabled !== false,
+    }))
+    .filter(item => item.id);
+}
+
 function normalizePreferences(rawValue = {}) {
+  const paginationMode = normalizePaginationMode(rawValue.paginationMode);
+
   return {
     complexStatuses: normalizeComplexStatuses(rawValue.complexStatuses),
     grinchMode: !!rawValue.grinchMode,
@@ -125,6 +165,21 @@ function normalizePreferences(rawValue = {}) {
     contentWidthPx: normalizeContentWidthPx(rawValue.contentWidthPx),
     pageControlVisibility: normalizePageControlVisibility(rawValue.pageControlVisibility),
     quickActionsToolbarVisibility: normalizeQuickActionsToolbarVisibility(rawValue.quickActionsToolbarVisibility),
+    filterPreset: cloneJsonObject(rawValue.filterPreset),
+    headerScrollMode: normalizeHeaderScrollMode(rawValue.headerScrollMode),
+    listArtClickToEnlarge: rawValue.listArtClickToEnlarge === undefined ? true : !!rawValue.listArtClickToEnlarge,
+    reserveSidebarSpace: !!rawValue.reserveSidebarSpace,
+    paginationMode,
+    paginationPageSize: normalizePaginationPageSize(rawValue.paginationPageSize, paginationMode),
+    showFirstLastPages: !!rawValue.showFirstLastPages,
+    showPageCount: rawValue.showPageCount === undefined ? true : !!rawValue.showPageCount,
+    showRepeatsField: rawValue.showRepeatsField === undefined ? true : !!rawValue.showRepeatsField,
+    showPriorityField: !!rawValue.showPriorityField,
+    showRefetchArt: !!rawValue.showRefetchArt,
+    showPlannedAtField: !!rawValue.showPlannedAtField,
+    uButtons: normalizeUButtons(rawValue.uButtons),
+    uButtonsEnabledList: !!rawValue.uButtonsEnabledList,
+    uButtonsEnabledGrid: !!rawValue.uButtonsEnabledGrid,
   };
 }
 
@@ -178,5 +233,9 @@ module.exports = {
   normalizeContentWidthPx,
   normalizePageControlVisibility,
   normalizeQuickActionsToolbarVisibility,
+  normalizeHeaderScrollMode,
+  normalizePaginationMode,
+  normalizePaginationPageSize,
+  normalizeUButtons,
   createStoreError,
 };

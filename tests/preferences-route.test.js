@@ -86,6 +86,21 @@ describe('preferences route', () => {
       contentWidthPx: 1000,
       pageControlVisibility: 'hover',
       quickActionsToolbarVisibility: 'visible',
+      filterPreset: null,
+      headerScrollMode: 'smart',
+      listArtClickToEnlarge: true,
+      reserveSidebarSpace: false,
+      paginationMode: 'suggested',
+      paginationPageSize: 18,
+      showFirstLastPages: false,
+      showPageCount: true,
+      showRepeatsField: true,
+      showPriorityField: false,
+      showRefetchArt: false,
+      showPlannedAtField: false,
+      uButtons: [],
+      uButtonsEnabledList: false,
+      uButtonsEnabledGrid: false,
     });
   });
 
@@ -111,6 +126,26 @@ describe('preferences route', () => {
         contentWidthPx: 1600,
         pageControlVisibility: 'static',
         quickActionsToolbarVisibility: 'hover',
+        filterPreset: {
+          filters: { search: 'jazz' },
+          sort: { field: 'rating', order: 'desc' },
+        },
+        headerScrollMode: 'fixed',
+        listArtClickToEnlarge: false,
+        reserveSidebarSpace: true,
+        paginationMode: 'custom',
+        paginationPageSize: 50,
+        showFirstLastPages: true,
+        showPageCount: false,
+        showRepeatsField: false,
+        showPriorityField: true,
+        showRefetchArt: true,
+        showPlannedAtField: true,
+        uButtons: [
+          { id: 'sort', enabled: false },
+        ],
+        uButtonsEnabledList: true,
+        uButtonsEnabledGrid: true,
       },
     }, res, error => { throw error; });
 
@@ -134,6 +169,26 @@ describe('preferences route', () => {
       contentWidthPx: 1600,
       pageControlVisibility: 'static',
       quickActionsToolbarVisibility: 'hover',
+      filterPreset: {
+        filters: { search: 'jazz' },
+        sort: { field: 'rating', order: 'desc' },
+      },
+      headerScrollMode: 'fixed',
+      listArtClickToEnlarge: false,
+      reserveSidebarSpace: true,
+      paginationMode: 'custom',
+      paginationPageSize: 50,
+      showFirstLastPages: true,
+      showPageCount: false,
+      showRepeatsField: false,
+      showPriorityField: true,
+      showRefetchArt: true,
+      showPlannedAtField: true,
+      uButtons: [
+        { id: 'sort', enabled: false },
+      ],
+      uButtonsEnabledList: true,
+      uButtonsEnabledGrid: true,
     });
 
     const readHandler = getRouteHandler(preferencesRouter, 'get', '/');

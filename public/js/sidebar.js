@@ -409,6 +409,13 @@ export function initComplexStatuses() {
 // ---------------------------------------------------------------------------
 
 export function loadUButtons() {
+  if (Array.isArray(state.uButtons) && state.uButtons.length) {
+    const result = state.uButtons.filter(b => U_BUTTON_DEFS.some(d => d.id === b.id));
+    U_BUTTON_DEFS.forEach(def => {
+      if (!result.find(b => b.id === def.id)) result.push({ id: def.id, enabled: true });
+    });
+    return result;
+  }
   try {
     const stored = localStorage.getItem(LS_U_BUTTONS);
     if (stored) {
@@ -427,7 +434,13 @@ export function loadUButtons() {
 }
 
 export function saveUButtons() {
-  localStorage.setItem(LS_U_BUTTONS, JSON.stringify(state.uButtons));
+  localStorage.removeItem(LS_U_BUTTONS);
+  return patchPreferences({
+    uButtons: state.uButtons,
+  }).catch(error => {
+    console.error('Failed to save quick action button layout:', error);
+    return null;
+  });
 }
 
 // Re-renders the U-button bar DOM to match state.uButtons order/enabled.
@@ -768,9 +781,14 @@ export function applyCollectionViewState(view, options = {}) {
   document.body.classList.toggle('collection-view-grid', view === 'grid');
   document.body.classList.toggle('view-grid', view === 'grid');
 
-  const uKey = view === 'grid' ? LS_U_BUTTONS_ENABLED_GRID : LS_U_BUTTONS_ENABLED_LIST;
   const defaultOn = false;
-  setUButtons(localStorage.getItem(uKey) === null ? defaultOn : localStorage.getItem(uKey) !== '0');
+  const storedUButtonsEnabled = state.preferencesHydrated
+    ? state.uButtonsEnabled?.[view]
+    : null;
+  const uKey = view === 'grid' ? LS_U_BUTTONS_ENABLED_GRID : LS_U_BUTTONS_ENABLED_LIST;
+  setUButtons(storedUButtonsEnabled === undefined || storedUButtonsEnabled === null
+    ? (localStorage.getItem(uKey) === null ? defaultOn : localStorage.getItem(uKey) !== '0')
+    : !!storedUButtonsEnabled);
 
   const sKey = view === 'grid' ? LS_SIDEBAR_COLLAPSED_GRID : LS_SIDEBAR_COLLAPSED_LIST;
   const defaultCollapsed = view === 'grid';
@@ -837,7 +855,7 @@ export function saveSidebarState() {
 // ---------------------------------------------------------------------------
 
 export function updateRestoreBtn() {
-  const hasPreset = !!localStorage.getItem(FILTER_PRESET_KEY);
+  const hasPreset = !!state.savedFilterPreset || !!localStorage.getItem(FILTER_PRESET_KEY);
   el.btnRestoreFilters.disabled = !hasPreset;
   el.uBtnRestoreFilters.disabled = !hasPreset;
   // Keep aria state in sync but don't fight the hidden class managed by renderUButtonBar.
@@ -870,10 +888,16 @@ export function getDefaultFilterPreset(statusFilter = 'cs_listened') {
 
 export function saveSpecificFilterPreset(filters, sort) {
   const normalizedSort = normalizeSortState(sort);
-  localStorage.setItem(FILTER_PRESET_KEY, JSON.stringify({
+  state.savedFilterPreset = {
     filters: { ...filters },
     sort: normalizedSort,
-  }));
+  };
+  localStorage.removeItem(FILTER_PRESET_KEY);
+  patchPreferences({
+    filterPreset: state.savedFilterPreset,
+  }).catch(error => {
+    console.error('Failed to save filter preset:', error);
+  });
   updateRestoreBtn();
 }
 
@@ -926,6 +950,12 @@ export function saveFilterPreset() {
 }
 
 export function restoreFilterPreset() {
+  const preset = state.savedFilterPreset;
+  if (preset) {
+    applyFilterState(preset.filters, preset.sort);
+    saveSpecificFilterPreset(preset.filters, state.sort);
+    return;
+  }
   const raw = localStorage.getItem(FILTER_PRESET_KEY);
   if (!raw) return;
   try {
@@ -1232,9 +1262,18 @@ export function initSidebarEvents() {
 
   el.btnToggleUButtons.addEventListener('click', () => {
     const enabled = !document.body.classList.contains('u-buttons-enabled');
-    const key = getCurrentCollectionView() === 'grid' ? LS_U_BUTTONS_ENABLED_GRID : LS_U_BUTTONS_ENABLED_LIST;
+    const view = getCurrentCollectionView();
+    const key = view === 'grid' ? LS_U_BUTTONS_ENABLED_GRID : LS_U_BUTTONS_ENABLED_LIST;
     setUButtons(enabled);
-    localStorage.setItem(key, enabled ? '1' : '0');
+    if (state.uButtonsEnabled) {
+      state.uButtonsEnabled[view] = enabled;
+    }
+    localStorage.removeItem(key);
+    patchPreferences(view === 'grid'
+      ? { uButtonsEnabledGrid: enabled }
+      : { uButtonsEnabledList: enabled }).catch(error => {
+      console.error('Failed to save quick action toolbar enabled state:', error);
+    });
   });
 
   el.uBtnSidebar.addEventListener('click', () => {

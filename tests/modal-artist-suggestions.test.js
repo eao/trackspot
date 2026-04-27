@@ -7,6 +7,9 @@ const stateMock = {
     mode: null,
   },
   debugMode: false,
+  showRepeatsField: true,
+  showPriorityField: false,
+  showPlannedAtField: false,
 };
 
 const elMock = {
@@ -143,8 +146,8 @@ describe('manual log artist suggestions', () => {
   });
 
   it('applies repeat and priority field settings in the manual log modal', async () => {
-    localStorage.setItem('ts_showRepeatsField', '0');
-    localStorage.removeItem('ts_showPriorityField');
+    stateMock.showRepeatsField = false;
+    stateMock.showPriorityField = false;
     stateMock.modal.mode = 'log';
 
     const { syncAlbumModalFieldVisibility } = await import('../public/js/modal.js');
@@ -153,8 +156,8 @@ describe('manual log artist suggestions', () => {
     expect(elMock.fieldRepeatsRow.classList.contains('hidden')).toBe(true);
     expect(elMock.fieldPriorityRow.classList.contains('hidden')).toBe(true);
 
-    localStorage.setItem('ts_showRepeatsField', '1');
-    localStorage.setItem('ts_showPriorityField', '1');
+    stateMock.showRepeatsField = true;
+    stateMock.showPriorityField = true;
     syncAlbumModalFieldVisibility();
 
     expect(elMock.fieldRepeatsRow.classList.contains('hidden')).toBe(false);
