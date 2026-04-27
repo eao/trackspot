@@ -4,15 +4,15 @@
   "includedWithApp": true,
   "opacity": {
     "header": 35,
-    "quickActionsToolbar": 35,
-    "sidebar": 45,
+    "quickActionsToolbar": 50,
+    "sidebar": 60,
     "rowHeaderBackground": 35,
     "row": 35,
-    "rowArt": 75,
-    "rowText": 95,
+    "rowArt": 85,
+    "rowText": 100,
     "card": 25,
-    "cardArt": 75,
-    "cardText": 95,
+    "cardArt": 85,
+    "cardText": 100,
     "styleBackgroundGradient": 0
   }
 }
