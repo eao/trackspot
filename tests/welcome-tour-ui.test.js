@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const sidebarMocks = vi.hoisted(() => ({
+  animateGridSidebarToggle: vi.fn(() => {
+    globalThis.document?.body?.classList.toggle('sidebar-collapsed');
+  }),
+}));
+
 const stateMock = {
   albums: [],
   albumDetailsCache: {},
@@ -76,9 +82,7 @@ vi.mock('../public/js/navigation.js', () => ({
 }));
 
 vi.mock('../public/js/sidebar.js', () => ({
-  animateGridSidebarToggle: vi.fn(() => {
-    globalThis.document?.body?.classList.toggle('sidebar-collapsed');
-  }),
+  animateGridSidebarToggle: sidebarMocks.animateGridSidebarToggle,
   applyCollectionViewState: applyCollectionViewStateMock,
   syncFilterControlsFromState: vi.fn(),
   updateImportTypeFilterBtn: vi.fn(),
@@ -152,6 +156,7 @@ describe('welcome tour UI preparation', () => {
     renderMock.mockClear();
     setPageMock.mockClear();
     setUButtonsMock.mockClear();
+    sidebarMocks.animateGridSidebarToggle.mockClear();
     syncAppShellLayoutMock.mockClear();
     applyCollectionViewStateMock.mockClear();
     localStorage.clear();
@@ -271,11 +276,33 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
     expect(next?.disabled).toBe(true);
 
+    sidebarMocks.animateGridSidebarToggle.mockClear();
     globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
     await flushTourStep();
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
     expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(false);
+    expect(sidebarMocks.animateGridSidebarToggle).toHaveBeenCalledTimes(1);
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+  });
+
+  it('uses the grid sidebar animation when returning from sidebar to grid view', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 8; i += 1) {
+      await advanceTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Sidebar');
+    expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(false);
+
+    sidebarMocks.animateGridSidebarToggle.mockClear();
+    globalThis.document.querySelector('[data-action="back"]')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Grid View');
+    expect(sidebarMocks.animateGridSidebarToggle).toHaveBeenCalledTimes(1);
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
   });
 

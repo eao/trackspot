@@ -202,7 +202,7 @@ const TOUR_STEPS = [
     body: 'Grid view puts the art first when you want to browse your collection visually.',
     anchor: '#btn-view-grid',
     highlight: '#btn-view-grid',
-    effect: prepareCollectionGrid,
+    effect: prepareGridStep,
   },
   {
     id: 'sidebar',
@@ -509,6 +509,14 @@ async function prepareCollectionGrid(options = {}) {
   await prepareCollectionView('grid', options);
 }
 
+async function prepareGridStep(step, context = {}) {
+  await prepareCollectionGrid({
+    animateSidebarChange: context.direction < 0 && context.previousStep?.id === 'sidebar',
+    sidebarCollapsed: true,
+    uButtonsEnabled: false,
+  });
+}
+
 async function prepareThemeStep(step) {
   closeSettings();
   closePersonalization();
@@ -752,7 +760,11 @@ function handleHighlightAction(step) {
   if (!state.welcomeTour.active || !step?.highlightAction) return;
 
   if (step.highlightAction === 'sidebar-toggle') {
-    setTourSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
+    if (document.body.classList.contains('collection-view-grid')) {
+      animateGridSidebarToggle();
+    } else {
+      setTourSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
+    }
   } else if (step.highlightAction === 'quick-actions-toggle') {
     setUButtons(!document.body.classList.contains('u-buttons-enabled'));
   } else if (step.highlightAction === 'log-album-open') {
