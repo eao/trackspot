@@ -11,8 +11,7 @@
     var _path=(window.location.pathname||'/').split('/').filter(Boolean);
     var _cv=_path[0]==='collection'&&_path[1]==='grid'?'grid':'list';
     var _spc={};try{_spc=JSON.parse(localStorage.getItem('ts_startupPreferencesCache')||'{}')||{};}catch(_e0){}
-    var _ubc=_cv==='grid'?_spc.uButtonsEnabledGrid:_spc.uButtonsEnabledList;
-    var _v=localStorage.getItem(_cv==='grid'?'ts_uButtonsEnabledGrid':'ts_uButtonsEnabledList');if(_v===null&&typeof _ubc==='boolean') _v=_ubc?'1':'0';if(_v==='1') document.body.classList.add('u-buttons-enabled');
+    var _v=localStorage.getItem(_cv==='grid'?'ts_uButtonsEnabledGrid':'ts_uButtonsEnabledList');if(_v==='1') document.body.classList.add('u-buttons-enabled');
     var _qav=localStorage.getItem('ts_quickActionsVisibility');if(_qav===null&&(_spc.quickActionsToolbarVisibility==='hover'||_spc.quickActionsToolbarVisibility==='visible')) _qav=_spc.quickActionsToolbarVisibility;if(_qav==='hover') document.body.classList.add('u-buttons-hover-only');
     var _s=localStorage.getItem('ts_sidebarCollapsedList');if(_s==='1') document.body.classList.add('sidebar-collapsed');
     var _r=localStorage.getItem('ts_reserveSidebarSpace');if(_r===null&&typeof _spc.reserveSidebarSpace==='boolean') _r=_spc.reserveSidebarSpace?'1':'0';if(_r==='1') document.body.classList.add('reserve-sidebar-space');

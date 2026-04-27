@@ -251,6 +251,8 @@ vi.mock('../public/js/state.js', () => ({
   LS_PAGE_CONTROL_VISIBILITY: 'ts_pageControlVisibility',
   LS_SHOW_PAGE_COUNT: 'ts_showPageCount',
   LS_QUICK_ACTIONS_VISIBILITY: 'ts_quickActionsVisibility',
+  LS_U_BUTTONS_ENABLED_LIST: 'ts_uButtonsEnabledList',
+  LS_U_BUTTONS_ENABLED_GRID: 'ts_uButtonsEnabledGrid',
   LS_PERSONALIZATION_OPACITY: 'ts_personalizationOpacity',
   LS_COLOR_SCHEME_PRESET: 'ts_colorSchemePreset',
   LS_CUSTOM_THEME_CSS: 'ts_customThemeCss',

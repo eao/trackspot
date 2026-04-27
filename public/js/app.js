@@ -490,9 +490,7 @@ function initSettings() {
   state.uButtons = loadUButtons();
   const uButtonsStorageKey = initialCollectionView === 'grid' ? LS_U_BUTTONS_ENABLED_GRID : LS_U_BUTTONS_ENABLED_LIST;
   const uButtonsStored = localStorage.getItem(uButtonsStorageKey);
-  const uButtonsOn = state.preferencesHydrated
-    ? !!state.uButtonsEnabled?.[initialCollectionView]
-    : uButtonsStored === null ? false : uButtonsStored !== '0';
+  const uButtonsOn = uButtonsStored === null ? false : uButtonsStored !== '0';
   setUButtons(uButtonsOn);
   renderUButtonBar();
   initUButtons();

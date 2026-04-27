@@ -16,8 +16,6 @@ import {
   LS_SHOW_FIRST_LAST_PAGES,
   LS_SHOW_PAGE_COUNT,
   LS_U_BUTTONS,
-  LS_U_BUTTONS_ENABLED_LIST,
-  LS_U_BUTTONS_ENABLED_GRID,
   LS_CONTENT_WIDTH,
   LS_PAGE_CONTROL_VISIBILITY,
   LS_QUICK_ACTIONS_VISIBILITY,
@@ -41,8 +39,6 @@ function writeStartupPreferencesCacheFromState() {
     contentWidthPx: state.contentWidthPx,
     quickActionsToolbarVisibility: state.quickActionsToolbarVisibilityMode,
     reserveSidebarSpace: !!state.reserveSidebarSpace,
-    uButtonsEnabledList: !!state.uButtonsEnabled?.list,
-    uButtonsEnabledGrid: !!state.uButtonsEnabled?.grid,
   };
   localStorage.setItem(LS_STARTUP_PREFERENCES_CACHE, JSON.stringify(cache));
 }
@@ -77,8 +73,6 @@ export function getDefaultPreferences() {
     showRefetchArt: false,
     showPlannedAtField: false,
     uButtons: [],
-    uButtonsEnabledList: false,
-    uButtonsEnabledGrid: false,
   };
 }
 
@@ -220,10 +214,6 @@ export function applyPreferencesToState(preferences = {}) {
       enabled: button?.enabled !== false,
     })).filter(button => button.id)
     : [];
-  state.uButtonsEnabled = {
-    list: !!preferences.uButtonsEnabledList,
-    grid: !!preferences.uButtonsEnabledGrid,
-  };
   writeStartupPreferencesCacheFromState();
 }
 
@@ -337,14 +327,6 @@ export async function migrateLocalStoragePreferencesToServer() {
     patch.uButtons = parseJsonStorageArray(LS_U_BUTTONS);
   }
 
-  if (localStorage.getItem(LS_U_BUTTONS_ENABLED_LIST) !== null) {
-    patch.uButtonsEnabledList = localStorage.getItem(LS_U_BUTTONS_ENABLED_LIST) !== '0';
-  }
-
-  if (localStorage.getItem(LS_U_BUTTONS_ENABLED_GRID) !== null) {
-    patch.uButtonsEnabledGrid = localStorage.getItem(LS_U_BUTTONS_ENABLED_GRID) !== '0';
-  }
-
   if (!Object.keys(patch).length) return null;
 
   const preferences = await patchPreferences(patch, { apply: true });
@@ -367,8 +349,6 @@ export async function migrateLocalStoragePreferencesToServer() {
     LS_SHOW_FIRST_LAST_PAGES,
     LS_SHOW_PAGE_COUNT,
     LS_U_BUTTONS,
-    LS_U_BUTTONS_ENABLED_LIST,
-    LS_U_BUTTONS_ENABLED_GRID,
   ].forEach(key => localStorage.removeItem(key));
   return preferences;
 }

@@ -54,8 +54,6 @@ vi.mock('../public/js/state.js', () => ({
   LS_SHOW_FIRST_LAST_PAGES: 'ts_showFirstLastPages',
   LS_SHOW_PAGE_COUNT: 'ts_showPageCount',
   LS_U_BUTTONS: 'ts_uButtons',
-  LS_U_BUTTONS_ENABLED_LIST: 'ts_uButtonsEnabledList',
-  LS_U_BUTTONS_ENABLED_GRID: 'ts_uButtonsEnabledGrid',
   LS_CONTENT_WIDTH: 'ts_contentWidth',
   LS_PAGE_CONTROL_VISIBILITY: 'ts_pageControlVisibility',
   LS_QUICK_ACTIONS_VISIBILITY: 'ts_quickActionsVisibility',
@@ -90,8 +88,6 @@ function makePreferences(overrides = {}) {
       showRefetchArt: false,
       showPlannedAtField: false,
       uButtons: [],
-      uButtonsEnabledList: false,
-      uButtonsEnabledGrid: false,
       ...overrides,
     },
   };

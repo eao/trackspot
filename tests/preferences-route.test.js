@@ -99,8 +99,6 @@ describe('preferences route', () => {
       showRefetchArt: false,
       showPlannedAtField: false,
       uButtons: [],
-      uButtonsEnabledList: false,
-      uButtonsEnabledGrid: false,
     });
   });
 
@@ -144,8 +142,6 @@ describe('preferences route', () => {
         uButtons: [
           { id: 'sort', enabled: false },
         ],
-        uButtonsEnabledList: true,
-        uButtonsEnabledGrid: true,
       },
     }, res, error => { throw error; });
 
@@ -187,8 +183,6 @@ describe('preferences route', () => {
       uButtons: [
         { id: 'sort', enabled: false },
       ],
-      uButtonsEnabledList: true,
-      uButtonsEnabledGrid: true,
     });
 
     const readHandler = getRouteHandler(preferencesRouter, 'get', '/');

@@ -172,9 +172,9 @@ Notes:
 ### Preferences and localStorage
 
 - Durable app preferences are primarily server-backed through `server/preferences-store.js`, `server/routes/preferences.js`, and `public/js/preferences.js`.
-- `data/preferences.json` currently owns global preference state such as complex statuses, wrapped/welcome-tour preferences, saved filter/sort preset, layout/display settings, pagination settings, modal field visibility, content width, and quick-action toolbar layout/visibility.
+- `data/preferences.json` currently owns global preference state such as complex statuses, wrapped/welcome-tour preferences, saved filter/sort preset, layout/display settings, pagination settings, modal field visibility, content width, and quick-action toolbar button order/visibility mode.
 - Some older `localStorage` keys are intentionally migrated once by `migrateLocalStoragePreferencesToServer()` and then removed after a successful preference patch.
-- Remaining `localStorage` usage should be limited to early startup/cache values, per-browser/session state, or intentionally local controls. Examples include sidebar collapsed state, debug/wipe controls, CSV import notification state, personalization/theme startup cache, and welcome-tour temporary snapshots.
+- Remaining `localStorage` usage should be limited to early startup/cache values, per-browser/session state, or intentionally local controls. Examples include sidebar collapsed state, quick-action toolbar up/down enabled state, debug/wipe controls, CSV import notification state, personalization/theme startup cache, and welcome-tour temporary snapshots.
 - Keys meant to be cleared by "Reset all settings" use the `ts_` prefix. If a key should survive resets, do **not** give it the normal reset-managed prefix without understanding the consequences.
 - Named constants for remaining storage keys live in `public/js/state.js`; avoid adding new durable settings there unless they truly need to stay browser-local.
 

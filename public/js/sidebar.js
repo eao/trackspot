@@ -784,14 +784,9 @@ export function applyCollectionViewState(view, options = {}) {
   document.body.classList.toggle('collection-view-grid', view === 'grid');
   document.body.classList.toggle('view-grid', view === 'grid');
 
-  const defaultOn = false;
-  const storedUButtonsEnabled = state.preferencesHydrated
-    ? state.uButtonsEnabled?.[view]
-    : null;
   const uKey = view === 'grid' ? LS_U_BUTTONS_ENABLED_GRID : LS_U_BUTTONS_ENABLED_LIST;
-  setUButtons(storedUButtonsEnabled === undefined || storedUButtonsEnabled === null
-    ? (localStorage.getItem(uKey) === null ? defaultOn : localStorage.getItem(uKey) !== '0')
-    : !!storedUButtonsEnabled);
+  const defaultOn = false;
+  setUButtons(localStorage.getItem(uKey) === null ? defaultOn : localStorage.getItem(uKey) !== '0');
 
   const sKey = view === 'grid' ? LS_SIDEBAR_COLLAPSED_GRID : LS_SIDEBAR_COLLAPSED_LIST;
   const defaultCollapsed = view === 'grid';
@@ -1271,12 +1266,7 @@ export function initSidebarEvents() {
     if (state.uButtonsEnabled) {
       state.uButtonsEnabled[view] = enabled;
     }
-    localStorage.removeItem(key);
-    patchPreferences(view === 'grid'
-      ? { uButtonsEnabledGrid: enabled }
-      : { uButtonsEnabledList: enabled }).catch(error => {
-      console.error('Failed to save quick action toolbar enabled state:', error);
-    });
+    localStorage.setItem(key, enabled ? '1' : '0');
   });
 
   el.uBtnSidebar.addEventListener('click', () => {

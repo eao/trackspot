@@ -178,8 +178,6 @@ function normalizePreferences(rawValue = {}) {
     showRefetchArt: !!rawValue.showRefetchArt,
     showPlannedAtField: !!rawValue.showPlannedAtField,
     uButtons: normalizeUButtons(rawValue.uButtons),
-    uButtonsEnabledList: !!rawValue.uButtonsEnabledList,
-    uButtonsEnabledGrid: !!rawValue.uButtonsEnabledGrid,
   };
 }
 

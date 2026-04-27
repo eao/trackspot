@@ -7,7 +7,7 @@ import {
   LS_SHOW_REPEATS_FIELD, LS_SHOW_PRIORITY_FIELD, LS_SHOW_REFETCH_ART, LS_SHOW_PLANNED_AT_FIELD, LS_LIST_ART_ENLARGE,
   LS_RESERVE_SIDEBAR_SPACE, LS_GRINCH_MODE, LS_CONTENT_WIDTH,
   LS_PAGE_SIZE_LIST, LS_PAGE_SIZE_GRID, LS_PAGE_MODE_LIST, LS_PAGE_MODE_GRID, LS_SHOW_FIRST_LAST_PAGES, LS_PAGE_CONTROL_VISIBILITY, LS_SHOW_PAGE_COUNT,
-  LS_QUICK_ACTIONS_VISIBILITY,
+  LS_QUICK_ACTIONS_VISIBILITY, LS_U_BUTTONS_ENABLED_LIST, LS_U_BUTTONS_ENABLED_GRID,
   LS_PERSONALIZATION_OPACITY, LS_COLOR_SCHEME_PRESET, LS_CUSTOM_THEME_CSS, LS_CUSTOM_THEME_CSS_NAME,
   LS_BACKGROUND_IMAGE_SELECTION, LS_BACKGROUND_IMAGE_DISPLAY,
   LS_SECONDARY_BACKGROUND_IMAGE_SELECTION, LS_SECONDARY_BACKGROUND_IMAGE_DISPLAY,
@@ -3690,6 +3690,8 @@ export function resetAllSettings() {
   // Reset U-buttons (default order/all enabled, per-view defaults).
   state.uButtons = loadUButtons({ preferState: false, preferStorage: false });
   state.uButtonsEnabled = { list: false, grid: false };
+  localStorage.removeItem(LS_U_BUTTONS_ENABLED_LIST);
+  localStorage.removeItem(LS_U_BUTTONS_ENABLED_GRID);
   setQuickActionsToolbarVisibilityMode('visible', { persist: false });
   const defaultOn = false;
   setUButtons(defaultOn);
@@ -3733,8 +3735,6 @@ export function resetAllSettings() {
     showRefetchArt: false,
     showPlannedAtField: false,
     uButtons: state.uButtons,
-    uButtonsEnabledList: false,
-    uButtonsEnabledGrid: false,
   }).catch(error => {
     console.error('Failed to reset server-backed preferences:', error);
   });
