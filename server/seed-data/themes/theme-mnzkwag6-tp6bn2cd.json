@@ -23,7 +23,7 @@
     "fill": "custom-scale",
     "customScale": 0.7
   },
-  "backgroundImageOpacity": 45,
+  "backgroundImageOpacity": 50,
   "backgroundImageBlur": 0,
   "secondaryBackgroundImageOpacity": 100,
   "secondaryBackgroundImageBlur": 0,
