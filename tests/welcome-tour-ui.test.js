@@ -225,6 +225,16 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
   });
 
+  it('applies tour theme previews without persisting them', async () => {
+    const settings = await import('../public/js/settings.js');
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await advanceTourStep();
+
+    expect(settings.applyThemeByName).toHaveBeenCalledWith('Basic Blue', { persist: false });
+  });
+
   it('orders welcome demo albums by logged date descending', async () => {
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
 
@@ -301,6 +311,26 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(false);
     expect(sidebarMocks.animateGridSidebarToggle).toHaveBeenCalledTimes(1);
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
+  });
+
+  it('allows keyboard activation of required highlight actions', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 8; i += 1) {
+      await advanceTourStep();
+    }
+
+    const highlight = globalThis.document.querySelector('.welcome-tour-highlight-interactive');
+    highlight?.focus();
+    highlight?.dispatchEvent(new window.KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }));
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(false);
   });
 
   it('uses the grid sidebar animation when returning from sidebar to grid view', async () => {

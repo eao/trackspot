@@ -6,8 +6,14 @@ const archiver = require('archiver');
 const AdmZip   = require('adm-zip');
 const multer   = require('multer');
 const { db, IMAGES_DIR, replaceDatabaseFile } = require('../db');
+const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
 const DATA_DIR = path.join(IMAGES_DIR, '..');
+
+router.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  return rejectIfWelcomeTourLocked(req, res, next);
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

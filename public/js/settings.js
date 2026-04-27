@@ -1388,13 +1388,16 @@ function renderThemePickerGallery() {
   });
 }
 
-function setAppliedThemeId(themeId) {
+function setAppliedThemeId(themeId, options = {}) {
+  const { persist = true } = options;
   ensureThemeState();
   state.personalization.appliedThemeId = themeId || null;
-  if (state.personalization.appliedThemeId) {
-    localStorage.setItem(LS_APPLIED_THEME_ID, state.personalization.appliedThemeId);
-  } else {
-    localStorage.removeItem(LS_APPLIED_THEME_ID);
+  if (persist) {
+    if (state.personalization.appliedThemeId) {
+      localStorage.setItem(LS_APPLIED_THEME_ID, state.personalization.appliedThemeId);
+    } else {
+      localStorage.removeItem(LS_APPLIED_THEME_ID);
+    }
   }
   syncThemeUi();
 }
@@ -1592,7 +1595,8 @@ function buildThemeFormData(options = {}) {
   return form;
 }
 
-export async function applyTheme(theme) {
+export async function applyTheme(theme, options = {}) {
+  const { persist = true } = options;
   if (!theme) return;
 
   if (!state.personalization.opacityPresetsLoaded) {
@@ -1604,7 +1608,7 @@ export async function applyTheme(theme) {
   populateThemeDraftFromTheme(theme);
   syncThemeUi();
 
-  applyColorSchemePreset(theme.colorSchemePresetId);
+  applyColorSchemePreset(theme.colorSchemePresetId, { persist });
   const opacityPreset = getOpacityPresetById(theme.opacityPresetId);
   applyPersonalizationOpacity({
     ...state.personalization.opacity,
@@ -1613,24 +1617,24 @@ export async function applyTheme(theme) {
     backgroundImageBlur: theme.backgroundImageBlur,
     secondaryBackgroundImage: theme.secondaryBackgroundImageOpacity,
     secondaryBackgroundImageBlur: theme.secondaryBackgroundImageBlur,
-  });
-  setBackgroundSelection('primary', theme.primaryBackgroundSelection, { render: false });
-  setBackgroundDisplay('primary', theme.primaryBackgroundDisplay);
-  setBackgroundSelection('secondary', theme.secondaryBackgroundSelection, { render: false });
-  setBackgroundDisplay('secondary', theme.secondaryBackgroundDisplay);
+  }, { persist });
+  setBackgroundSelection('primary', theme.primaryBackgroundSelection, { persist, render: false });
+  setBackgroundDisplay('primary', theme.primaryBackgroundDisplay, { persist });
+  setBackgroundSelection('secondary', theme.secondaryBackgroundSelection, { persist, render: false });
+  setBackgroundDisplay('secondary', theme.secondaryBackgroundDisplay, { persist });
   renderPersonalizationBackgrounds();
-  setAppliedThemeId(theme.id);
+  setAppliedThemeId(theme.id, { persist });
   state.personalization.appliedThemeDirty = false;
   syncThemeUi();
 }
 
-export async function applyThemeByName(themeName) {
+export async function applyThemeByName(themeName, options = {}) {
   if (!state.personalization.themesLoaded) {
     await loadThemes();
   }
   const theme = state.personalization.themes.find(item => item.name === themeName) ?? null;
   if (!theme) throw new Error(`Theme "${themeName}" is not available.`);
-  await applyTheme(theme);
+  await applyTheme(theme, options);
   return theme;
 }
 

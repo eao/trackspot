@@ -538,7 +538,7 @@ async function prepareThemeStep(step) {
   setTourSidebarCollapsed(true);
   setUButtons(false);
   setDemoAlbums();
-  await applyThemeByName(step.themeName);
+  await applyThemeByName(step.themeName, { persist: false });
 }
 
 async function prepareSidebarStep() {
@@ -645,9 +645,9 @@ function setAppInert(enabled) {
 }
 
 function getTourFocusableElements() {
-  if (!card) return [];
-  return Array.from(card.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
-    .filter(element => !element.disabled && element.offsetParent !== null);
+  if (!overlay) return [];
+  return Array.from(overlay.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+    .filter(element => !element.disabled && element.getAttribute('aria-hidden') !== 'true');
 }
 
 function focusTourControl() {
@@ -679,8 +679,14 @@ function trapTourTab(event) {
 }
 
 function handleTourKeydown(event) {
-  if (!state.welcomeTour.active || !card) return;
-  if (card.contains(event.target)) {
+  if (!state.welcomeTour.active || !card || !overlay?.isConnected) return;
+  const target = event.target instanceof Node ? event.target : null;
+  const isTourSurface = target && (
+    card.contains(target)
+    || highlightLayer?.contains(target)
+  );
+
+  if (isTourSurface) {
     if (event.key === 'Tab') trapTourTab(event);
     if (event.key === 'Escape') {
       event.preventDefault();

@@ -8,6 +8,9 @@ const require = createRequire(import.meta.url);
 const AdmZip = require('adm-zip');
 const serverModulePaths = [
   '../server/routes/backup.js',
+  '../server/welcome-tour-store.js',
+  '../server/preferences-store.js',
+  '../server/album-helpers.js',
   '../server/spotify-helpers.js',
   '../server/db.js',
 ];
@@ -203,5 +206,34 @@ describe('backup and restore', () => {
 
     expect(columns).toContain('album_link');
     expect(columns).toContain('artist_link');
+  });
+
+  it('blocks backup mutations while the welcome tour lock is active', () => {
+    const { dbModule, backupRouter } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+    const welcomeStore = require('../server/welcome-tour-store.js');
+    welcomeStore.upsertWelcomeTourLock('tour-session');
+
+    const res = {
+      statusCode: 200,
+      body: null,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        this.body = payload;
+        return this;
+      },
+    };
+    let nextCalled = false;
+
+    backupRouter.handle({ method: 'POST', url: '/merge', headers: {} }, res, () => {
+      nextCalled = true;
+    });
+
+    expect(nextCalled).toBe(false);
+    expect(res.statusCode).toBe(423);
+    expect(res.body.code).toBe('welcome_tour_active');
   });
 });
