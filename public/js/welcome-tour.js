@@ -855,7 +855,7 @@ function renderWarning() {
     <p>This tour can run here, but some steps may not display correctly on smaller screens.</p>
     <div class="welcome-tour-actions">
       <button class="btn btn-ghost" data-action="later">Show me the tour next visit</button>
-      <button class="btn btn-secondary welcome-tour-skip" data-action="skip">Skip tour</button>
+      <button class="btn btn-ghost welcome-tour-skip" data-action="skip">Skip tour</button>
       <button class="btn btn-primary" data-action="continue">Continue tour</button>
     </div>
   `;
@@ -875,10 +875,10 @@ function renderStep(step) {
   const choiceActions = `${sampleWarning}<div class="welcome-tour-actions">
         <button class="btn btn-ghost" data-action="back">Back</button>
         <button class="btn btn-primary" data-action="samples">Add placeholders</button>
-        <button class="btn btn-secondary" data-action="empty">Start empty</button>
+        <button class="btn btn-primary" data-action="empty">Start empty</button>
       </div>`;
   const normalActions = `<div class="welcome-tour-actions">
-      <button class="btn btn-secondary welcome-tour-skip" data-action="skip">Skip tour</button>
+      <button class="btn btn-ghost welcome-tour-skip" data-action="skip">Skip tour</button>
       <button class="btn btn-ghost" data-action="back"${currentStepIndex === 0 ? ' disabled' : ''}>Back</button>
       <button class="btn btn-primary" data-action="next"${step.requireHighlightAction && !stepHighlightActionComplete ? ' disabled' : ''}>Next</button>
     </div>`;
