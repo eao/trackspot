@@ -823,6 +823,199 @@ describe('backup and restore', () => {
     expect(fs.readdirSync(dataDir).filter(fileName => fileName.startsWith('_import_tmp_'))).toEqual([]);
   });
 
+  it('rolls back merge rows and retries cleanly when final image copy fails', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'images', 'backup-art.jpg'), Buffer.from('backup-image'));
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      101,
+      'Retry Merge Album',
+      JSON.stringify([{ name: 'Retry Artist' }]),
+      'completed',
+      'images/backup-art.jpg',
+      'manual',
+      '2026-04-01 12:00:00',
+      '2026-04-01 12:00:00',
+    );
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addLocalFile(path.join(dataDir, 'images', 'backup-art.jpg'), 'images', 'backup-art.jpg');
+
+    db.prepare('DELETE FROM albums').run();
+    fs.rmSync(path.join(dataDir, 'images'), { recursive: true, force: true });
+
+    const originalCopyFileSync = fs.copyFileSync;
+    fs.copyFileSync = function copyFileSyncWithMergeCommitFailure(sourcePath, targetPath, mode) {
+      if (
+        String(sourcePath).includes('_import_images_')
+        && String(targetPath).endsWith(path.join('images', 'backup-art.jpg'))
+      ) {
+        throw new Error('simulated merge image commit failure');
+      }
+      return originalCopyFileSync.call(this, sourcePath, targetPath, mode);
+    };
+
+    try {
+      await expect(backupRouter.__private.importFromZip(zip, false))
+        .rejects.toThrow(/simulated merge image commit failure/);
+    } finally {
+      fs.copyFileSync = originalCopyFileSync;
+    }
+
+    expect(db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+    expect(fs.existsSync(path.join(dataDir, 'images', 'backup-art.jpg'))).toBe(false);
+    expect(fs.readdirSync(dataDir).filter(fileName => fileName.startsWith('_import_'))).toEqual([]);
+
+    const retryResult = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare('SELECT album_name, image_path FROM albums').get();
+
+    expect(retryResult).toMatchObject({
+      added: 1,
+      skipped: 0,
+      imagesCopied: 1,
+      imagesRefetched: 0,
+    });
+    expect(restored).toEqual({
+      album_name: 'Retry Merge Album',
+      image_path: 'images/backup-art.jpg',
+    });
+    expect(fs.readFileSync(path.join(dataDir, 'images', 'backup-art.jpg')).toString()).toBe('backup-image');
+  }, 15000);
+
+  it('renames colliding backup image paths during merge and reuses the staged path for shared backup art', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const sharedImagePath = 'images/manual-one.jpg';
+    writeFileEnsured(path.join(dataDir, sharedImagePath), Buffer.from('backup-image'));
+    [
+      { id: 101, album_name: 'First Backup Album' },
+      { id: 102, album_name: 'Second Backup Album' },
+    ].forEach(album => {
+      db.prepare(`
+        INSERT INTO albums (
+          id, album_name, artists, status, image_path, source, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        album.id,
+        album.album_name,
+        JSON.stringify([{ name: 'Backup Artist' }]),
+        'completed',
+        sharedImagePath,
+        'manual',
+        '2026-04-01 12:00:00',
+        '2026-04-01 12:00:00',
+      );
+    });
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addLocalFile(path.join(dataDir, sharedImagePath), 'images', 'manual-one.jpg');
+
+    db.prepare('DELETE FROM albums').run();
+    writeFileEnsured(path.join(dataDir, sharedImagePath), Buffer.from('current-image'));
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'completed',
+      sharedImagePath,
+      'manual',
+      '2026-04-02 12:00:00',
+      '2026-04-02 12:00:00',
+    );
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const current = db.prepare('SELECT image_path FROM albums WHERE album_name = ?').get('Current Album');
+    const imported = db.prepare(`
+      SELECT album_name, image_path
+      FROM albums
+      WHERE album_name LIKE '%Backup Album'
+      ORDER BY album_name
+    `).all();
+    const importedPaths = [...new Set(imported.map(row => row.image_path))];
+
+    expect(result).toMatchObject({
+      added: 2,
+      skipped: 0,
+      imagesCopied: 1,
+      imagesRefetched: 0,
+    });
+    expect(current.image_path).toBe(sharedImagePath);
+    expect(imported).toHaveLength(2);
+    expect(importedPaths).toHaveLength(1);
+    expect(importedPaths[0]).not.toBe(sharedImagePath);
+    expect(importedPaths[0]).toMatch(/^images\/merge_manual-one_/);
+    expect(fs.readFileSync(path.join(dataDir, sharedImagePath)).toString()).toBe('current-image');
+    expect(fs.readFileSync(path.join(dataDir, importedPaths[0])).toString()).toBe('backup-image');
+  }, 15000);
+
+  it('clears missing backup image paths during merge when art cannot be restored', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const missingBackupImagePath = 'images/missing-backup-art.jpg';
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      101,
+      'Missing Art Backup Album',
+      JSON.stringify([{ name: 'Missing Artist' }]),
+      'completed',
+      missingBackupImagePath,
+      'manual',
+      '2026-04-01 12:00:00',
+      '2026-04-01 12:00:00',
+    );
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+
+    db.prepare('DELETE FROM albums').run();
+    writeFileEnsured(path.join(dataDir, missingBackupImagePath), Buffer.from('current-image'));
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'completed',
+      missingBackupImagePath,
+      'manual',
+      '2026-04-02 12:00:00',
+      '2026-04-02 12:00:00',
+    );
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare('SELECT image_path FROM albums WHERE album_name = ?').get('Missing Art Backup Album');
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+      imagesCopied: 0,
+      imagesRefetched: 0,
+    });
+    expect(restored.image_path).toBeNull();
+    expect(fs.readFileSync(path.join(dataDir, missingBackupImagePath)).toString()).toBe('current-image');
+  }, 15000);
+
   it('allocates unique temp database paths for backup merges', () => {
     const { backupRouter, dataDir } = loadBackupTestContext();
 
