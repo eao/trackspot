@@ -1122,6 +1122,27 @@ describe('backup and restore', () => {
     expect(fs.existsSync(journalPath)).toBe(true);
   }, 15000);
 
+  it('does not let a corrupt interrupted merge journal prevent startup', () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackspot-backup-test-'));
+    tempDirs.push(dataDir);
+    process.env.DATA_DIR = dataDir;
+    resetServerModules();
+
+    fs.writeFileSync(path.join(dataDir, '_merge_journal.json'), '{not-json');
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const dbModule = require('../server/db.js');
+      const backupRouter = require('../server/routes/backup.js');
+      openDbs.push(dbModule.db);
+
+      expect(backupRouter.__private.MERGE_JOURNAL_NAME).toBe('_merge_journal.json');
+      expect(fs.existsSync(path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('blocks new merges when interrupted merge cleanup cannot finish', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
@@ -1175,6 +1196,58 @@ describe('backup and restore', () => {
     });
     expect(restored.album_name).toBe('Blocked Merge Album');
     expect(fs.existsSync(orphanFullPath)).toBe(false);
+    expect(backupRouter.__private.readMergeJournal()).toBeNull();
+  }, 15000);
+
+  it('blocks new merges when interrupted merge journal removal cannot finish', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const journalPath = path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME);
+    backupRouter.__private.writeMergeJournal({
+      operation: 'merge',
+      imagePaths: [],
+    });
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        album_name: 'Journal Removal Blocked Album',
+        artists: JSON.stringify([{ name: 'Blocked Artist' }]),
+      },
+    ]);
+
+    const originalRmSync = fs.rmSync;
+    const originalWarn = console.warn;
+    fs.rmSync = function rmSyncWithMergeJournalRemovalFailure(targetPath, options) {
+      if (path.resolve(String(targetPath)) === path.resolve(journalPath)) {
+        throw new Error('simulated merge journal removal failure');
+      }
+      return originalRmSync.call(this, targetPath, options);
+    };
+    console.warn = () => {};
+
+    try {
+      await expect(backupRouter.__private.importFromZip(zip, false))
+        .rejects.toThrow(/Could not finish cleanup for a previous interrupted merge/);
+    } finally {
+      fs.rmSync = originalRmSync;
+      console.warn = originalWarn;
+    }
+
+    expect(db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+    expect(fs.existsSync(journalPath)).toBe(true);
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare('SELECT album_name FROM albums').get();
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+    });
+    expect(restored.album_name).toBe('Journal Removal Blocked Album');
     expect(backupRouter.__private.readMergeJournal()).toBeNull();
   }, 15000);
 
@@ -1760,6 +1833,54 @@ describe('backup and restore', () => {
       {
         album_name: 'Duplicate Legacy Manual Album',
         spotify_album_id: '',
+      },
+    ]);
+  }, 15000);
+
+  it('uses normalized manual duplicate fields before inserting merge rows', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Normalized Manual Duplicate',
+      '[]',
+      'completed',
+      'manual',
+      '2026-04-02 12:00:00',
+      '2026-04-02 12:00:00',
+    );
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: '',
+        album_name: 'Normalized Manual Duplicate',
+        artists: '',
+      },
+    ]);
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const rows = db.prepare(`
+      SELECT album_name, artists
+      FROM albums
+      WHERE album_name = ?
+    `).all('Normalized Manual Duplicate');
+
+    expect(result).toMatchObject({
+      added: 0,
+      skipped: 1,
+    });
+    expect(rows).toEqual([
+      {
+        album_name: 'Normalized Manual Duplicate',
+        artists: '[]',
       },
     ]);
   }, 15000);

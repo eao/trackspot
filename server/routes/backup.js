@@ -838,9 +838,11 @@ function findLegacyManagedZipImage(row, zipImageEntries) {
 }
 
 function getManualMergeKey(row) {
-  if (row.album_name === null || row.album_name === undefined) return null;
-  if (row.artists === null || row.artists === undefined) return null;
-  return `${row.album_name}\u0000${row.artists}`;
+  const albumName = getBackupAlbumValue('album_name', row);
+  const artists = getBackupAlbumValue('artists', row);
+  if (albumName === null || albumName === undefined) return null;
+  if (artists === null || artists === undefined) return null;
+  return `${albumName}\u0000${artists}`;
 }
 
 function getAlbumImageReservationKey(imagePath) {
@@ -1172,10 +1174,23 @@ function recoverInterruptedMerge() {
   }
 
   if (!cleanupFailed) {
-    runMergeCleanup('merge journal', removeMergeJournal);
+    try {
+      removeMergeJournal();
+    } catch (error) {
+      cleanupFailed = true;
+      console.warn('Interrupted merge journal cleanup failed:', error);
+    }
   }
 
   return !cleanupFailed;
+}
+
+function recoverInterruptedMergeAtStartup() {
+  try {
+    recoverInterruptedMerge();
+  } catch (error) {
+    console.error('Interrupted merge recovery failed:', error);
+  }
 }
 
 function requireInterruptedMergeRecovered() {
@@ -1210,7 +1225,10 @@ function commitMergeImportRows(
 
     for (const { row, imageAsset } of preparedRows) {
       if (!row.spotify_album_id) {
-        const dup = manualDupCheck.get(row.album_name, row.artists);
+        const dup = manualDupCheck.get(
+          getBackupAlbumValue('album_name', row),
+          getBackupAlbumValue('artists', row),
+        );
         if (dup) {
           skipped++;
           continue;
@@ -1637,7 +1655,7 @@ async function restoreFromZip(zip) {
 }
 
 recoverInterruptedRestore();
-recoverInterruptedMerge();
+recoverInterruptedMergeAtStartup();
 
 router.__private = {
   APP_STATE_BACKUP_ITEMS,
