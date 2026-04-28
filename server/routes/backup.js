@@ -665,6 +665,7 @@ function tableHasColumn(connection, tableName, columnName) {
 }
 
 function getBackupAlbumValue(columnName, row) {
+  if (columnName === 'spotify_album_id') return normalizeBackupSpotifyAlbumId(row.spotify_album_id);
   if (columnName === 'artists') return row.artists || '[]';
   if (columnName === 'genres') return row.genres || '[]';
   if (columnName === 'copyright') return row.copyright || '[]';
@@ -673,6 +674,19 @@ function getBackupAlbumValue(columnName, row) {
   if (columnName === 'priority') return row.priority ?? 0;
   if (columnName === 'source') return row.source ?? 'manual';
   return row[columnName] ?? null;
+}
+
+function normalizeBackupSpotifyAlbumId(value) {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function normalizeBackupAlbumRow(row) {
+  return {
+    ...row,
+    spotify_album_id: normalizeBackupSpotifyAlbumId(row.spotify_album_id),
+  };
 }
 
 function sanitizeBackupAlbumImagePathValue(value) {
@@ -760,14 +774,17 @@ function selectMergeCandidateRows(backupAlbums) {
       SELECT spotify_album_id
       FROM albums
       WHERE spotify_album_id IS NOT NULL
-        AND spotify_album_id != ''
-    `).all().map(row => row.spotify_album_id),
+        AND TRIM(spotify_album_id) != ''
+    `).all()
+      .map(row => normalizeBackupSpotifyAlbumId(row.spotify_album_id))
+      .filter(Boolean),
   );
   const existingManualKeys = new Set(
     db.prepare(`
       SELECT album_name, artists
       FROM albums
       WHERE spotify_album_id IS NULL
+         OR TRIM(spotify_album_id) = ''
     `).all()
       .map(getManualMergeKey)
       .filter(Boolean),
@@ -890,9 +907,27 @@ async function stageMergeRefetchedImage(row, stagingImagesDir, reservedFinalImag
   }
 }
 
+function getCurrentAlbumImagePathReservations() {
+  const rows = db.prepare(`
+    SELECT image_path
+    FROM albums
+    WHERE image_path IS NOT NULL
+  `).all();
+
+  return new Set(rows
+    .map(row => {
+      try {
+        return normalizeAlbumImagePath(row.image_path);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean));
+}
+
 async function prepareMergeAlbumRows(rows, zip, stagingImagesDir) {
   const zipImageEntries = getZipAlbumImageEntries(zip);
-  const reservedFinalImagePaths = new Set();
+  const reservedFinalImagePaths = getCurrentAlbumImagePathReservations();
   const stagedAssetsByBackupImagePath = new Map();
   const preparedRows = [];
 
@@ -1207,13 +1242,17 @@ async function importFromZip(zip) {
     if (!tableCheck) throw new Error('Backup database does not contain an albums table.');
 
     sanitizedImagePaths = sanitizeBackupAlbumImagePaths(srcDb);
-    const backupAlbums = srcDb.prepare('SELECT * FROM albums').all();
+    const backupAlbums = srcDb.prepare('SELECT * FROM albums').all().map(normalizeBackupAlbumRow);
     const { insertColumns, statement: insertStmt } = buildAlbumInsertStatement(srcDb);
     const selectedRows = selectMergeCandidateRows(backupAlbums);
     skipped = selectedRows.skipped;
 
     const manualDupCheck = db.prepare(
-      'SELECT id FROM albums WHERE spotify_album_id IS NULL AND album_name = ? AND artists = ?'
+      `SELECT id
+       FROM albums
+       WHERE (spotify_album_id IS NULL OR TRIM(spotify_album_id) = '')
+         AND album_name = ?
+         AND artists = ?`
     );
 
     stagingImagesDir = createRestoreTempDir('_import_images_');

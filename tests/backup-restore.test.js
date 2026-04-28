@@ -48,6 +48,51 @@ async function addDatabaseSnapshot(zip, db, dataDir) {
   fs.unlinkSync(snapshotPath);
 }
 
+function addLegacyAlbumsDatabase(zip, dataDir, rows) {
+  const BetterSqlite = require('better-sqlite3');
+  const legacyPath = path.join(dataDir, `legacy-albums-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+  const legacyDb = new BetterSqlite(legacyPath);
+  try {
+    legacyDb.exec(`
+      CREATE TABLE albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        spotify_album_id TEXT,
+        album_name TEXT NOT NULL,
+        artists TEXT NOT NULL,
+        status TEXT NOT NULL,
+        image_path TEXT,
+        source TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+    const insert = legacyDb.prepare(`
+      INSERT INTO albums (
+        id, spotify_album_id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (
+        :id, :spotify_album_id, :album_name, :artists, :status, :image_path, :source, :created_at, :updated_at
+      )
+    `);
+    rows.forEach((row, index) => {
+      insert.run({
+        id: row.id ?? index + 1,
+        spotify_album_id: row.spotify_album_id ?? null,
+        album_name: row.album_name,
+        artists: row.artists ?? JSON.stringify([{ name: 'Legacy Artist' }]),
+        status: row.status ?? 'completed',
+        image_path: row.image_path ?? null,
+        source: row.source ?? 'manual',
+        created_at: row.created_at ?? '2026-04-01 12:00:00',
+        updated_at: row.updated_at ?? '2026-04-01 12:00:00',
+      });
+    });
+  } finally {
+    legacyDb.close();
+  }
+  zip.addLocalFile(legacyPath, '', 'albums.db');
+  fs.unlinkSync(legacyPath);
+}
+
 function addFullBackupManifest(zip, backupRouter) {
   zip.addFile(
     backupRouter.__private.BACKUP_MANIFEST_NAME,
@@ -962,6 +1007,66 @@ describe('backup and restore', () => {
     expect(fs.readFileSync(path.join(dataDir, importedPaths[0])).toString()).toBe('backup-image');
   }, 15000);
 
+  it('renames backup image paths already referenced by current albums even when the file is missing', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const referencedImagePath = 'images/missing-current-art.jpg';
+    writeFileEnsured(path.join(dataDir, referencedImagePath), Buffer.from('backup-image'));
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      101,
+      'Referenced Art Backup Album',
+      JSON.stringify([{ name: 'Backup Artist' }]),
+      'completed',
+      referencedImagePath,
+      'manual',
+      '2026-04-01 12:00:00',
+      '2026-04-01 12:00:00',
+    );
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addLocalFile(path.join(dataDir, referencedImagePath), 'images', 'missing-current-art.jpg');
+
+    db.prepare('DELETE FROM albums').run();
+    fs.rmSync(path.join(dataDir, referencedImagePath), { force: true });
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Current Missing Art Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'completed',
+      referencedImagePath,
+      'manual',
+      '2026-04-02 12:00:00',
+      '2026-04-02 12:00:00',
+    );
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const current = db.prepare('SELECT image_path FROM albums WHERE album_name = ?').get('Current Missing Art Album');
+    const imported = db.prepare('SELECT image_path FROM albums WHERE album_name = ?').get('Referenced Art Backup Album');
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+      imagesCopied: 1,
+      imagesRefetched: 0,
+    });
+    expect(current.image_path).toBe(referencedImagePath);
+    expect(imported.image_path).not.toBe(referencedImagePath);
+    expect(imported.image_path).toMatch(/^images\/merge_missing-current-art_/);
+    expect(fs.existsSync(path.join(dataDir, referencedImagePath))).toBe(false);
+    expect(fs.readFileSync(path.join(dataDir, imported.image_path)).toString()).toBe('backup-image');
+  }, 15000);
+
   it('clears missing backup image paths during merge when art cannot be restored', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
@@ -1014,6 +1119,100 @@ describe('backup and restore', () => {
     });
     expect(restored.image_path).toBeNull();
     expect(fs.readFileSync(path.join(dataDir, missingBackupImagePath)).toString()).toBe('current-image');
+  }, 15000);
+
+  it('normalizes legacy empty Spotify IDs to null when merging distinct manual albums', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: '',
+        album_name: 'First Legacy Manual Album',
+        artists: JSON.stringify([{ name: 'First Legacy Artist' }]),
+      },
+      {
+        id: 102,
+        spotify_album_id: '',
+        album_name: 'Second Legacy Manual Album',
+        artists: JSON.stringify([{ name: 'Second Legacy Artist' }]),
+      },
+    ]);
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare(`
+      SELECT album_name, spotify_album_id
+      FROM albums
+      ORDER BY album_name
+    `).all();
+
+    expect(result).toMatchObject({
+      added: 2,
+      skipped: 0,
+    });
+    expect(restored).toEqual([
+      {
+        album_name: 'First Legacy Manual Album',
+        spotify_album_id: null,
+      },
+      {
+        album_name: 'Second Legacy Manual Album',
+        spotify_album_id: null,
+      },
+    ]);
+  }, 15000);
+
+  it('treats current albums with empty Spotify IDs as manual duplicates during merge', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const artists = JSON.stringify([{ name: 'Duplicate Legacy Artist' }]);
+    db.prepare(`
+      INSERT INTO albums (
+        id, spotify_album_id, album_name, artists, status, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      '',
+      'Duplicate Legacy Manual Album',
+      artists,
+      'completed',
+      'manual',
+      '2026-04-02 12:00:00',
+      '2026-04-02 12:00:00',
+    );
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: '',
+        album_name: 'Duplicate Legacy Manual Album',
+        artists,
+      },
+    ]);
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const rows = db.prepare(`
+      SELECT album_name, spotify_album_id
+      FROM albums
+      WHERE album_name = ?
+    `).all('Duplicate Legacy Manual Album');
+
+    expect(result).toMatchObject({
+      added: 0,
+      skipped: 1,
+    });
+    expect(rows).toEqual([
+      {
+        album_name: 'Duplicate Legacy Manual Album',
+        spotify_album_id: '',
+      },
+    ]);
   }, 15000);
 
   it('allocates unique temp database paths for backup merges', () => {
