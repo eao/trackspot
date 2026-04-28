@@ -992,6 +992,26 @@ function cleanupCommittedMergeImages(committedImagePaths) {
   }
 }
 
+function runMergeCleanup(label, cleanup) {
+  try {
+    cleanup();
+  } catch (error) {
+    console.warn(`Merge cleanup failed for ${label}:`, error);
+  }
+}
+
+function cleanupMergeImportArtifacts({ srcDb, tmpPath, stagingImagesDir }) {
+  if (srcDb) {
+    runMergeCleanup('temporary database handle', () => srcDb.close());
+  }
+  runMergeCleanup('temporary database file', () => {
+    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+  });
+  if (stagingImagesDir) {
+    runMergeCleanup('staged images', () => fs.rmSync(stagingImagesDir, { recursive: true, force: true }));
+  }
+}
+
 function commitMergeImportRows(preparedRows, insertColumns, insertStmt, manualDupCheck, initialSkipped, committedImagePaths) {
   return db.transaction(() => {
     let added = 0;
@@ -1234,6 +1254,8 @@ async function importFromZip(zip) {
   const dbEntry = zip.getEntry('albums.db');
   if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
 
+  recoverInterruptedRestore();
+
   const BetterSqlite = require('better-sqlite3');
   const tmpPath = createMergeTempPath();
   let stagingImagesDir = null;
@@ -1283,9 +1305,7 @@ async function importFromZip(zip) {
     cleanupCommittedMergeImages(committedMergeImagePaths);
     throw error;
   } finally {
-    if (srcDb) srcDb.close();
-    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-    if (stagingImagesDir) fs.rmSync(stagingImagesDir, { recursive: true, force: true });
+    cleanupMergeImportArtifacts({ srcDb, tmpPath, stagingImagesDir });
   }
 
   return { added, skipped, imagesCopied, imagesRefetched, sanitizedImagePaths };

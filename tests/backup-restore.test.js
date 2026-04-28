@@ -981,6 +981,115 @@ describe('backup and restore', () => {
     expect(fs.readFileSync(path.join(dataDir, 'images', 'backup-art.jpg')).toString()).toBe('backup-image');
   }, 15000);
 
+  it('recovers interrupted restores before merging backup albums', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'completed',
+      'manual',
+      '2026-04-02 12:00:00',
+      '2026-04-02 12:00:00',
+    );
+
+    const rollbackDbPath = path.join(dataDir, '_restore_rollback_merge_test.db');
+    await db.backup(rollbackDbPath);
+
+    db.prepare('DELETE FROM albums').run();
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      2,
+      'Partially Restored Album',
+      JSON.stringify([{ name: 'Partial Artist' }]),
+      'completed',
+      'manual',
+      '2026-04-03 12:00:00',
+      '2026-04-03 12:00:00',
+    );
+
+    backupRouter.__private.writeRestoreJournal({
+      operation: 'restore',
+      phase: 'db-swapped',
+      tmpPath: path.join(dataDir, '_restore_tmp_merge_test.db'),
+      rollbackDbPath,
+    });
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        album_name: 'Merged Backup Album',
+        artists: JSON.stringify([{ name: 'Merged Artist' }]),
+      },
+    ]);
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const albumNames = db.prepare('SELECT album_name FROM albums ORDER BY album_name').all()
+      .map(row => row.album_name);
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+    });
+    expect(albumNames).toEqual(['Current Album', 'Merged Backup Album']);
+    expect(fs.existsSync(path.join(dataDir, backupRouter.__private.RESTORE_JOURNAL_NAME))).toBe(false);
+    expect(fs.existsSync(rollbackDbPath)).toBe(false);
+  }, 15000);
+
+  it('does not fail a committed merge when staging cleanup fails', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        album_name: 'Cleanup Resilient Album',
+        artists: JSON.stringify([{ name: 'Cleanup Artist' }]),
+      },
+    ]);
+
+    const originalRmSync = fs.rmSync;
+    const originalWarn = console.warn;
+    const warnings = [];
+    fs.rmSync = function rmSyncWithStagingCleanupFailure(targetPath, options) {
+      if (String(targetPath).includes('_import_images_')) {
+        throw new Error('simulated staging cleanup failure');
+      }
+      return originalRmSync.call(this, targetPath, options);
+    };
+    console.warn = (...args) => warnings.push(args);
+
+    let result;
+    try {
+      result = await backupRouter.__private.importFromZip(zip, false);
+    } finally {
+      fs.rmSync = originalRmSync;
+      console.warn = originalWarn;
+    }
+
+    const restored = db.prepare('SELECT album_name FROM albums').get();
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+    });
+    expect(restored.album_name).toBe('Cleanup Resilient Album');
+    expect(warnings.some(args => String(args[0]).includes('Merge cleanup failed for staged images'))).toBe(true);
+  }, 15000);
+
   it('renames colliding backup image paths during merge and reuses the staged path for shared backup art', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
