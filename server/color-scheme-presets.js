@@ -25,7 +25,7 @@ function readJsonFile(filePath, label) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch (error) {
-    throw new Error(`Could not parse ${label}: ${error.message}`);
+    throw new Error(`Could not parse ${label}: ${error.message}`, { cause: error });
   }
 }
 

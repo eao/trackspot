@@ -240,6 +240,16 @@ describe('Express app integration', () => {
     expect(await wrapped.text()).toBe(indexHtml);
   });
 
+  it('returns JSON 404 responses for unknown API routes', async () => {
+    testServer = await startTestServer(loadAppContext());
+
+    const result = await requestJson(testServer.baseUrl, '/api/not-a-route');
+
+    expect(result.status).toBe(404);
+    expect(result.headers.get('content-type')).toContain('application/json');
+    expect(result.body).toEqual({ error: 'API route not found.' });
+  });
+
   it('serves mounted preferences JSON through /api/preferences', async () => {
     testServer = await startTestServer(loadAppContext());
 

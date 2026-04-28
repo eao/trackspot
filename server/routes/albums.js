@@ -926,7 +926,7 @@ router.post('/', async (req, res) => {
     spotify_graphql_json,
   });
 
-  let normalizedImagePath = null;
+  let normalizedImagePath;
   try {
     normalizedImagePath = image_path == null || image_path === ''
       ? null

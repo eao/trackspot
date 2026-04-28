@@ -1535,14 +1535,14 @@ async function sendToServer(albumUri, graphqlData) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-    } catch (error) {
+    } catch {
       continue;
     }
 
-    let result = {};
+    let result;
     try {
       result = await response.json();
-    } catch (error) {
+    } catch {
       result = {};
     }
 
@@ -1586,7 +1586,7 @@ async function requestJson(url, options = {}) {
     throw error;
   }
 
-  let data = {};
+  let data;
   try {
     data = await response.json();
   } catch {
@@ -1740,7 +1740,7 @@ async function runCsvWorkerLoop() {
       let claim;
       try {
         claim = await claimCsvImportRow(serverUrl);
-      } catch (error) {
+      } catch {
         continue;
       }
 
@@ -1774,7 +1774,9 @@ function cleanupTrackspotTooltipHost(host, { destroy = false } = {}) {
   const instance = host.__trackspotTooltipInstance;
   try {
     instance?.hide?.();
-  } catch {}
+  } catch {
+    // Tooltip cleanup should never interrupt navigation or modal teardown.
+  }
 
   if (destroy) {
     if (host.__trackspotTooltipOnMouseEnter) {
@@ -1792,7 +1794,9 @@ function cleanupTrackspotTooltipHost(host, { destroy = false } = {}) {
 
     try {
       instance?.destroy?.();
-    } catch {}
+    } catch {
+      // Tooltip cleanup should never interrupt navigation or modal teardown.
+    }
 
     trackspotTooltipHosts.delete(host);
     delete host.__trackspotTooltipInstance;
@@ -2226,7 +2230,7 @@ async function fetchAlbumIndex(serverUrl, cachedState = createEmptyAlbumIndexSta
     return { notModified: true, state: cachedState };
   }
 
-  let data = {};
+  let data;
   try {
     data = await response.json();
   } catch {
@@ -2360,7 +2364,7 @@ async function withResolvedServer(task) {
 
   try {
     serverUrl = await ensureActiveServerResolved();
-  } catch (error) {
+  } catch {
     return tryTaskAcrossConfiguredServers(task);
   }
 
@@ -2426,7 +2430,7 @@ async function importAlbum(serverUrl, albumUri, graphqlData, overrides = {}) {
     throw error;
   }
 
-  let result = {};
+  let result;
   try {
     result = await response.json();
   } catch {
@@ -2725,7 +2729,6 @@ function getActionTooltip(actionKey, albumUiState, hasAlbum, isServerAvailable) 
       : 'No connection to Trackspot server.';
   }
 
-  const behavior = getActionBehavior(actionKey, albumUiState);
   return defaultTooltip;
 }
 

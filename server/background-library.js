@@ -69,6 +69,7 @@ const BACKGROUND_SLOT_CONFIGS = {
 
 function sanitizeFileNamePart(value) {
   return String(value)
+    // eslint-disable-next-line no-control-regex -- Windows file names cannot contain ASCII control characters.
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

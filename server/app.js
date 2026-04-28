@@ -139,15 +139,19 @@ function createApp() {
   app.use('/api/preferences', trackNonBackupMutation, preferencesRouter);
   app.use('/api/welcome-tour', trackNonBackupMutation, welcomeTourRouter);
 
-  app.use((err, req, res, next) => {
-    console.error(err);
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || 'An unexpected error occurred.';
-    res.status(status).json({ error: message });
+  app.use('/api', (req, res) => {
+    res.status(404).json({ error: 'API route not found.' });
   });
 
   app.get('*path', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  });
+
+  app.use((err, req, res, _next) => {
+    console.error(err);
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || 'An unexpected error occurred.';
+    res.status(status).json({ error: message });
   });
 
   return app;

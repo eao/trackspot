@@ -9,12 +9,46 @@ import { COLOR_SCHEME_PRESETS as GENERATED_COLOR_SCHEME_PRESETS } from './color-
 // ---------------------------------------------------------------------------
 
 export async function apiFetch(path, options = {}) {
+  const { headers, body, ...fetchOptions } = options;
+  const requestHeaders = new Headers(headers || {});
+  const isFormDataBody = typeof FormData !== 'undefined' && body instanceof FormData;
+
+  if (!requestHeaders.has('Accept')) {
+    requestHeaders.set('Accept', 'application/json');
+  }
+  if (body !== undefined && body !== null && !isFormDataBody && !requestHeaders.has('Content-Type')) {
+    requestHeaders.set('Content-Type', 'application/json');
+  }
+
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
+    ...fetchOptions,
+    body,
+    headers: requestHeaders,
   });
-  const data = await res.json();
-  if (!res.ok) throw { status: res.status, message: data.error || 'Unknown error', data };
+  const text = await res.text();
+  let data = null;
+
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      const message = res.ok
+        ? 'Expected a JSON response but received non-JSON content.'
+        : `Request failed with a non-JSON response (${res.status}).`;
+      const error = new Error(message);
+      error.status = res.status;
+      error.data = text;
+      throw error;
+    }
+  }
+
+  if (!res.ok) {
+    const error = new Error(data?.error || res.statusText || 'Unknown error');
+    error.status = res.status;
+    error.data = data;
+    throw error;
+  }
+
   return data;
 }
 

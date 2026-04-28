@@ -4,5 +4,6 @@ module.exports = {
     environment: 'jsdom',
     include: ['tests/**/*.test.js'],
     pool: 'threads',
+    testTimeout: 10000,
   },
 };

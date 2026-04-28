@@ -12,7 +12,7 @@
     "db:export-json": "node scripts/export-db-json.js",
     "styles:sync": "node scripts/sync-color-scheme-presets.js",
     "pretest": "npm run styles:sync",
-    "lint": "eslint public/js tests",
+    "lint": "eslint public/js tests server scripts trackspot-spicetify.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run lint && npm run test"

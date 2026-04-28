@@ -779,8 +779,8 @@ function sanitizeStoredAlbumImagePaths(connection) {
   let sanitizedCount = 0;
   const run = connection.transaction(items => {
     for (const row of items) {
-      let nextImagePath = null;
-      let shouldUpdate = false;
+      let nextImagePath;
+      let shouldUpdate;
 
       try {
         nextImagePath = normalizeAlbumImagePath(row.image_path);

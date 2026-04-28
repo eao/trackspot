@@ -216,7 +216,7 @@ function readRestoreJournal() {
     return journal;
   } catch (error) {
     console.error('Could not read restore journal:', error);
-    throw new Error(`Could not read restore journal: ${error.message}`);
+    throw new Error(`Could not read restore journal: ${error.message}`, { cause: error });
   }
 }
 
@@ -271,7 +271,7 @@ function readMergeJournal() {
     };
   } catch (error) {
     console.error('Could not read merge journal:', error);
-    throw new Error(`Could not read merge journal: ${error.message}`);
+    throw new Error(`Could not read merge journal: ${error.message}`, { cause: error });
   }
 }
 
@@ -520,6 +520,7 @@ function readZipEntryData(entry, options = {}) {
 }
 
 const WINDOWS_RESERVED_BASENAME_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+// eslint-disable-next-line no-control-regex -- ZIP restore must reject Windows-reserved control characters.
 const WINDOWS_RESERVED_PATH_CHARS_RE = /[<>:"|?*\u0000-\u001F]/;
 
 function isWindowsReservedPathSegment(segment) {
@@ -1270,7 +1271,7 @@ function selectMergeCandidateRows(backupAlbums) {
 }
 
 function reserveMergeImagePath(preferredImagePath, reservedFinalImagePaths) {
-  let preferred = null;
+  let preferred;
   try {
     preferred = resolveAlbumImagePath(preferredImagePath, IMAGES_DIR);
   } catch {
@@ -1298,7 +1299,7 @@ function reserveMergeImagePath(preferredImagePath, reservedFinalImagePaths) {
 }
 
 function createStagedMergeImageAsset(preferredImagePath, stagingImagesDir, source) {
-  let preferred = null;
+  let preferred;
   try {
     preferred = resolveAlbumImagePath(preferredImagePath, IMAGES_DIR);
   } catch {
@@ -1401,8 +1402,8 @@ async function prepareMergeAlbumRows(rows, zip, stagingImagesDir, options = {}) 
 
   for (const row of rows) {
     const preparedRow = { ...row };
-    let imageAsset = null;
-    let entryKey = null;
+    let imageAsset;
+    let entryKey;
     try {
       entryKey = normalizeAlbumImagePath(preparedRow.image_path);
     } catch {
@@ -1598,8 +1599,8 @@ function recoverInterruptedMerge() {
   let cleanupFailed = false;
 
   for (const imagePath of journal.imagePaths) {
-    let resolved = null;
-    let reservationKey = null;
+    let resolved;
+    let reservationKey;
     try {
       resolved = resolveAlbumImagePath(imagePath, IMAGES_DIR);
       reservationKey = getAlbumImageReservationKey(imagePath);
@@ -1691,7 +1692,7 @@ function commitMergeImportRows(
       const params = Object.fromEntries(
         insertColumns.map(column => [column, getBackupAlbumValue(column, rowToInsert)])
       );
-      let result = null;
+      let result;
       try {
         result = insertStmt.run(params);
       } catch (error) {
@@ -1742,7 +1743,7 @@ async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
     let restoredImagePath = null;
 
     if (row.image_path) {
-      let entryKey = null;
+      let entryKey;
       try {
         entryKey = normalizeAlbumImagePath(row.image_path);
       } catch {
@@ -2089,13 +2090,13 @@ async function restoreFromZip(zip) {
   const rollbackDbPath = path.join(DATA_DIR, `_restore_rollback_${Date.now()}.db`);
   let stagingImagesDir = null;
   let stagingAppStateDir = null;
-  let imageRollback = null;
+  let imageRollback;
   let appStateRollbackDir = null;
   let backupDb = null;
   let restoreSucceeded = false;
   let journal = null;
-  let sanitizedImagePaths = 0;
-  let sanitizedLinks = 0;
+  let sanitizedImagePaths;
+  let sanitizedLinks;
   const extractionTracker = createZipExtractionTracker();
   const manifest = readBackupManifest(zip, { extractionTracker });
   const shouldRestoreAppState = manifest?.includesAppState === true;
