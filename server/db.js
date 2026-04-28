@@ -27,84 +27,169 @@ const ALBUMS_UPDATED_AT_TRIGGER_SQL = `
   END;
 `;
 
-const MIGRATED_COLUMNS = Object.freeze({
+const CURRENT_TABLE_COLUMNS = Object.freeze({
   albums: Object.freeze([
-    ['spotify_url', 'TEXT'],
-    ['spotify_album_id', 'TEXT'],
-    ['share_url', 'TEXT'],
-    ['album_name', "TEXT NOT NULL DEFAULT ''"],
-    ['album_type', 'TEXT'],
-    ['artists', "TEXT NOT NULL DEFAULT '[]'"],
-    ['release_date', 'TEXT'],
-    ['release_year', 'INTEGER'],
-    ['label', 'TEXT'],
-    ['genres', 'TEXT'],
-    ['track_count', 'INTEGER'],
-    ['duration_ms', 'INTEGER'],
-    ['copyright', 'TEXT'],
-    ['is_pre_release', 'INTEGER'],
-    ['dominant_color_dark', 'TEXT'],
-    ['dominant_color_light', 'TEXT'],
-    ['dominant_color_raw', 'TEXT'],
-    ['image_path', 'TEXT'],
-    ['image_url_small', 'TEXT'],
-    ['image_url_medium', 'TEXT'],
-    ['image_url_large', 'TEXT'],
-    ['spotify_release_date', 'TEXT'],
-    ['spotify_first_track', 'TEXT'],
-    ['spotify_graphql_json', 'TEXT'],
-    ['status', "TEXT NOT NULL DEFAULT 'completed'"],
-    ['rating', 'INTEGER CHECK(rating IS NULL OR (rating >= 0 AND rating <= 100))'],
-    ['notes', 'TEXT'],
-    ['planned_at', 'TEXT'],
-    ['listened_at', 'TEXT'],
-    ['repeats', 'INTEGER NOT NULL DEFAULT 0 CHECK(repeats >= 0)'],
-    ['priority', 'INTEGER NOT NULL DEFAULT 0 CHECK(priority >= 0)'],
-    ['source', "TEXT NOT NULL DEFAULT 'manual'"],
-    ['album_link', 'TEXT'],
-    ['artist_link', 'TEXT'],
-    ['welcome_sample_key', 'TEXT'],
-    ['created_at', "TEXT NOT NULL DEFAULT ''"],
-    ['updated_at', "TEXT NOT NULL DEFAULT ''"],
+    'id',
+    'spotify_url',
+    'spotify_album_id',
+    'share_url',
+    'album_name',
+    'album_type',
+    'artists',
+    'release_date',
+    'release_year',
+    'label',
+    'genres',
+    'track_count',
+    'duration_ms',
+    'copyright',
+    'is_pre_release',
+    'dominant_color_dark',
+    'dominant_color_light',
+    'dominant_color_raw',
+    'image_path',
+    'image_url_small',
+    'image_url_medium',
+    'image_url_large',
+    'spotify_release_date',
+    'spotify_first_track',
+    'spotify_graphql_json',
+    'status',
+    'rating',
+    'notes',
+    'planned_at',
+    'listened_at',
+    'repeats',
+    'priority',
+    'source',
+    'album_link',
+    'artist_link',
+    'welcome_sample_key',
+    'created_at',
+    'updated_at',
   ]),
   import_jobs: Object.freeze([
-    ['source_type', "TEXT NOT NULL DEFAULT 'csv'"],
-    ['filename', 'TEXT'],
-    ['default_status', "TEXT NOT NULL DEFAULT 'completed'"],
-    ['status', "TEXT NOT NULL DEFAULT 'queued'"],
-    ['total_rows', 'INTEGER NOT NULL DEFAULT 0'],
-    ['queued_rows', 'INTEGER NOT NULL DEFAULT 0'],
-    ['processing_rows', 'INTEGER NOT NULL DEFAULT 0'],
-    ['imported_rows', 'INTEGER NOT NULL DEFAULT 0'],
-    ['skipped_rows', 'INTEGER NOT NULL DEFAULT 0'],
-    ['failed_rows', 'INTEGER NOT NULL DEFAULT 0'],
-    ['canceled_rows', 'INTEGER NOT NULL DEFAULT 0'],
-    ['warning_rows', 'INTEGER NOT NULL DEFAULT 0'],
-    ['last_error', 'TEXT'],
-    ['created_at', "TEXT NOT NULL DEFAULT ''"],
-    ['updated_at', "TEXT NOT NULL DEFAULT ''"],
-    ['completed_at', 'TEXT'],
+    'id',
+    'source_type',
+    'filename',
+    'default_status',
+    'status',
+    'total_rows',
+    'queued_rows',
+    'processing_rows',
+    'imported_rows',
+    'skipped_rows',
+    'failed_rows',
+    'canceled_rows',
+    'warning_rows',
+    'last_error',
+    'created_at',
+    'updated_at',
+    'completed_at',
   ]),
   import_job_rows: Object.freeze([
-    ['job_id', 'INTEGER NOT NULL DEFAULT 0'],
-    ['row_index', 'INTEGER NOT NULL DEFAULT 0'],
-    ['spotify_url', 'TEXT'],
-    ['spotify_album_id', 'TEXT'],
-    ['desired_status', 'TEXT'],
-    ['rating', 'INTEGER'],
-    ['notes', 'TEXT'],
-    ['listened_at', 'TEXT'],
-    ['default_status_applied', 'INTEGER NOT NULL DEFAULT 0'],
-    ['warnings_json', 'TEXT'],
-    ['status', "TEXT NOT NULL DEFAULT 'queued'"],
-    ['error', 'TEXT'],
-    ['created_album_id', 'INTEGER'],
-    ['lease_owner', 'TEXT'],
-    ['lease_expires_at', 'TEXT'],
-    ['raw_row_json', 'TEXT'],
-    ['created_at', "TEXT NOT NULL DEFAULT ''"],
-    ['updated_at', "TEXT NOT NULL DEFAULT ''"],
+    'id',
+    'job_id',
+    'row_index',
+    'spotify_url',
+    'spotify_album_id',
+    'desired_status',
+    'rating',
+    'notes',
+    'listened_at',
+    'default_status_applied',
+    'warnings_json',
+    'status',
+    'error',
+    'created_album_id',
+    'lease_owner',
+    'lease_expires_at',
+    'raw_row_json',
+    'created_at',
+    'updated_at',
   ]),
+});
+
+const CURRENT_TABLE_ORDER = Object.freeze(['albums', 'import_jobs', 'import_job_rows']);
+
+const DEFAULT_COPY_EXPRESSIONS = Object.freeze({
+  albums: Object.freeze({
+    spotify_url: 'NULL',
+    spotify_album_id: 'NULL',
+    share_url: 'NULL',
+    album_name: "''",
+    album_type: 'NULL',
+    artists: "'[]'",
+    release_date: 'NULL',
+    release_year: 'NULL',
+    label: 'NULL',
+    genres: 'NULL',
+    track_count: 'NULL',
+    duration_ms: 'NULL',
+    copyright: 'NULL',
+    is_pre_release: 'NULL',
+    dominant_color_dark: 'NULL',
+    dominant_color_light: 'NULL',
+    dominant_color_raw: 'NULL',
+    image_path: 'NULL',
+    image_url_small: 'NULL',
+    image_url_medium: 'NULL',
+    image_url_large: 'NULL',
+    spotify_release_date: 'NULL',
+    spotify_first_track: 'NULL',
+    spotify_graphql_json: 'NULL',
+    status: "'completed'",
+    rating: 'NULL',
+    notes: 'NULL',
+    planned_at: 'NULL',
+    listened_at: 'NULL',
+    repeats: '0',
+    priority: '0',
+    source: "'manual'",
+    album_link: 'NULL',
+    artist_link: 'NULL',
+    welcome_sample_key: 'NULL',
+    created_at: "datetime('now')",
+    updated_at: "datetime('now')",
+  }),
+  import_jobs: Object.freeze({
+    source_type: "'csv'",
+    filename: 'NULL',
+    default_status: "'completed'",
+    status: "'queued'",
+    total_rows: '0',
+    queued_rows: '0',
+    processing_rows: '0',
+    imported_rows: '0',
+    skipped_rows: '0',
+    failed_rows: '0',
+    canceled_rows: '0',
+    warning_rows: '0',
+    last_error: 'NULL',
+    created_at: "datetime('now')",
+    updated_at: "datetime('now')",
+    completed_at: 'NULL',
+  }),
+  import_job_rows: Object.freeze({
+    job_id: '0',
+    row_index: '0',
+    spotify_url: 'NULL',
+    spotify_album_id: 'NULL',
+    desired_status: 'NULL',
+    rating: 'NULL',
+    notes: 'NULL',
+    listened_at: 'NULL',
+    default_status_applied: '0',
+    warnings_json: 'NULL',
+    status: "'queued'",
+    error: 'NULL',
+    created_album_id: 'NULL',
+    lease_owner: 'NULL',
+    lease_expires_at: 'NULL',
+    raw_row_json: 'NULL',
+    created_at: "datetime('now')",
+    updated_at: "datetime('now')",
+  }),
 });
 
 function openDatabase() {
@@ -115,22 +200,338 @@ function openDatabase() {
   return connection;
 }
 
-function ensureColumn(connection, tableName, columnName, alterSql) {
-  const columns = connection.prepare(`PRAGMA table_info(${tableName})`).all();
-  if (!columns.some(column => column.name === columnName)) {
-    connection.exec(alterSql);
+function quoteIdentifier(identifier) {
+  return `"${String(identifier).replace(/"/g, '""')}"`;
+}
+
+function createAlbumsTableSql(tableName, { ifNotExists = false } = {}) {
+  return `
+    CREATE TABLE ${ifNotExists ? 'IF NOT EXISTS ' : ''}${quoteIdentifier(tableName)} (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+
+      -- Spotify data
+      spotify_url          TEXT,
+      spotify_album_id     TEXT UNIQUE,
+      share_url            TEXT,
+      album_name           TEXT NOT NULL,
+      album_type           TEXT,
+      artists              TEXT NOT NULL,
+      release_date         TEXT,
+      release_year         INTEGER,
+      label                TEXT,
+      genres               TEXT,
+      track_count          INTEGER,
+      duration_ms          INTEGER,
+      copyright            TEXT,
+      is_pre_release       INTEGER,
+      dominant_color_dark  TEXT,
+      dominant_color_light TEXT,
+      dominant_color_raw   TEXT,
+      image_path           TEXT,
+      image_url_small      TEXT,
+      image_url_medium     TEXT,
+      image_url_large      TEXT,
+      spotify_release_date TEXT,
+      spotify_first_track  TEXT,
+      spotify_graphql_json TEXT,
+
+      -- User data
+      status               TEXT NOT NULL DEFAULT 'completed',
+      rating               INTEGER CHECK(rating IS NULL OR (rating >= 0 AND rating <= 100)),
+      notes                TEXT,
+      planned_at           TEXT,
+      listened_at          TEXT,
+      repeats              INTEGER NOT NULL DEFAULT 0 CHECK(repeats >= 0),
+      priority             INTEGER NOT NULL DEFAULT 0 CHECK(priority >= 0),
+
+      -- Source
+      source               TEXT NOT NULL DEFAULT 'manual',
+      album_link           TEXT,
+      artist_link          TEXT,
+      welcome_sample_key   TEXT,
+
+      -- Timestamps
+      created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `;
+}
+
+function createImportJobsTableSql(tableName, { ifNotExists = false } = {}) {
+  return `
+    CREATE TABLE ${ifNotExists ? 'IF NOT EXISTS ' : ''}${quoteIdentifier(tableName)} (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_type          TEXT NOT NULL DEFAULT 'csv',
+      filename             TEXT,
+      default_status       TEXT NOT NULL,
+      status               TEXT NOT NULL DEFAULT 'queued',
+      total_rows           INTEGER NOT NULL DEFAULT 0,
+      queued_rows          INTEGER NOT NULL DEFAULT 0,
+      processing_rows      INTEGER NOT NULL DEFAULT 0,
+      imported_rows        INTEGER NOT NULL DEFAULT 0,
+      skipped_rows         INTEGER NOT NULL DEFAULT 0,
+      failed_rows          INTEGER NOT NULL DEFAULT 0,
+      canceled_rows        INTEGER NOT NULL DEFAULT 0,
+      warning_rows         INTEGER NOT NULL DEFAULT 0,
+      last_error           TEXT,
+      created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at         TEXT
+    )
+  `;
+}
+
+function createImportJobRowsTableSql(tableName, { ifNotExists = false } = {}) {
+  return `
+    CREATE TABLE ${ifNotExists ? 'IF NOT EXISTS ' : ''}${quoteIdentifier(tableName)} (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id               INTEGER NOT NULL REFERENCES import_jobs(id) ON DELETE CASCADE,
+      row_index            INTEGER NOT NULL,
+      spotify_url          TEXT,
+      spotify_album_id     TEXT,
+      desired_status       TEXT,
+      rating               INTEGER,
+      notes                TEXT,
+      listened_at          TEXT,
+      default_status_applied INTEGER NOT NULL DEFAULT 0,
+      warnings_json        TEXT,
+      status               TEXT NOT NULL DEFAULT 'queued',
+      error                TEXT,
+      created_album_id     INTEGER,
+      lease_owner          TEXT,
+      lease_expires_at     TEXT,
+      raw_row_json         TEXT,
+      created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(job_id, row_index)
+    )
+  `;
+}
+
+function createTableSql(tableName, options = {}) {
+  if (tableName === 'albums') return createAlbumsTableSql(tableName, options);
+  if (tableName === 'import_jobs') return createImportJobsTableSql(tableName, options);
+  if (tableName === 'import_job_rows') return createImportJobRowsTableSql(tableName, options);
+  throw new Error(`Unknown table schema: ${tableName}`);
+}
+
+function tableInfo(connection, tableName) {
+  return connection.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`).all();
+}
+
+function tableExists(connection, tableName) {
+  return Boolean(connection.prepare(`
+    SELECT 1
+    FROM sqlite_master
+    WHERE type = 'table' AND name = ?
+  `).get(tableName));
+}
+
+function hasDatetimeNowDefault(column) {
+  return /datetime\s*\(\s*'now'\s*\)/i.test(String(column?.dflt_value ?? ''));
+}
+
+function indexColumnNames(connection, indexName) {
+  return connection.prepare(`PRAGMA index_info(${quoteIdentifier(indexName)})`)
+    .all()
+    .sort((a, b) => a.seqno - b.seqno)
+    .map(column => column.name);
+}
+
+function hasUniqueIndex(connection, tableName, columnNames) {
+  return connection.prepare(`PRAGMA index_list(${quoteIdentifier(tableName)})`).all()
+    .some(index => {
+      if (!index.unique) return false;
+      const columns = indexColumnNames(connection, index.name);
+      return columns.length === columnNames.length
+        && columns.every((columnName, indexPosition) => columnName === columnNames[indexPosition]);
+    });
+}
+
+function hasImportRowsForeignKey(connection) {
+  return connection.prepare('PRAGMA foreign_key_list(import_job_rows)').all()
+    .some(foreignKey => foreignKey.from === 'job_id'
+      && foreignKey.table === 'import_jobs'
+      && foreignKey.to === 'id'
+      && String(foreignKey.on_delete).toUpperCase() === 'CASCADE');
+}
+
+function currentColumnMap(connection, tableName) {
+  return new Map(tableInfo(connection, tableName).map(column => [column.name, column]));
+}
+
+function tableNeedsRebuild(connection, tableName) {
+  const columnMap = currentColumnMap(connection, tableName);
+  const expectedColumns = CURRENT_TABLE_COLUMNS[tableName];
+  if (!expectedColumns.every(columnName => columnMap.has(columnName))) return true;
+
+  if (!hasDatetimeNowDefault(columnMap.get('created_at'))
+    || !hasDatetimeNowDefault(columnMap.get('updated_at'))) {
+    return true;
+  }
+
+  if (tableName === 'albums') {
+    return !hasUniqueIndex(connection, tableName, ['spotify_album_id']);
+  }
+
+  if (tableName === 'import_job_rows') {
+    return !hasUniqueIndex(connection, tableName, ['job_id', 'row_index'])
+      || !hasImportRowsForeignKey(connection);
+  }
+
+  return false;
+}
+
+function copyExpression(tableName, legacyTableName, columnName, existingColumnNames) {
+  const legacyColumn = `legacy.${quoteIdentifier(columnName)}`;
+  const fallback = DEFAULT_COPY_EXPRESSIONS[tableName]?.[columnName] ?? 'NULL';
+  if (!existingColumnNames.has(columnName)) return fallback;
+
+  if (columnName === 'spotify_album_id' && tableName === 'albums') {
+    if (!existingColumnNames.has('id')) return `NULLIF(${legacyColumn}, '')`;
+    return `
+      CASE
+        WHEN ${legacyColumn} IS NULL OR ${legacyColumn} = '' THEN NULL
+        WHEN legacy.${quoteIdentifier('id')} = (
+          SELECT MIN(dedupe.${quoteIdentifier('id')})
+          FROM ${quoteIdentifier(legacyTableName)} AS dedupe
+          WHERE dedupe.${quoteIdentifier('spotify_album_id')} = ${legacyColumn}
+        ) THEN ${legacyColumn}
+        ELSE NULL
+      END
+    `;
+  }
+
+  if (columnName === 'created_at' || columnName === 'updated_at') {
+    return `COALESCE(NULLIF(${legacyColumn}, ''), datetime('now'))`;
+  }
+
+  if (columnName === 'rating' && tableName === 'albums') {
+    return `
+      CASE
+        WHEN ${legacyColumn} IS NULL OR (${legacyColumn} >= 0 AND ${legacyColumn} <= 100) THEN ${legacyColumn}
+        ELSE NULL
+      END
+    `;
+  }
+
+  if (['repeats', 'priority'].includes(columnName) && tableName === 'albums') {
+    return `
+      CASE
+        WHEN ${legacyColumn} IS NOT NULL AND ${legacyColumn} >= 0 THEN ${legacyColumn}
+        ELSE ${fallback}
+      END
+    `;
+  }
+
+  if (['album_name', 'artists', 'status', 'source', 'default_status', 'source_type'].includes(columnName)) {
+    return `COALESCE(${legacyColumn}, ${fallback})`;
+  }
+
+  if (['repeats', 'priority', 'total_rows', 'queued_rows', 'processing_rows', 'imported_rows',
+    'skipped_rows', 'failed_rows', 'canceled_rows', 'warning_rows', 'default_status_applied',
+    'job_id', 'row_index'].includes(columnName)) {
+    return `COALESCE(${legacyColumn}, ${fallback})`;
+  }
+
+  return legacyColumn;
+}
+
+function copyWhereClause(tableName, legacyTableName, existingColumnNames) {
+  if (tableName !== 'import_job_rows') return '';
+  if (!existingColumnNames.has('job_id') || !existingColumnNames.has('row_index')) return 'WHERE 0';
+
+  const clauses = [`
+    EXISTS (
+      SELECT 1
+      FROM import_jobs
+      WHERE import_jobs.id = legacy.${quoteIdentifier('job_id')}
+    )
+  `];
+
+  if (existingColumnNames.has('id')) {
+    clauses.push(`
+      legacy.${quoteIdentifier('id')} = (
+        SELECT MIN(dedupe.${quoteIdentifier('id')})
+        FROM ${quoteIdentifier(legacyTableName)} AS dedupe
+        WHERE dedupe.${quoteIdentifier('job_id')} = legacy.${quoteIdentifier('job_id')}
+          AND dedupe.${quoteIdentifier('row_index')} = legacy.${quoteIdentifier('row_index')}
+      )
+    `);
+  }
+
+  return `WHERE ${clauses.join(' AND ')}`;
+}
+
+function syncAutoincrementSequence(connection, tableName) {
+  if (!tableExists(connection, 'sqlite_sequence')) return;
+
+  const { max_id: maxId } = connection.prepare(`
+    SELECT COALESCE(MAX(id), 0) AS max_id
+    FROM ${quoteIdentifier(tableName)}
+  `).get();
+  const existing = connection.prepare('SELECT 1 FROM sqlite_sequence WHERE name = ?').get(tableName);
+  if (existing) {
+    connection.prepare('UPDATE sqlite_sequence SET seq = ? WHERE name = ?').run(maxId, tableName);
+  } else {
+    connection.prepare('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)').run(tableName, maxId);
   }
 }
 
-function ensureMigratedColumns(connection) {
-  for (const [tableName, columns] of Object.entries(MIGRATED_COLUMNS)) {
-    for (const [columnName, columnDefinition] of columns) {
-      ensureColumn(
-        connection,
-        tableName,
-        columnName,
-        `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition};`,
-      );
+function rebuildTable(connection, tableName) {
+  const legacyTableName = `${tableName}__legacy_schema_migration`;
+  const existingColumnNames = new Set(tableInfo(connection, tableName).map(column => column.name));
+  const copyColumns = CURRENT_TABLE_COLUMNS[tableName]
+    .filter(columnName => columnName !== 'id' || existingColumnNames.has('id'));
+  const selectExpressions = copyColumns
+    .map(columnName => `${copyExpression(tableName, legacyTableName, columnName, existingColumnNames)} AS ${quoteIdentifier(columnName)}`);
+
+  connection.exec(`
+    DROP TABLE IF EXISTS ${quoteIdentifier(legacyTableName)};
+    ALTER TABLE ${quoteIdentifier(tableName)} RENAME TO ${quoteIdentifier(legacyTableName)};
+    ${createTableSql(tableName)};
+    INSERT INTO ${quoteIdentifier(tableName)} (${copyColumns.map(quoteIdentifier).join(', ')})
+    SELECT ${selectExpressions.join(', ')}
+    FROM ${quoteIdentifier(legacyTableName)} AS legacy
+    ${copyWhereClause(tableName, legacyTableName, existingColumnNames)};
+    DROP TABLE ${quoteIdentifier(legacyTableName)};
+  `);
+
+  syncAutoincrementSequence(connection, tableName);
+}
+
+function ensureCurrentTableSchemas(connection) {
+  for (const tableName of CURRENT_TABLE_ORDER) {
+    connection.exec(createTableSql(tableName, { ifNotExists: true }));
+  }
+
+  const rebuildSet = new Set(CURRENT_TABLE_ORDER
+    .filter(tableName => tableExists(connection, tableName) && tableNeedsRebuild(connection, tableName)));
+  if (rebuildSet.has('import_jobs') && tableExists(connection, 'import_job_rows')) {
+    rebuildSet.add('import_job_rows');
+  }
+
+  const rebuilds = CURRENT_TABLE_ORDER.filter(tableName => rebuildSet.has(tableName));
+  if (!rebuilds.length) return;
+
+  const foreignKeysWereEnabled = Boolean(connection.pragma('foreign_keys', { simple: true }));
+  connection.pragma('foreign_keys = OFF');
+  try {
+    connection.transaction(() => {
+      for (const tableName of rebuilds) {
+        rebuildTable(connection, tableName);
+      }
+    })();
+  } finally {
+    if (foreignKeysWereEnabled) {
+      connection.pragma('foreign_keys = ON');
+    }
+  }
+
+  if (foreignKeysWereEnabled) {
+    const foreignKeyViolations = connection.prepare('PRAGMA foreign_key_check').all();
+    if (foreignKeyViolations.length) {
+      throw new Error(`Schema migration left ${foreignKeyViolations.length} foreign key violation(s).`);
     }
   }
 }
@@ -278,104 +679,7 @@ function backfillAlbumReleaseDates(connection) {
 }
 
 function ensureAppSchema(connection) {
-  connection.exec(`
-    CREATE TABLE IF NOT EXISTS albums (
-      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-
-      -- Spotify data
-      spotify_url          TEXT,
-      spotify_album_id     TEXT UNIQUE,
-      share_url            TEXT,
-      album_name           TEXT NOT NULL,
-      album_type           TEXT,
-      artists              TEXT NOT NULL,  -- JSON array of {id, name, share_url, avatar_url}
-      release_date         TEXT,
-      release_year         INTEGER,
-      label                TEXT,
-      genres               TEXT,           -- JSON array of strings
-      track_count          INTEGER,
-      duration_ms          INTEGER,
-      copyright            TEXT,           -- JSON array of {text, type}
-      is_pre_release       INTEGER,        -- 0 or 1
-      dominant_color_dark  TEXT,
-      dominant_color_light TEXT,
-      dominant_color_raw   TEXT,
-      image_path           TEXT,
-      image_url_small      TEXT,           -- 64px Spotify CDN URL
-      image_url_medium     TEXT,           -- 300px Spotify CDN URL
-      image_url_large      TEXT,           -- 640px Spotify CDN URL
-      spotify_release_date TEXT,           -- JSON object with Spotify release date data (isoString, precision, year)
-      spotify_first_track  TEXT,           -- JSON object with first-track data for share previews (id, name, uri, share_url)
-      spotify_graphql_json TEXT,           -- Raw Spotify GraphQL response JSON from the Spicetify importer
-
-      -- User data
-      status               TEXT NOT NULL DEFAULT 'completed',  -- 'completed' | 'planned' | 'dropped'
-      rating               INTEGER CHECK(rating IS NULL OR (rating >= 0 AND rating <= 100)),
-      notes                TEXT,
-      planned_at           TEXT,
-      listened_at          TEXT,
-      repeats              INTEGER NOT NULL DEFAULT 0 CHECK(repeats >= 0),
-      priority             INTEGER NOT NULL DEFAULT 0 CHECK(priority >= 0),
-
-      -- Source
-      source               TEXT NOT NULL DEFAULT 'manual',  -- 'spotify' | 'manual'
-      album_link           TEXT,
-      artist_link          TEXT,
-      welcome_sample_key   TEXT,
-
-      -- Timestamps
-      created_at           TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-  `);
-
-  connection.exec(`
-    CREATE TABLE IF NOT EXISTS import_jobs (
-      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-      source_type          TEXT NOT NULL DEFAULT 'csv',
-      filename             TEXT,
-      default_status       TEXT NOT NULL,
-      status               TEXT NOT NULL DEFAULT 'queued', -- 'queued' | 'processing' | 'completed' | 'failed'
-      total_rows           INTEGER NOT NULL DEFAULT 0,
-      queued_rows          INTEGER NOT NULL DEFAULT 0,
-      processing_rows      INTEGER NOT NULL DEFAULT 0,
-      imported_rows        INTEGER NOT NULL DEFAULT 0,
-      skipped_rows         INTEGER NOT NULL DEFAULT 0,
-      failed_rows          INTEGER NOT NULL DEFAULT 0,
-      canceled_rows        INTEGER NOT NULL DEFAULT 0,
-      warning_rows         INTEGER NOT NULL DEFAULT 0,
-      last_error           TEXT,
-      created_at           TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
-      completed_at         TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS import_job_rows (
-      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id               INTEGER NOT NULL REFERENCES import_jobs(id) ON DELETE CASCADE,
-      row_index            INTEGER NOT NULL,
-      spotify_url          TEXT,
-      spotify_album_id     TEXT,
-      desired_status       TEXT,
-      rating               INTEGER,
-      notes                TEXT,
-      listened_at          TEXT,
-      default_status_applied INTEGER NOT NULL DEFAULT 0,
-      warnings_json        TEXT,
-      status               TEXT NOT NULL DEFAULT 'queued', -- 'queued' | 'processing' | 'imported' | 'skipped' | 'failed'
-      error                TEXT,
-      created_album_id     INTEGER,
-      lease_owner          TEXT,
-      lease_expires_at     TEXT,
-      raw_row_json         TEXT,
-      created_at           TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(job_id, row_index)
-    );
-  `);
-
-  ensureMigratedColumns(connection);
+  ensureCurrentTableSchemas(connection);
 
   connection.exec(`
     CREATE INDEX IF NOT EXISTS idx_spotify_album_id ON albums(spotify_album_id);

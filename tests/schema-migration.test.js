@@ -154,6 +154,20 @@ function tableColumns(db, tableName) {
   return db.prepare(`PRAGMA table_info(${tableName})`).all().map(column => column.name);
 }
 
+function columnInfo(db, tableName, columnName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all()
+    .find(column => column.name === columnName);
+}
+
+function expectDatetimeNowDefault(db, tableName, columnName) {
+  expect(String(columnInfo(db, tableName, columnName)?.dflt_value ?? ''))
+    .toMatch(/datetime\s*\(\s*'now'\s*\)/i);
+}
+
+function expectTimestampValue(value) {
+  expect(value).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/));
+}
+
 afterEach(() => {
   while (openDbs.length) {
     openDbs.pop()?.close();
@@ -283,5 +297,87 @@ describe('legacy schema migration', () => {
       lease_expires_at: '2026-04-15 00:00:00',
       raw_row_json: JSON.stringify(['https://open.spotify.com/album/ABCDEFGHIJKLMNOPQRST']),
     });
+  });
+
+  it('restores timestamp defaults and constraints on migrated tables', () => {
+    createSparseLegacyDatabase();
+    resetServerModules();
+
+    const dbModule = require('../server/db.js');
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    for (const tableName of Object.keys(EXPECTED_COLUMNS)) {
+      expectDatetimeNowDefault(db, tableName, 'created_at');
+      expectDatetimeNowDefault(db, tableName, 'updated_at');
+    }
+
+    const legacyRows = db.prepare(`
+      SELECT albums.created_at AS album_created_at,
+        import_jobs.created_at AS job_created_at,
+        import_job_rows.created_at AS row_created_at
+      FROM albums, import_jobs, import_job_rows
+      WHERE albums.id = 1
+        AND import_jobs.id = 1
+        AND import_job_rows.id = 1
+    `).get();
+    expectTimestampValue(legacyRows.album_created_at);
+    expectTimestampValue(legacyRows.job_created_at);
+    expectTimestampValue(legacyRows.row_created_at);
+
+    const insertedAlbum = db.prepare(`
+      INSERT INTO albums (album_name, artists, spotify_album_id)
+      VALUES (?, ?, ?)
+    `).run('New Album', '[]', 'spotify-album-1');
+    const newAlbum = db.prepare(`
+      SELECT created_at, updated_at
+      FROM albums
+      WHERE id = ?
+    `).get(insertedAlbum.lastInsertRowid);
+    expectTimestampValue(newAlbum.created_at);
+    expectTimestampValue(newAlbum.updated_at);
+
+    expect(() => db.prepare(`
+      INSERT INTO albums (album_name, artists, spotify_album_id)
+      VALUES (?, ?, ?)
+    `).run('Duplicate Album', '[]', 'spotify-album-1')).toThrow(/UNIQUE/i);
+
+    const insertedJob = db.prepare(`
+      INSERT INTO import_jobs (default_status)
+      VALUES (?)
+    `).run('completed');
+    const newJob = db.prepare(`
+      SELECT created_at, updated_at
+      FROM import_jobs
+      WHERE id = ?
+    `).get(insertedJob.lastInsertRowid);
+    expectTimestampValue(newJob.created_at);
+    expectTimestampValue(newJob.updated_at);
+
+    const insertedImportRow = db.prepare(`
+      INSERT INTO import_job_rows (job_id, row_index)
+      VALUES (?, ?)
+    `).run(insertedJob.lastInsertRowid, 1);
+    const newImportRow = db.prepare(`
+      SELECT created_at, updated_at
+      FROM import_job_rows
+      WHERE id = ?
+    `).get(insertedImportRow.lastInsertRowid);
+    expectTimestampValue(newImportRow.created_at);
+    expectTimestampValue(newImportRow.updated_at);
+
+    expect(() => db.prepare(`
+      INSERT INTO import_job_rows (job_id, row_index)
+      VALUES (?, ?)
+    `).run(insertedJob.lastInsertRowid, 1)).toThrow(/UNIQUE/i);
+
+    expect(() => db.prepare(`
+      INSERT INTO import_job_rows (job_id, row_index)
+      VALUES (?, ?)
+    `).run(9999, 1)).toThrow(/FOREIGN KEY/i);
+
+    db.prepare('DELETE FROM import_jobs WHERE id = ?').run(insertedJob.lastInsertRowid);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM import_job_rows WHERE job_id = ?')
+      .get(insertedJob.lastInsertRowid).count).toBe(0);
   });
 });
