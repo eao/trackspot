@@ -164,6 +164,7 @@ function openArtistPopover(anchorEl, artistName, artistId, artistLink) {
 }
 
 export function closeArtistPopover() {
+  const hadPopover = !!_popoverEl;
   if (_popoverEl) {
     _popoverEl.remove();
     _popoverEl = null;
@@ -178,4 +179,5 @@ export function closeArtistPopover() {
     window.removeEventListener('scroll', _popoverViewportHandler, true);
     _popoverViewportHandler = null;
   }
+  return hadPopover;
 }

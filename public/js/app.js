@@ -36,8 +36,8 @@ import {
   updateRatingDisplay, showError,
 } from './modal.js';
 import {
-  closeSettings, closePersonalization, setDebugMode, setUButtons,
-  setHeaderScrollMode, setShowRepeatsField, setShowPriorityField, setShowPlannedAtField, setShowRefetchArtButton, setShowWipeDb, setListArtClickToEnlarge, setReserveSidebarSpace, setAccentPeriod, setGrinchMode, setContentWidthPx, restoreContentWidthSettings, clearLocalStorage, wipeDatabase, initPaginationSettings, initQuickActionsToolbarSettings, initCsvImportControls, initPersonalizationSettings, initEarlyWrappedSettingsUi, closeCsvFormattingInstructions,
+  closeSettings, setDebugMode, setUButtons,
+  setHeaderScrollMode, setShowRepeatsField, setShowPriorityField, setShowPlannedAtField, setShowRefetchArtButton, setShowWipeDb, setListArtClickToEnlarge, setReserveSidebarSpace, setAccentPeriod, setGrinchMode, setContentWidthPx, restoreContentWidthSettings, clearLocalStorage, wipeDatabase, initPaginationSettings, initQuickActionsToolbarSettings, initCsvImportControls, initPersonalizationSettings, initEarlyWrappedSettingsUi,
   removeWelcomeSampleAlbums, refreshWelcomeTourSettings,
 } from './settings.js';
 import { syncAppShellLayout } from './app-shell.js';
@@ -48,6 +48,7 @@ import { initHeaderScrollTracking } from './header-scroll.js';
 import { getSteppedContentWidthPx } from './layout-width.js';
 import { initWelcomeTourEvents, maybeStartWelcomeTour } from './welcome-tour.js';
 import { initStatsTopArtistJumpListener } from './top-artist-jump.js';
+import { requestCloseTopManagedModal } from './modal-manager.js';
 
 // ---------------------------------------------------------------------------
 // Tooltips
@@ -295,7 +296,6 @@ function initEvents() {
 
   el.btnModalDelete.addEventListener('click', () => {
     if (state.modal.albumId) {
-      closeModal();
       openDeleteConfirm(state.modal.albumId);
     }
   });
@@ -324,16 +324,14 @@ function initEvents() {
   // Close modals on Escape key.
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      closeArtistPopover();
-      if (!el.artLightboxOverlay.classList.contains('hidden')) closeArtLightbox();
-      if (!el.csvFormatOverlay.classList.contains('hidden')) closeCsvFormattingInstructions();
-      if (!el.personalizationOverlay.classList.contains('hidden')) closePersonalization();
-      if (!el.settingsOverlay.classList.contains('hidden')) closeSettings();
-      if (!el.modalOverlay.classList.contains('hidden')) closeModal();
-      if (!el.deleteOverlay.classList.contains('hidden')) closeDeleteConfirm();
+      if (closeArtistPopover()) return;
+      if (!el.artLightboxOverlay.classList.contains('hidden')) { closeArtLightbox(); return; }
+      if (requestCloseTopManagedModal()) return;
     }
     if (e.key === 'Enter' && e.ctrlKey && state.modal.mode === 'edit' &&
-        !el.modalOverlay.classList.contains('hidden')) {
+        !el.modalOverlay.classList.contains('hidden') &&
+        el.deleteOverlay.classList.contains('hidden') &&
+        !el.btnSave.disabled) {
       e.preventDefault();
       handleSaveEdit();
     }

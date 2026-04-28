@@ -45,9 +45,19 @@ const elMock = {
   inputRepeats: makeEl('input'),
   inputPriority: makeEl('input'),
   btnSave: makeEl('button'),
+  btnCancel: makeEl('button'),
+  modalClose: makeEl('button'),
   btnModalDelete: makeEl('button'),
   modalOverlay: makeEl(),
+  metaArt: makeEl('img'),
+  metaArtUpload: makeEl('input'),
+  metaArtUploadLabel: makeEl('label'),
+  metaArtUploadStatus: makeEl(),
   artRefetchPreview: makeEl(),
+  deleteOverlay: makeEl(),
+  deleteMessage: makeEl(),
+  btnDeleteCancel: makeEl('button'),
+  btnDeleteConfirm: makeEl('button'),
   btnShowAlbumInfo: makeEl('button'),
   btnDeleteArt: makeEl('button'),
   btnRandomArt: makeEl('button'),
@@ -93,7 +103,11 @@ function resetInputs() {
     if ('textContent' in element) element.textContent = '';
     element.disabled = false;
   });
+  elMock.metaArtUpload.type = 'file';
   elMock.fetchError.className = 'hidden';
+  elMock.modalOverlay.className = '';
+  elMock.deleteOverlay.className = 'hidden';
+  elMock.metaArtUploadStatus.className = 'hidden';
   elMock.inputStatus.value = 'completed';
   elMock.inputRepeats.value = '0';
   elMock.inputPriority.value = '0';
@@ -133,6 +147,8 @@ function fillManualFields() {
 }
 
 describe('modal save payloads', () => {
+  const originalFetch = globalThis.fetch;
+
   beforeEach(() => {
     vi.resetModules();
     apiFetchMock.mockReset();
@@ -143,6 +159,7 @@ describe('modal save payloads', () => {
     invalidateDashboardCacheMock.mockReset();
     resetInputs();
     resetState();
+    globalThis.fetch = originalFetch;
   });
 
   it('shows validation errors and skips the API for missing new-album required fields', async () => {
@@ -278,5 +295,116 @@ describe('modal save payloads', () => {
     });
     expect(payload.artists).toHaveLength(2);
     expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+  });
+
+  it('keeps the modal open and restores controls when a save fails', async () => {
+    const { handleSaveNew } = await import('../public/js/modal.js');
+    fillManualFields();
+    apiFetchMock.mockRejectedValueOnce(new Error('Server went away.'));
+
+    await handleSaveNew();
+
+    expect(stateMock.modal.open).toBe(true);
+    expect(elMock.modalOverlay.classList.contains('hidden')).toBe(false);
+    expect(elMock.fetchError.textContent).toBe('Server went away.');
+    expect(elMock.btnSave.disabled).toBe(false);
+  });
+
+  it('guards modal close while saving or uploading unless forced', async () => {
+    const { closeModal } = await import('../public/js/modal.js');
+
+    stateMock.modal.isSaving = true;
+    expect(closeModal()).toBe(false);
+    expect(stateMock.modal.open).toBe(true);
+    expect(elMock.modalOverlay.classList.contains('hidden')).toBe(false);
+
+    stateMock.modal.isSaving = false;
+    stateMock.modal.isUploadingArt = true;
+    expect(closeModal()).toBe(false);
+    expect(stateMock.modal.open).toBe(true);
+
+    expect(closeModal({ force: true })).toBe(true);
+    expect(stateMock.modal.open).toBe(false);
+    expect(elMock.modalOverlay.classList.contains('hidden')).toBe(true);
+  });
+
+  it('keeps the edit modal context when delete confirmation is canceled', async () => {
+    const { openDeleteConfirm, closeDeleteConfirm } = await import('../public/js/modal.js');
+    stateMock.albums = [
+      {
+        id: 7,
+        album_name: 'Keep Editing',
+        artists: [{ name: 'Context Artist' }],
+      },
+    ];
+    stateMock.modal = {
+      open: true,
+      mode: 'edit',
+      albumId: 7,
+      isManual: true,
+      isSaving: false,
+      pendingMeta: null,
+    };
+
+    expect(openDeleteConfirm(7)).toBe(true);
+    expect(stateMock.modal.open).toBe(true);
+    expect(elMock.modalOverlay.classList.contains('hidden')).toBe(false);
+    expect(elMock.deleteOverlay.classList.contains('hidden')).toBe(false);
+
+    closeDeleteConfirm();
+
+    expect(stateMock.modal.open).toBe(true);
+    expect(elMock.modalOverlay.classList.contains('hidden')).toBe(false);
+    expect(elMock.deleteOverlay.classList.contains('hidden')).toBe(true);
+  });
+
+  it('waits for pending art upload before saving with the uploaded image path', async () => {
+    const { handleImageUpload, handleSaveNew } = await import('../public/js/modal.js');
+    fillManualFields();
+    let resolveUpload;
+    globalThis.fetch = vi.fn(() => new Promise(resolve => {
+      resolveUpload = resolve;
+    }));
+
+    const uploadPromise = handleImageUpload(new File(['cover'], 'cover.jpg', { type: 'image/jpeg' }));
+    const savePromise = handleSaveNew();
+
+    expect(stateMock.modal.isUploadingArt).toBe(true);
+    expect(elMock.btnSave.disabled).toBe(true);
+    expect(apiFetchMock).not.toHaveBeenCalled();
+
+    resolveUpload(new Response(JSON.stringify({ image_path: 'images/uploaded-cover.jpg' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await uploadPromise;
+    await savePromise;
+
+    const payload = JSON.parse(apiFetchMock.mock.calls[0][1].body);
+    expect(payload.image_path).toBe('images/uploaded-cover.jpg');
+    expect(elMock.metaArtUpload.value).toBe('');
+  });
+
+  it('stops the current save attempt when a pending art upload fails', async () => {
+    const { handleImageUpload, handleSaveNew } = await import('../public/js/modal.js');
+    fillManualFields();
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ error: 'Too large.' }), {
+      status: 413,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    const uploadPromise = handleImageUpload(new File(['cover'], 'cover.jpg', { type: 'image/jpeg' }));
+    await handleSaveNew();
+    await uploadPromise;
+
+    expect(apiFetchMock).not.toHaveBeenCalled();
+    expect(elMock.fetchError.textContent).toContain('Too large.');
+    expect(elMock.btnSave.disabled).toBe(false);
+
+    await handleSaveNew();
+
+    expect(apiFetchMock).toHaveBeenCalledOnce();
+    const payload = JSON.parse(apiFetchMock.mock.calls[0][1].body);
+    expect(payload).not.toHaveProperty('image_path');
   });
 });

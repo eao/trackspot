@@ -358,7 +358,7 @@
     MODAL — Log / Edit album
   ------------------------------------------------------------------------ -->
   <div id="modal-overlay" class="modal-overlay hidden">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
 
       <div class="modal-header">
         <h2 id="modal-title">Log Album</h2>
@@ -397,6 +397,7 @@
                 <input id="meta-art-upload" type="file" accept="image/jpeg,image/png,image/webp"
                   class="hidden" />
               </label>
+              <div id="meta-art-upload-status" class="art-upload-status hidden" role="status" aria-live="polite" aria-atomic="true"></div>
               <button id="btn-refetch-art" class="btn btn-ghost btn-full hidden" type="button">Re-fetch art</button>
               <button id="btn-delete-art" class="btn btn-ghost btn-full hidden" type="button">Delete art</button>
               <button id="btn-random-art" class="btn btn-ghost btn-full hidden" type="button">Random art</button>
@@ -606,9 +607,9 @@
     MODAL — Confirm delete
   ------------------------------------------------------------------------ -->
   <div id="delete-overlay" class="modal-overlay hidden">
-    <div class="modal modal-small">
+    <div class="modal modal-small" role="dialog" aria-modal="true" aria-labelledby="delete-title" tabindex="-1">
       <div class="modal-header">
-        <h2>Delete album?</h2>
+        <h2 id="delete-title">Delete album?</h2>
       </div>
       <div class="modal-body">
         <p id="delete-message"></p>
@@ -628,10 +629,10 @@
     MODAL — Settings
   ------------------------------------------------------------------------ -->
   <div id="settings-overlay" class="modal-overlay settings-panel-overlay hidden">
-    <div class="modal modal-settings">
+    <div class="modal modal-settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1">
 
       <div class="modal-header">
-        <h2>Settings &amp; More</h2>
+        <h2 id="settings-title">Settings &amp; More</h2>
         <button id="settings-close" class="btn btn-icon" title="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
 
@@ -1091,9 +1092,9 @@
   </div>
 
   <div id="personalization-overlay" class="modal-overlay settings-panel-overlay hidden">
-    <div class="modal modal-settings">
+    <div class="modal modal-settings" role="dialog" aria-modal="true" aria-labelledby="personalization-title" tabindex="-1">
       <div class="modal-header">
-        <h2>Personalization</h2>
+        <h2 id="personalization-title">Personalization</h2>
         <button id="personalization-close" class="btn btn-icon" title="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
 
@@ -1662,9 +1663,9 @@
   <div id="page-count" class="page-count hidden" aria-hidden="true"></div>
 
   <div id="csv-format-overlay" class="modal-overlay hidden">
-    <div class="modal modal-small modal-csv-help">
+    <div class="modal modal-small modal-csv-help" role="dialog" aria-modal="true" aria-labelledby="csv-format-title" tabindex="-1">
       <div class="modal-header">
-        <h2>Spotify CSV import format</h2>
+        <h2 id="csv-format-title">Spotify CSV import format</h2>
         <button id="csv-format-close" class="btn btn-icon" title="Close"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="modal-body csv-help-body">

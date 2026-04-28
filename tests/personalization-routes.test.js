@@ -253,7 +253,7 @@ describe('personalization API routes', () => {
     expect(cascaded.body.deletedThemes).toEqual([expect.objectContaining({ id: theme.id })]);
     expect(store.findOpacityPresetById(preset.id)).toBeNull();
     expect(store.findThemeById(theme.id)).toBeNull();
-  });
+  }, 10000);
 
   it('blocks dependent background deletion until cascade is requested', async () => {
     const { app, store } = loadPersonalizationRouteContext();

@@ -30,6 +30,7 @@ import {
 import { syncHeaderScrollBaseline } from './header-scroll.js';
 import { syncAppShellLayout } from './app-shell.js';
 import { invalidateDashboardCache } from './dashboard.js';
+import { closeManagedModal, openManagedModal } from './modal-manager.js';
 import {
   saveComplexStatuses, renderComplexStatusList, renderStatusDropdown,
   updateRestoreBtn, applyFilterState,
@@ -98,6 +99,7 @@ const EARLY_WRAPPED_CONFIRM_STEPS = [
 function invalidateAlbumDerivedState(options = {}) {
   const { clearDetails = true } = options;
   invalidateDashboardCache();
+  state.albumsError = null;
   if (clearDetails) {
     state.albumDetailsCache = {};
   }
@@ -2574,16 +2576,24 @@ export function openSettings() {
   closePersonalization();
   if (!el.settingsOverlay) return;
   el.settingsOverlay.classList.remove('hidden');
+  openManagedModal({
+    overlay: el.settingsOverlay,
+    dialog: el.settingsOverlay.querySelector('.modal') ?? el.settingsOverlay,
+    initialFocus: el.settingsClose,
+    onRequestClose: () => closeSettings(),
+  });
   renderComplexStatusList();
   renderUButtonList();
   refreshWelcomeTourSettings().catch(() => {});
 }
 
-export function closeSettings() {
-  if (!el.settingsOverlay) return;
+export function closeSettings(options = {}) {
+  if (!el.settingsOverlay) return false;
   el.settingsOverlay.classList.add('hidden');
   closeEarlyWrappedConfirmation();
-  closeCsvFormattingInstructions();
+  closeCsvFormattingInstructions({ restoreFocus: false });
+  closeManagedModal(el.settingsOverlay, options);
+  return true;
 }
 
 export function openPersonalization() {
@@ -2602,22 +2612,39 @@ export function openPersonalization() {
   }
   renderPersonalizationBackgrounds();
   el.personalizationOverlay.classList.remove('hidden');
+  openManagedModal({
+    overlay: el.personalizationOverlay,
+    dialog: el.personalizationOverlay.querySelector('.modal') ?? el.personalizationOverlay,
+    initialFocus: el.personalizationClose,
+    onRequestClose: () => closePersonalization(),
+  });
   loadBackgroundLibrary().catch(() => {});
   loadOpacityPresets({ showError: true }).catch(() => {});
   loadThemes({ showError: true }).catch(() => {});
 }
 
-export function closePersonalization() {
-  if (!el.personalizationOverlay) return;
+export function closePersonalization(options = {}) {
+  if (!el.personalizationOverlay) return false;
   el.personalizationOverlay.classList.add('hidden');
+  closeManagedModal(el.personalizationOverlay, options);
+  return true;
 }
 
 export function openCsvFormattingInstructions() {
   el.csvFormatOverlay.classList.remove('hidden');
+  openManagedModal({
+    overlay: el.csvFormatOverlay,
+    dialog: el.csvFormatOverlay.querySelector('.modal') ?? el.csvFormatOverlay,
+    initialFocus: el.csvFormatClose,
+    onRequestClose: () => closeCsvFormattingInstructions(),
+  });
 }
 
-export function closeCsvFormattingInstructions() {
+export function closeCsvFormattingInstructions(options = {}) {
+  if (!el.csvFormatOverlay) return false;
   el.csvFormatOverlay.classList.add('hidden');
+  closeManagedModal(el.csvFormatOverlay, options);
+  return true;
 }
 
 export async function refreshWelcomeTourSettings() {
@@ -4034,6 +4061,7 @@ export async function wipeDatabase() {
     state.albumDetailsCache = {};
     state.albumsLoaded = true;
     state.albumsLoading = false;
+    state.albumsError = null;
     state.albumListMeta = {
       totalCount: 0,
       filteredCount: 0,

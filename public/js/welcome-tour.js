@@ -1084,6 +1084,7 @@ function captureSnapshot() {
     albums: cloneJson(state.albums),
     albumsLoaded: state.albumsLoaded,
     albumsLoading: state.albumsLoading,
+    albumsError: state.albumsError,
     albumListMeta: cloneJson(state.albumListMeta),
     albumDetailsCache: cloneJson(state.albumDetailsCache),
     filters: cloneJson(state.filters),
@@ -1125,6 +1126,7 @@ async function restoreSnapshot() {
   state.albums = snapshot.albums;
   state.albumsLoaded = snapshot.albumsLoaded;
   state.albumsLoading = snapshot.albumsLoading;
+  state.albumsError = snapshot.albumsError ?? null;
   state.albumListMeta = snapshot.albumListMeta;
   state.albumDetailsCache = snapshot.albumDetailsCache;
   state.filters = snapshot.filters;

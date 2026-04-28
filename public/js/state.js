@@ -29,6 +29,7 @@ export const state = {
   albums: [],
   albumsLoaded: false,
   albumsLoading: false,
+  albumsError: null,
   albumListMeta: {
     totalCount: 0,
     filteredCount: 0,
@@ -108,6 +109,9 @@ export const state = {
     isManual:  false,  // true when user chose manual entry
     isFetching: false, // true while Spotify fetch is in flight
     isSaving:  false,  // true while save is in flight
+    isUploadingArt: false,
+    artUploadPromise: null,
+    artUploadError: null,
     // Pending metadata from Spotify fetch or manual entry.
     // This is what gets submitted to POST /api/albums.
     pendingMeta: null,
@@ -292,6 +296,7 @@ export const el = {
   metaArt:         document.getElementById('meta-art'),
   metaArtUploadLabel: document.getElementById('meta-art-upload-label'),
   metaArtUpload:   document.getElementById('meta-art-upload'),
+  metaArtUploadStatus: document.getElementById('meta-art-upload-status'),
   metaAlbumName:   document.getElementById('meta-album-name'),
   metaArtistNames: document.getElementById('meta-artist-names'),
   metaArtistNamesList: document.getElementById('artist-name-list'),

@@ -292,6 +292,7 @@ describe('loadAlbums startup gating', () => {
     await loadAlbums({
       preservePage: true,
       scrollToTop: true,
+      renderAlbums: vi.fn(),
     });
 
     expect(window.scrollTo).toHaveBeenCalledWith({

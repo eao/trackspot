@@ -51,6 +51,9 @@ vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 const stateMock = {
   albums: [],
   albumsLoaded: true,
+  albumsLoading: false,
+  albumsError: null,
+  albumListMeta: null,
   filters: {
     search: '',
     artist: '',
@@ -191,6 +194,11 @@ describe('list view responsive layout stages', () => {
       typeOther: true,
     };
     stateMock.complexStatuses = [];
+    stateMock.view = 'list';
+    stateMock.albumsLoaded = true;
+    stateMock.albumsLoading = false;
+    stateMock.albumsError = null;
+    stateMock.albumListMeta = null;
     stateMock.albums = [
       {
         id: 1,
@@ -372,6 +380,106 @@ describe('list view responsive layout stages', () => {
     noteLink?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
     expect(openEditModalMock).not.toHaveBeenCalled();
+  });
+
+  it('opens list rows and grid cards with Enter and Space', async () => {
+    const { render } = await import('../public/js/render.js');
+
+    render();
+
+    const row = viewListEl.querySelector('.album-row:not(.album-row-header)');
+    expect(row?.getAttribute('role')).toBe('button');
+    expect(row?.tabIndex).toBe(0);
+    expect(row?.getAttribute('aria-label')).toBe('Edit Modal Soul by Nujabes');
+
+    row?.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }));
+    expect(openEditModalMock).toHaveBeenLastCalledWith(1);
+
+    openEditModalMock.mockClear();
+    const card = viewGridEl.querySelector('.album-card');
+    expect(card?.getAttribute('role')).toBe('button');
+    expect(card?.tabIndex).toBe(0);
+
+    card?.dispatchEvent(new KeyboardEvent('keydown', {
+      key: ' ',
+      bubbles: true,
+      cancelable: true,
+    }));
+    expect(openEditModalMock).toHaveBeenLastCalledWith(1);
+  });
+
+  it('does not open the album modal when keyboard events start inside a note link', async () => {
+    const { render } = await import('../public/js/render.js');
+
+    stateMock.albums = [
+      {
+        id: 1,
+        album_name: 'Modal Soul',
+        artists: [{ name: 'Nujabes' }],
+        album_type: 'ALBUM',
+        track_count: 20,
+        notes: '<a href="https://example.com">Example</a>',
+        release_year: 2005,
+        listened_at: '2026-04-15',
+        duration_ms: 2520000,
+        rating: 95,
+      },
+    ];
+
+    render();
+
+    viewListEl.querySelector('.row-notes a')?.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    expect(openEditModalMock).not.toHaveBeenCalled();
+  });
+
+  it('uses distinct empty-library, filtered-empty, and load-error messages', async () => {
+    const { render } = await import('../public/js/render.js');
+    emptyStateEl.innerHTML = '<p></p>';
+
+    stateMock.albums = [];
+    stateMock.albumListMeta = {
+      totalCount: 0,
+      filteredCount: 0,
+      currentPage: 1,
+      totalPages: 1,
+      startIndex: 0,
+      endIndex: 0,
+      isPaged: false,
+      perPage: null,
+      pageCount: 0,
+      trackedListenedMs: 0,
+    };
+    render();
+    expect(emptyStateEl.querySelector('p')?.textContent).toBe('No albums logged yet.');
+
+    stateMock.albumListMeta = {
+      ...stateMock.albumListMeta,
+      totalCount: 4,
+      filteredCount: 0,
+    };
+    render();
+    expect(emptyStateEl.querySelector('p')?.textContent).toBe('No albums match your filters.');
+
+    stateMock.view = 'grid';
+    stateMock.albumsError = 'Network down.';
+    stateMock.albumListMeta = {
+      ...stateMock.albumListMeta,
+      filteredCount: 4,
+    };
+    render();
+
+    expect(emptyStateEl.querySelector('p')?.textContent).toBe('Failed to load albums. Network down.');
+    expect(emptyStateEl.classList.contains('hidden')).toBe(false);
+    expect(viewGridEl.classList.contains('hidden')).toBe(true);
   });
 
   it('restores the wider desktop layout when the list grows again', async () => {

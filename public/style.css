@@ -903,6 +903,13 @@ select.input {
   border-color: color-mix(in srgb, var(--border) var(--ts-opacity-row), transparent);
 }
 
+.album-row:focus-visible,
+.album-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-color: color-mix(in srgb, var(--accent) 78%, var(--border));
+}
+
 .album-row-header {
   --ts-row-surface-opacity: var(--ts-opacity-row-header-background);
   --ts-row-surface-alpha: var(--ts-opacity-row-header-background-alpha);
@@ -1818,6 +1825,17 @@ select.input {
   padding: 10px 14px;
   color: var(--danger-hover);
   font-size: 0.85rem;
+}
+
+.art-upload-status {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.art-upload-status-error {
+  color: var(--danger-hover);
 }
 
 /* -------------------------------------------------------------------------

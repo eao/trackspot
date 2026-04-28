@@ -11,6 +11,7 @@ import {
 import { loadAlbums, resetPagination } from './render.js';
 import { invalidateDashboardCache } from './dashboard.js';
 import { showArtButtons } from './modal-art.js';
+import { closeManagedModal, openManagedModal } from './modal-manager.js';
 
 // ---------------------------------------------------------------------------
 // Error display helpers
@@ -19,6 +20,8 @@ import { showArtButtons } from './modal-art.js';
 export function showError(msg) {
   el.fetchError.textContent = msg;
   el.fetchError.classList.remove('hidden');
+  el.fetchError.setAttribute('role', 'alert');
+  el.fetchError.setAttribute('tabindex', '-1');
 }
 
 export function hideError() {
@@ -48,6 +51,78 @@ function removeAlbumDetails(id) {
   if (idx !== -1) {
     state.albums.splice(idx, 1);
   }
+}
+
+function getMessage(error) {
+  return error?.message || String(error || 'Unknown error');
+}
+
+function getAlbumDialog() {
+  return el.modalOverlay?.querySelector('.modal') ?? el.modalOverlay;
+}
+
+function setArtUploadStatus(message = '', isError = false) {
+  if (!el.metaArtUploadStatus) return;
+  el.metaArtUploadStatus.textContent = message;
+  el.metaArtUploadStatus.classList.toggle('hidden', !message);
+  el.metaArtUploadStatus.classList.toggle('art-upload-status-error', isError);
+}
+
+function resetArtUploadState() {
+  state.modal.isUploadingArt = false;
+  state.modal.artUploadPromise = null;
+  state.modal.artUploadError = null;
+  setArtUploadStatus('');
+  if (el.metaArtUpload) el.metaArtUpload.value = '';
+}
+
+function syncAlbumModalBusyControls() {
+  const busy = !!(state.modal.isSaving || state.modal.isUploadingArt);
+  if (el.btnSave) {
+    el.btnSave.disabled = busy;
+    el.btnSave.textContent = state.modal.isSaving ? 'Saving…' : 'Save';
+  }
+  [el.btnCancel, el.modalClose, el.btnModalDelete].forEach(button => {
+    if (button) button.disabled = busy;
+  });
+  if (el.metaArtUpload) el.metaArtUpload.disabled = busy;
+  if (el.metaArtUploadLabel) el.metaArtUploadLabel.setAttribute('aria-disabled', busy ? 'true' : 'false');
+  getAlbumDialog()?.setAttribute('aria-busy', busy ? 'true' : 'false');
+}
+
+function createModalState(overrides = {}) {
+  return {
+    open:        true,
+    mode:        null,
+    step:        'details',
+    albumId:     null,
+    isManual:    false,
+    isFetching:  false,
+    isSaving:    false,
+    isUploadingArt: false,
+    artUploadPromise: null,
+    artUploadError: null,
+    pendingMeta: null,
+    ...overrides,
+  };
+}
+
+function focusSaveError() {
+  if (!el.fetchError?.classList.contains('hidden')) {
+    el.fetchError.focus?.();
+    return;
+  }
+  el.btnSave?.focus?.();
+}
+
+async function waitForPendingArtUpload() {
+  const pendingUpload = state.modal.artUploadPromise;
+  if (!pendingUpload) return true;
+  const uploaded = await pendingUpload;
+  if (uploaded) return true;
+  showError(state.modal.artUploadError || 'Image upload failed. Save again to continue without the selected image.');
+  focusSaveError();
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -265,16 +340,11 @@ export function syncAlbumModalDebugControls() {
 // ---------------------------------------------------------------------------
 
 export function openLogModal() {
-  state.modal = {
-    open:        true,
-    mode:        'log',
-    step:        'details',
-    albumId:     null,
-    isManual:    true,
-    isFetching:  false,
-    isSaving:    false,
-    pendingMeta: null,
-  };
+  state.modal = createModalState({
+    mode: 'log',
+    albumId: null,
+    isManual: true,
+  });
 
   el.modalTitle.textContent = 'Log Album';
 
@@ -287,13 +357,18 @@ export function openLogModal() {
   clearDetailsFields();
   populateDetailsFields(null, true);
   hideError();
+  resetArtUploadState();
   syncAlbumModalFieldVisibility();
   syncAlbumModalDebugControls();
+  syncAlbumModalBusyControls();
 
   el.modalOverlay.classList.remove('hidden');
-
-  // Focus the album name input after the modal is visible.
-  setTimeout(() => el.metaAlbumName.focus(), 50);
+  openManagedModal({
+    overlay: el.modalOverlay,
+    dialog: getAlbumDialog(),
+    initialFocus: el.metaAlbumName,
+    onRequestClose: () => closeModal(),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -301,32 +376,53 @@ export function openLogModal() {
 // ---------------------------------------------------------------------------
 
 export async function handleImageUpload(file) {
-  if (!file) return;
+  if (!file) return true;
 
-  const formData = new FormData();
-  formData.append('image', file);
+  state.modal.isUploadingArt = true;
+  state.modal.artUploadError = null;
+  setArtUploadStatus('Uploading art...');
+  syncAlbumModalBusyControls();
 
-  try {
-    const result = await fetch('/api/albums/upload-image', {
-      method: 'POST',
-      body: formData,
-      // Do NOT set Content-Type here — the browser sets it automatically
-      // with the correct multipart boundary when using FormData.
-    });
-    const data = await result.json();
-    if (!result.ok) throw new Error(data.error);
+  const uploadPromise = (async () => {
+    const formData = new FormData();
+    formData.append('image', file);
 
-    // Store the returned path in pendingMeta so it gets saved with the album.
-    if (!state.modal.pendingMeta) state.modal.pendingMeta = {};
-    state.modal.pendingMeta.image_path = data.image_path;
+    try {
+      const result = await fetch('/api/albums/upload-image', {
+        method: 'POST',
+        body: formData,
+        // Do NOT set Content-Type here — the browser sets it automatically
+        // with the correct multipart boundary when using FormData.
+      });
+      const data = await result.json();
+      if (!result.ok) throw new Error(data.error || 'Upload failed.');
 
-    // Show a preview.
-    el.metaArt.src = '/' + data.image_path;
-    el.metaArt.classList.remove('hidden');
+      // Store the returned path in pendingMeta so it gets saved with the album.
+      if (!state.modal.pendingMeta) state.modal.pendingMeta = {};
+      state.modal.pendingMeta.image_path = data.image_path;
 
-  } catch (e) {
-    showError('Image upload failed: ' + e.message);
-  }
+      // Show a preview.
+      el.metaArt.src = '/' + data.image_path;
+      el.metaArt.classList.remove('hidden');
+      setArtUploadStatus('Art uploaded.');
+      return true;
+
+    } catch (e) {
+      const message = `Image upload failed: ${getMessage(e)}`;
+      state.modal.artUploadError = message;
+      setArtUploadStatus(message, true);
+      showError(message);
+      return false;
+    } finally {
+      state.modal.isUploadingArt = false;
+      state.modal.artUploadPromise = null;
+      if (el.metaArtUpload) el.metaArtUpload.value = '';
+      syncAlbumModalBusyControls();
+    }
+  })();
+
+  state.modal.artUploadPromise = uploadPromise;
+  return uploadPromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +447,8 @@ export async function handleSaveNew() {
     showError('Rating must be a number between 0 and 100.');
     return;
   }
+
+  if (!await waitForPendingArtUpload()) return;
 
   const artistIdRaw = el.metaArtistId.value.trim();
   const artists = parseArtistInput(artistInput).map(name => ({
@@ -387,7 +485,7 @@ export async function handleSaveNew() {
 
   state.modal.isSaving = true;
   el.btnSave.textContent = 'Saving…';
-  el.btnSave.disabled = true;
+  syncAlbumModalBusyControls();
   hideError();
 
   try {
@@ -398,14 +496,14 @@ export async function handleSaveNew() {
     invalidateDashboardCache();
     resetPagination();
     await loadAlbums();
-    closeModal();
+    closeModal({ force: true });
 
   } catch (e) {
-    showError(e.message);
+    showError(getMessage(e));
+    focusSaveError();
   } finally {
     state.modal.isSaving = false;
-    el.btnSave.textContent = 'Save';
-    el.btnSave.disabled = false;
+    syncAlbumModalBusyControls();
   }
 }
 
@@ -423,16 +521,11 @@ export async function openEditModal(id) {
     }
   }
 
-  state.modal = {
-    open:        true,
-    mode:        'edit',
-    step:        'details',
-    albumId:     id,
-    isManual:    !album.spotify_url,
-    isFetching:  false,
-    isSaving:    false,
-    pendingMeta: null,
-  };
+  state.modal = createModalState({
+    mode: 'edit',
+    albumId: id,
+    isManual: !album.spotify_url,
+  });
 
   el.modalTitle.textContent = 'Edit Album';
 
@@ -441,6 +534,7 @@ export async function openEditModal(id) {
   el.btnModalDelete.classList.remove('hidden');
 
   hideError();
+  resetArtUploadState();
   populateDetailsFields(album, !album.spotify_url);
 
   // Populate user fields from existing data.
@@ -457,8 +551,15 @@ export async function openEditModal(id) {
   syncAlbumModalFieldVisibility();
   showArtButtons();
   syncAlbumModalDebugControls();
+  syncAlbumModalBusyControls();
 
   el.modalOverlay.classList.remove('hidden');
+  openManagedModal({
+    overlay: el.modalOverlay,
+    dialog: getAlbumDialog(),
+    initialFocus: el.metaAlbumName,
+    onRequestClose: () => closeModal(),
+  });
   return true;
 }
 
@@ -578,15 +679,19 @@ export async function handleSaveEdit() {
     payload.album_link  = el.metaAlbumLink.value.trim() || null;
     payload.artist_link = el.metaArtistLink.value.trim() || null;
 
+    if (!await waitForPendingArtUpload()) return;
+
     // If a new image was uploaded during editing, include its path.
     if (state.modal.pendingMeta?.image_path) {
       payload.image_path = state.modal.pendingMeta.image_path;
     }
+  } else if (!await waitForPendingArtUpload()) {
+    return;
   }
 
   state.modal.isSaving = true;
   el.btnSave.textContent = 'Saving…';
-  el.btnSave.disabled = true;
+  syncAlbumModalBusyControls();
   hideError();
 
   try {
@@ -596,14 +701,14 @@ export async function handleSaveEdit() {
     })));
     invalidateDashboardCache();
     await loadAlbums({ preservePage: true });
-    closeModal();
+    closeModal({ force: true });
 
   } catch (e) {
-    showError(e.message);
+    showError(getMessage(e));
+    focusSaveError();
   } finally {
     state.modal.isSaving = false;
-    el.btnSave.textContent = 'Save';
-    el.btnSave.disabled = false;
+    syncAlbumModalBusyControls();
   }
 }
 
@@ -611,13 +716,20 @@ export async function handleSaveEdit() {
 // Modal close
 // ---------------------------------------------------------------------------
 
-export function closeModal() {
+export function closeModal(options = {}) {
+  if ((state.modal.isSaving || state.modal.isUploadingArt) && !options.force) {
+    return false;
+  }
   state.modal.open = false;
   el.modalOverlay.classList.add('hidden');
   el.btnModalDelete.classList.add('hidden');
   el.artRefetchPreview.classList.add('hidden');
+  resetArtUploadState();
+  syncAlbumModalBusyControls();
+  closeManagedModal(el.modalOverlay, options);
   syncAlbumModalDebugControls();
   hideError();
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -626,7 +738,7 @@ export function closeModal() {
 
 export function openDeleteConfirm(id) {
   const album = getAlbumById(id);
-  if (!album) return;
+  if (!album) return false;
 
   state.deleteTarget = { id, name: album.album_name };
 
@@ -635,11 +747,21 @@ export function openDeleteConfirm(id) {
     `${formatArtists(album.artists)}? This cannot be undone.`;
 
   el.deleteOverlay.classList.remove('hidden');
+  openManagedModal({
+    overlay: el.deleteOverlay,
+    dialog: el.deleteOverlay.querySelector('.modal') ?? el.deleteOverlay,
+    initialFocus: el.btnDeleteCancel,
+    opener: el.btnModalDelete,
+    onRequestClose: () => closeDeleteConfirm(),
+  });
+  return true;
 }
 
-export function closeDeleteConfirm() {
+export function closeDeleteConfirm(options = {}) {
   state.deleteTarget = null;
   el.deleteOverlay.classList.add('hidden');
+  closeManagedModal(el.deleteOverlay, options);
+  return true;
 }
 
 export async function handleDeleteConfirm() {
@@ -651,13 +773,13 @@ export async function handleDeleteConfirm() {
     removeAlbumDetails(id);
     invalidateDashboardCache();
     await loadAlbums({ preservePage: true });
-    closeDeleteConfirm();
-    closeModal();
+    closeDeleteConfirm({ restoreFocus: false });
+    closeModal({ force: true });
 
   } catch (e) {
     // Close the confirm modal and show the error in a more visible way
     // since there's no error display in the delete modal itself.
     closeDeleteConfirm();
-    alert(`Failed to delete album: ${e.message}`);
+    alert(`Failed to delete album: ${getMessage(e)}`);
   }
 }

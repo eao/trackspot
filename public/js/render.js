@@ -7,7 +7,7 @@ import {
   PAGE_ICON_FIRST, PAGE_ICON_PREV, PAGE_ICON_NEXT, PAGE_ICON_LAST,
 } from './state.js';
 import {
-  formatDate, formatRating, formatDuration, formatAlbumMetaTooltip, artUrl, escHtml, renderNotesHtml,
+  formatDate, formatRating, formatDuration, formatAlbumMetaTooltip, artUrl, renderNotesHtml,
   normalizeAlbumCollectionClientShape,
 } from './utils.js';
 import { renderArtistSpans } from './artists.js';
@@ -823,6 +823,7 @@ export function clearAlbumResults(options = {}) {
   state.albums = [];
   state.albumsLoaded = false;
   state.albumsLoading = loading;
+  state.albumsError = null;
   state.albumListMeta = getDefaultAlbumListMeta();
 }
 
@@ -832,6 +833,38 @@ export function getCurrentPageAlbums(collection = state.albums) {
 
 export async function preloadInitialVisibleAlbumArt(collection = state.albums, options = {}) {
   return preloadStartupAlbumArt(collection, options);
+}
+
+function getAlbumActionLabel(album) {
+  const artistNames = Array.isArray(album.artists)
+    ? album.artists.map(artist => typeof artist === 'string' ? artist : artist?.name).filter(Boolean)
+    : [];
+  const artistLabel = artistNames.length ? ` by ${artistNames.join(', ')}` : '';
+  return `Edit ${album.album_name || 'album'}${artistLabel}`;
+}
+
+function shouldIgnoreAlbumActionEvent(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || target === event.currentTarget) return false;
+  return !!target.closest('a, button, input, select, textarea, label, .artist-chip');
+}
+
+function makeAlbumActionTarget(element, album) {
+  element.tabIndex = 0;
+  element.setAttribute('role', 'button');
+  element.setAttribute('aria-label', getAlbumActionLabel(album));
+  element.addEventListener('click', event => {
+    if (shouldIgnoreAlbumActionEvent(event)) return;
+    event.stopPropagation();
+    openEditModal(album.id);
+  });
+  element.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (shouldIgnoreAlbumActionEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openEditModal(album.id);
+  });
 }
 
 function updatePageControls(meta) {
@@ -973,7 +1006,7 @@ function renderList(albums, startIndex = 0, options = {}) {
     row.appendChild(yearEl);
     row.appendChild(dateEl);
 
-    row.addEventListener('click', () => openEditModal(album.id));
+    makeAlbumActionTarget(row, album);
     el.viewList.appendChild(row);
     rows.push(row);
 
@@ -1074,6 +1107,7 @@ function renderGrid(albums, options = {}) {
     infoEl.appendChild(footerEl);
     card.appendChild(artEl);
     card.appendChild(infoEl);
+    makeAlbumActionTarget(card, album);
 
     return card;
   });
@@ -1108,8 +1142,9 @@ export function render() {
   const pageAlbums = state.albums;
   const collectionView = getCurrentCollectionView();
   const isLoading = isCollectionPage && state.albumsLoading;
+  const hasError = isCollectionPage && !!state.albumsError;
 
-  if (isCollectionPage) {
+  if (isCollectionPage && !hasError) {
     const startupAnimatedView = _initialRender ? collectionView : null;
     const consumedListStartup = renderList(pageAlbums, meta.startIndex, {
       animateIn: startupAnimatedView === 'list',
@@ -1123,21 +1158,28 @@ export function render() {
   }
 
   const isEmpty = isCollectionPage && state.albumsLoaded && meta.filteredCount === 0;
+  const showEmptyState = hasError || isEmpty || isLoading;
   const emptyStateMessage = el.emptyState.querySelector('p');
   if (emptyStateMessage) {
-    emptyStateMessage.textContent = isLoading
-      ? 'Loading albums...'
-      : 'No albums match your filters.';
+    emptyStateMessage.textContent = hasError
+      ? `Failed to load albums. ${state.albumsError}`
+      : isLoading
+        ? 'Loading albums...'
+        : meta.totalCount === 0
+          ? 'No albums logged yet.'
+          : 'No albums match your filters.';
   }
-  el.emptyState.classList.toggle('hidden', !isEmpty && !isLoading);
-  el.viewList.classList.toggle('hidden', !isCollectionPage || isEmpty || isLoading || collectionView !== 'list');
-  el.viewGrid.classList.toggle('hidden', !isCollectionPage || isEmpty || isLoading || collectionView !== 'grid');
+  el.emptyState.classList.toggle('hidden', !showEmptyState);
+  el.viewList.classList.toggle('hidden', !isCollectionPage || showEmptyState || collectionView !== 'list');
+  el.viewGrid.classList.toggle('hidden', !isCollectionPage || showEmptyState || collectionView !== 'grid');
   if (isCollectionPage) {
     syncListResponsiveLayout();
   }
   updatePageControls(meta);
 
-  if (isLoading) {
+  if (hasError) {
+    el.albumCount.textContent = 'Failed to load albums.';
+  } else if (isLoading) {
     el.albumCount.textContent = 'Loading albums...';
   } else {
     const total = meta.totalCount;
@@ -1231,6 +1273,7 @@ export async function loadAlbums(options = {}) {
   }
   params.set('include_other', state.filters.typeOther ? '1' : '0');
   const requestId = ++latestAlbumLoadRequestId;
+  state.albumsError = null;
 
   try {
     const response = await apiFetch(`/api/albums?${params}`);
@@ -1254,19 +1297,15 @@ export async function loadAlbums(options = {}) {
     state.pagination.currentPage = state.albumListMeta.currentPage;
     state.albumsLoaded = true;
     state.albumsLoading = false;
+    state.albumsError = null;
     renderAlbums();
     return true;
   } catch (e) {
     if (requestId !== latestAlbumLoadRequestId) return false;
     state.albumsLoading = false;
+    state.albumsError = e?.message || String(e);
     console.error('Failed to load albums:', e);
-    // Show a minimal error in the content area rather than a blank screen.
-    el.viewList.innerHTML = `
-      <div class="empty-state">
-        <p>Failed to load albums. Is the server running?</p>
-        <p style="margin-top:8px; font-size:0.8rem;">${escHtml(e.message)}</p>
-      </div>
-    `;
+    renderAlbums();
     return true;
   }
 }
