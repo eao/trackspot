@@ -1379,6 +1379,50 @@ describe('backup and restore', () => {
     expect(fs.readFileSync(path.join(dataDir, restored.image_path)).toString()).toBe('refetched-image');
   }, 15000);
 
+  it('uses bundled legacy managed art before refetching when merging backups without image_path', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 503,
+      arrayBuffer: async () => Buffer.from(''),
+    });
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabaseWithoutImagePath(zip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: 'legacy123',
+        album_name: 'Legacy Bundled Art Album',
+        artists: JSON.stringify([{ name: 'Legacy Artist' }]),
+        image_url_large: 'https://example.test/legacy-art.jpg',
+      },
+    ]);
+    zip.addFile('images/legacy123.jpg', Buffer.from('backup-image'));
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare(`
+      SELECT album_name, image_path
+      FROM albums
+      WHERE album_name = ?
+    `).get('Legacy Bundled Art Album');
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+      imagesCopied: 1,
+      imagesRefetched: 0,
+    });
+    expect(restored).toEqual({
+      album_name: 'Legacy Bundled Art Album',
+      image_path: 'images/legacy123.jpg',
+    });
+    expect(fs.readFileSync(path.join(dataDir, restored.image_path)).toString()).toBe('backup-image');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  }, 15000);
+
   it('normalizes legacy empty Spotify IDs to null when merging distinct manual albums', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;

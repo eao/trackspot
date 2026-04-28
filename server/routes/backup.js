@@ -766,6 +766,20 @@ function getZipAlbumImageEntries(zip) {
   return entries;
 }
 
+const LEGACY_MANAGED_ALBUM_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+
+function findLegacyManagedZipImage(row, zipImageEntries) {
+  if (!row.spotify_album_id) return null;
+
+  for (const ext of LEGACY_MANAGED_ALBUM_IMAGE_EXTENSIONS) {
+    const imagePath = buildManagedAlbumImagePath(row.spotify_album_id, ext);
+    const entry = zipImageEntries.get(imagePath);
+    if (entry) return { entryKey: imagePath, entry };
+  }
+
+  return null;
+}
+
 function getManualMergeKey(row) {
   if (row.album_name === null || row.album_name === undefined) return null;
   if (row.artists === null || row.artists === undefined) return null;
@@ -953,16 +967,21 @@ async function prepareMergeAlbumRows(rows, zip, stagingImagesDir) {
     }
 
     const entry = entryKey ? zipImageEntries.get(entryKey) : null;
-    if (entry) {
-      imageAsset = stagedAssetsByBackupImagePath.get(entryKey) || null;
+    const legacyEntry = entry ? null : findLegacyManagedZipImage(preparedRow, zipImageEntries);
+    const zipImage = entry
+      ? { entryKey, entry }
+      : legacyEntry;
+
+    if (zipImage) {
+      imageAsset = stagedAssetsByBackupImagePath.get(zipImage.entryKey) || null;
       if (!imageAsset) {
         imageAsset = stageMergeZipImage(
-          entry,
-          entryKey,
+          zipImage.entry,
+          zipImage.entryKey,
           stagingImagesDir,
           reservedFinalImagePaths,
         );
-        stagedAssetsByBackupImagePath.set(entryKey, imageAsset);
+        stagedAssetsByBackupImagePath.set(zipImage.entryKey, imageAsset);
       }
       preparedRow.image_path = imageAsset?.finalImagePath ?? null;
     } else {
