@@ -3,6 +3,7 @@ import {
   formatAlbumMetaTooltip,
   formatDuration,
   getPreferredAlbumArtUrl,
+  getSafeExternalHref,
   parseArtistInput,
   renderNotesHtml,
 } from '../public/js/utils.js';
@@ -48,6 +49,13 @@ describe('frontend utils', () => {
 
     expect(html).toContain('href="spotify:album:3rHzUZDIsTv0zVyoNDN8YQ"');
     expect(html).toContain('>this album</a>');
+  });
+
+  it('normalizes external links and rejects scriptable schemes', () => {
+    expect(getSafeExternalHref(' HTTPS://example.com/a path?q=1 ')).toBe('https://example.com/a%20path?q=1');
+    expect(getSafeExternalHref('spotify:ALBUM:3rHzUZDIsTv0zVyoNDN8YQ')).toBe('spotify:album:3rHzUZDIsTv0zVyoNDN8YQ');
+    expect(getSafeExternalHref('javascript:alert(1)')).toBeNull();
+    expect(getSafeExternalHref('data:text/html,<script></script>')).toBeNull();
   });
 
   it('prefers stored album art over Spotify CDN URLs', () => {

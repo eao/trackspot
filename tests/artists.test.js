@@ -27,6 +27,11 @@ vi.mock('../public/js/state.js', () => ({
 
 vi.mock('../public/js/utils.js', () => ({
   escHtml: value => String(value),
+  getSafeExternalHref: value => {
+    if (!value) return null;
+    const raw = String(value).trim();
+    return raw.startsWith('javascript:') ? null : raw;
+  },
 }));
 
 vi.mock('../public/js/render.js', () => ({
@@ -85,5 +90,25 @@ describe('artist popover', () => {
     expect(elMock.filterArtistExact.checked).toBe(true);
     expect(resetPaginationMock).toHaveBeenCalledTimes(1);
     expect(loadAlbumsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render an artist link action for unsafe manual links', () => {
+    const wrap = renderArtistSpans([{ name: 'Unsafe Artist', manual_link: 'javascript:alert(1)' }]);
+    document.body.appendChild(wrap);
+
+    const chip = wrap.querySelector('.artist-chip');
+    chip.getBoundingClientRect = () => ({
+      top: 100,
+      right: 260,
+      bottom: 124,
+      left: 200,
+      width: 60,
+      height: 24,
+    });
+
+    chip.click();
+
+    expect(document.querySelector('.artist-popover-btn[data-action="link"]')).toBeNull();
+    expect(chip.dataset.artistLink).toBeUndefined();
   });
 });

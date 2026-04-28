@@ -76,6 +76,46 @@ function resetArtUploadState() {
   if (el.metaArtUpload) el.metaArtUpload.value = '';
 }
 
+function getPendingUploadedArtPath() {
+  return state.modal.pendingMeta?.image_path || null;
+}
+
+async function discardUploadedArtPath(imagePath) {
+  if (!imagePath) return false;
+  try {
+    await apiFetch('/api/albums/discard-uploaded-art', {
+      method: 'POST',
+      body: JSON.stringify({ image_path: imagePath }),
+    });
+    return true;
+  } catch (error) {
+    console.warn('Could not discard uploaded album art:', error);
+    return false;
+  }
+}
+
+function clearPendingUploadedArtReference(imagePath = getPendingUploadedArtPath()) {
+  clearPendingUploadedArtReferenceFromState(state.modal, imagePath);
+}
+
+function clearPendingUploadedArtReferenceFromState(modalState, imagePath) {
+  if (!modalState?.pendingMeta?.image_path) return;
+  if (imagePath && modalState.pendingMeta.image_path !== imagePath) return;
+  delete modalState.pendingMeta.image_path;
+  if (Object.keys(modalState.pendingMeta).length === 0) {
+    modalState.pendingMeta = null;
+  }
+}
+
+async function discardPendingUploadedArt() {
+  const modalState = state.modal;
+  const imagePath = modalState?.pendingMeta?.image_path || null;
+  if (!imagePath) return false;
+  const discarded = await discardUploadedArtPath(imagePath);
+  if (discarded) clearPendingUploadedArtReferenceFromState(modalState, imagePath);
+  return discarded;
+}
+
 function syncAlbumModalBusyControls() {
   const busy = !!(state.modal.isSaving || state.modal.isUploadingArt);
   if (el.btnSave) {
@@ -489,16 +529,19 @@ export async function handleSaveNew() {
   hideError();
 
   try {
+    const pendingImagePath = getPendingUploadedArtPath();
     storeAlbumDetails(normalizeAlbumClientShape(await apiFetch('/api/albums', {
       method: 'POST',
       body: JSON.stringify(payload),
     })));
+    clearPendingUploadedArtReference(pendingImagePath);
     invalidateDashboardCache();
     resetPagination();
     await loadAlbums();
     closeModal({ force: true });
 
   } catch (e) {
+    await discardPendingUploadedArt();
     showError(getMessage(e));
     focusSaveError();
   } finally {
@@ -695,15 +738,18 @@ export async function handleSaveEdit() {
   hideError();
 
   try {
+    const pendingImagePath = getPendingUploadedArtPath();
     storeAlbumDetails(normalizeAlbumClientShape(await apiFetch(`/api/albums/${state.modal.albumId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     })));
+    clearPendingUploadedArtReference(pendingImagePath);
     invalidateDashboardCache();
     await loadAlbums({ preservePage: true });
     closeModal({ force: true });
 
   } catch (e) {
+    await discardPendingUploadedArt();
     showError(getMessage(e));
     focusSaveError();
   } finally {
@@ -724,6 +770,7 @@ export function closeModal(options = {}) {
   el.modalOverlay.classList.add('hidden');
   el.btnModalDelete.classList.add('hidden');
   el.artRefetchPreview.classList.add('hidden');
+  void discardPendingUploadedArt();
   resetArtUploadState();
   syncAlbumModalBusyControls();
   closeManagedModal(el.modalOverlay, options);

@@ -2,12 +2,31 @@ const express = require('express');
 const path = require('path');
 const { getConfiguredPath, getCorsAllowedOrigins } = require('./config');
 
+function getOriginFromReferer(referer) {
+  try {
+    return referer ? new URL(referer).origin : '';
+  } catch {
+    return '';
+  }
+}
+
+function getRequestOrigin(req) {
+  const host = req.headers.host;
+  if (!host) return '';
+  return `${req.protocol || 'http'}://${host}`;
+}
+
+function isReadOnlyRequest(req) {
+  return req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
+}
+
+function isAllowedBrowserOrigin(req, browserOrigin, allowedOrigins) {
+  if (!browserOrigin) return true;
+  return allowedOrigins.has(browserOrigin) || browserOrigin === getRequestOrigin(req);
+}
+
 function createApp() {
   const app = express();
-
-  // Parse incoming JSON request bodies. Spicetify album imports can exceed the
-  // default 100 KB limit for especially large albums, so allow a modest buffer.
-  app.use(express.json({ limit: '512kb' }));
 
   const allowedOrigins = new Set(getCorsAllowedOrigins());
   app.use((req, res, next) => {
@@ -21,8 +40,18 @@ function createApp() {
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
     }
+    if (!isReadOnlyRequest(req)) {
+      const browserOrigin = origin || getOriginFromReferer(req.headers.referer);
+      if (!isAllowedBrowserOrigin(req, browserOrigin, allowedOrigins)) {
+        return res.status(403).json({ error: 'Cross-origin mutation rejected.' });
+      }
+    }
     return next();
   });
+
+  // Parse incoming JSON request bodies. Spicetify album imports can exceed the
+  // default 100 KB limit for especially large albums, so allow a modest buffer.
+  app.use(express.json({ limit: '512kb' }));
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
   app.use(
@@ -99,4 +128,8 @@ function createApp() {
 
 module.exports = {
   createApp,
+  getOriginFromReferer,
+  getRequestOrigin,
+  isAllowedBrowserOrigin,
+  isReadOnlyRequest,
 };

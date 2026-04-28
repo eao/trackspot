@@ -8,7 +8,7 @@ import {
 } from './state.js';
 import {
   formatDate, formatRating, formatDuration, formatAlbumMetaTooltip, artUrl, renderNotesHtml,
-  normalizeAlbumCollectionClientShape,
+  getSafeExternalHref, normalizeAlbumCollectionClientShape,
 } from './utils.js';
 import { renderArtistSpans } from './artists.js';
 import { openEditModal } from './modal.js';
@@ -945,11 +945,12 @@ function renderList(albums, startIndex = 0, options = {}) {
 
     const albumNameEl = document.createElement('div');
     albumNameEl.className = 'row-album';
-    if (album.album_link) {
+    const safeAlbumLink = getSafeExternalHref(album.album_link);
+    if (safeAlbumLink) {
       const link = document.createElement('a');
       link.textContent = album.album_name;
-      link.href = album.album_link;
-      applyExternalLinkAttrs(link, album.album_link);
+      link.href = safeAlbumLink;
+      applyExternalLinkAttrs(link, safeAlbumLink);
       link.title = 'Open album link';
       link.addEventListener('click', e => e.stopPropagation());
       albumNameEl.appendChild(link);
@@ -1066,11 +1067,12 @@ function renderGrid(albums, options = {}) {
 
     const titleEl = document.createElement('div');
     titleEl.className = 'card-title';
-    if (album.album_link) {
+    const safeAlbumLink = getSafeExternalHref(album.album_link);
+    if (safeAlbumLink) {
       const link = document.createElement('a');
       link.textContent = album.album_name;
-      link.href = album.album_link;
-      applyExternalLinkAttrs(link, album.album_link);
+      link.href = safeAlbumLink;
+      applyExternalLinkAttrs(link, safeAlbumLink);
       link.title = 'Open album link';
       link.addEventListener('click', e => e.stopPropagation());
       titleEl.appendChild(link);

@@ -64,6 +64,7 @@ vi.mock('../public/js/utils.js', () => ({
   formatAlbumMetaTooltip: vi.fn(() => ''),
   artUrl: vi.fn(),
   escHtml: value => value,
+  getSafeExternalHref: value => value || null,
   renderNotesHtml: vi.fn(),
   normalizeAlbumCollectionClientShape: albums => albums,
 }));

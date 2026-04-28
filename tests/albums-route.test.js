@@ -486,6 +486,44 @@ describe('albums route helpers', () => {
     expect(fs.readFileSync(preferencesPath, 'utf8')).toBe('keep-me');
   });
 
+  it('discards unreferenced manual uploads but keeps referenced art', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const unreferencedPath = 'images/manual_123_abc.jpg';
+    const referencedPath = 'images/manual_456_def.png';
+    const unreferencedFullPath = writeImage(dbModule, unreferencedPath, 'orphan');
+    const referencedFullPath = writeImage(dbModule, referencedPath, 'kept');
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, image_path
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Referenced Upload',
+      JSON.stringify([{ name: 'Careful Artist' }]),
+      'completed',
+      'manual',
+      referencedPath,
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'post', '/discard-uploaded-art');
+    const orphanRes = createResponse();
+    handler({ body: { image_path: unreferencedPath } }, orphanRes);
+
+    const referencedRes = createResponse();
+    handler({ body: { image_path: referencedPath } }, referencedRes);
+
+    expect(orphanRes.statusCode).toBe(200);
+    expect(orphanRes.jsonBody).toEqual({ ok: true, deleted: true });
+    expect(fs.existsSync(unreferencedFullPath)).toBe(false);
+    expect(referencedRes.statusCode).toBe(200);
+    expect(referencedRes.jsonBody).toEqual({ ok: true, deleted: false });
+    expect(fs.existsSync(referencedFullPath)).toBe(true);
+  });
+
   it('does not copy random art from crafted donor image paths', () => {
     const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
     const { db } = dbModule;
@@ -1368,6 +1406,40 @@ describe('albums route helpers', () => {
     expect(res.jsonBody.status).toBe('planned');
     expect(res.jsonBody.planned_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(res.jsonBody.listened_at).toBeNull();
+  });
+
+  it('clears unsafe manual links on create while preserving safe links', async () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const handler = getRouteHandler(albumsRouter, 'post', '/');
+    const res = createResponse();
+
+    await handler({
+      body: {
+        album_name: 'Linked Album',
+        artists: [{
+          name: 'Linked Artist',
+          manual_link: 'javascript:alert(1)',
+          share_url: 'https://example.com/artist',
+        }],
+        status: 'completed',
+        album_link: 'data:text/html,<script></script>',
+        artist_link: 'spotify:ARTIST:ABC123',
+      },
+    }, res);
+
+    expect(res.statusCode).toBe(201);
+    expect(res.jsonBody.album_link).toBeNull();
+    expect(res.jsonBody.artist_link).toBe('spotify:artist:ABC123');
+    expect(res.jsonBody.artists[0].manual_link).toBeNull();
+    expect(res.jsonBody.artists[0].share_url).toBe('https://example.com/artist');
+
+    const stored = db.prepare('SELECT album_link, artist_link, artists FROM albums WHERE id = ?').get(res.jsonBody.id);
+    expect(stored.album_link).toBeNull();
+    expect(stored.artist_link).toBe('spotify:artist:ABC123');
+    expect(JSON.parse(stored.artists)[0].manual_link).toBeNull();
   });
 
   it('stores exact manual release dates and derives release_year on create and edit', async () => {

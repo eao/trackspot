@@ -53,6 +53,7 @@ function getCorsAllowedOrigins() {
     'https://open.spotify.com',
     'https://xpui.app.spotify.com',
     `http://localhost:${getPort()}`,
+    `http://127.0.0.1:${getPort()}`,
     ...parseOriginList(process.env.CORS_ALLOWED_ORIGINS),
   ];
 }

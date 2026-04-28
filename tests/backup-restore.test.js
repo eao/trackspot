@@ -12,6 +12,8 @@ const serverModulePaths = [
   '../server/welcome-tour-store.js',
   '../server/preferences-store.js',
   '../server/album-helpers.js',
+  '../server/external-links.js',
+  '../server/http-downloads.js',
   '../server/spotify-helpers.js',
   '../server/db.js',
 ];
@@ -179,6 +181,81 @@ afterEach(async () => {
 });
 
 describe('backup and restore', () => {
+  it('rejects oversized backup entries before decompressing them', async () => {
+    const { dbModule, backupRouter } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const oversizedDbEntry = {
+      entryName: 'albums.db',
+      isDirectory: false,
+      header: { size: backupRouter.__private.BACKUP_RESTORE_MAX_DB_BYTES + 1 },
+      getData: vi.fn(() => Buffer.alloc(0)),
+    };
+    const zip = {
+      getEntries: () => [oversizedDbEntry],
+      getEntry: name => (name === 'albums.db' ? oversizedDbEntry : null),
+    };
+
+    await expect(backupRouter.__private.restoreFromZip(zip)).rejects.toThrow(/too large/i);
+    expect(oversizedDbEntry.getData).not.toHaveBeenCalled();
+  });
+
+  it('checks actual extracted ZIP entry size even when metadata is smaller', () => {
+    const { dbModule, backupRouter } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const entry = {
+      entryName: 'preferences.json',
+      isDirectory: false,
+      header: { size: 1 },
+      getData: vi.fn(() => Buffer.from('12345')),
+    };
+
+    expect(() => backupRouter.__private.readZipEntryData(entry, { maxEntryBytes: 4 }))
+      .toThrow(/too large/i);
+  });
+
+  it('sanitizes unsafe links from backup databases before restore', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, album_link, artist_link, created_at, updated_at
+      ) VALUES (
+        :id, :album_name, :artists, :status, :source, :album_link, :artist_link, :created_at, :updated_at
+      )
+    `).run({
+      id: 1,
+      album_name: 'Unsafe Backup Album',
+      artists: JSON.stringify([{
+        name: 'Unsafe Artist',
+        manual_link: 'javascript:alert(1)',
+        share_url: 'https://example.com/artist',
+      }]),
+      status: 'completed',
+      source: 'manual',
+      album_link: 'javascript:alert(1)',
+      artist_link: 'spotify:ARTIST:ABC123',
+      created_at: '2026-04-01 12:00:00',
+      updated_at: '2026-04-01 12:00:00',
+    });
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+
+    const result = await backupRouter.__private.restoreFromZip(zip);
+    const restored = db.prepare('SELECT album_link, artist_link, artists FROM albums WHERE id = ?').get(1);
+    const restoredArtists = JSON.parse(restored.artists);
+
+    expect(result.sanitizedLinks).toBe(1);
+    expect(restored.album_link).toBeNull();
+    expect(restored.artist_link).toBe('spotify:artist:ABC123');
+    expect(restoredArtists[0].manual_link).toBeNull();
+    expect(restoredArtists[0].share_url).toBe('https://example.com/artist');
+  });
+
   it('round-trips full backups without losing links, IDs, or import-job tables', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;

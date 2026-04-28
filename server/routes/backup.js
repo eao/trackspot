@@ -14,10 +14,21 @@ const {
   normalizeAlbumImagePath,
   resolveAlbumImagePath,
 } = require('../album-image-paths');
+const {
+  normalizeArtistExternalLinks,
+  normalizeExternalLink,
+} = require('../external-links');
+const { DEFAULT_MAX_DOWNLOAD_BYTES, responseToBufferWithLimit } = require('../http-downloads');
 const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
 const BACKUP_MANIFEST_NAME = 'trackspot-backup.json';
 const BACKUP_MANIFEST_VERSION = 1;
+const BACKUP_RESTORE_MAX_DB_BYTES = 512 * 1024 * 1024;
+const BACKUP_RESTORE_MAX_ENTRY_BYTES = 100 * 1024 * 1024;
+const BACKUP_RESTORE_MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
+const BACKUP_RESTORE_MAX_FILE_COUNT = 10000;
+const BACKUP_RESTORE_MAX_MANIFEST_BYTES = 256 * 1024;
+const BACKUP_ART_IMAGE_MAX_BYTES = DEFAULT_MAX_DOWNLOAD_BYTES;
 const RESTORE_JOURNAL_NAME = '_restore_journal.json';
 const RESTORE_JOURNAL_PATH = path.join(DATA_DIR, RESTORE_JOURNAL_NAME);
 const MERGE_JOURNAL_NAME = '_merge_journal.json';
@@ -323,6 +334,78 @@ function normalizeZipEntryName(entryName) {
   return String(entryName || '').replace(/\\/g, '/').replace(/^\/+/, '');
 }
 
+function getZipEntryUncompressedSize(entry) {
+  const candidates = [
+    entry?.header?.size,
+    entry?.header?.uncompressedSize,
+    entry?.rawEntry?.uncompressedSize,
+  ];
+  for (const candidate of candidates) {
+    const parsed = Number(candidate);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  return null;
+}
+
+function getZipEntryMaxBytes(entryName) {
+  const normalized = normalizeZipEntryName(entryName);
+  if (normalized === 'albums.db') return BACKUP_RESTORE_MAX_DB_BYTES;
+  if (normalized === BACKUP_MANIFEST_NAME) return BACKUP_RESTORE_MAX_MANIFEST_BYTES;
+  return BACKUP_RESTORE_MAX_ENTRY_BYTES;
+}
+
+function formatByteLimit(bytes) {
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
+
+function assertZipEntrySize(entry, options = {}) {
+  const entryName = normalizeZipEntryName(entry?.entryName);
+  const maxEntryBytes = options.maxEntryBytes || getZipEntryMaxBytes(entryName);
+  const reportedSize = getZipEntryUncompressedSize(entry);
+  if (reportedSize !== null && reportedSize > maxEntryBytes) {
+    throw new Error(
+      `Backup entry ${entryName || '(unknown)'} is too large. Maximum allowed size is ${formatByteLimit(maxEntryBytes)}.`
+    );
+  }
+}
+
+function validateZipExtractionLimits(zip) {
+  let fileCount = 0;
+  let totalReportedBytes = 0;
+
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) continue;
+    fileCount++;
+    if (fileCount > BACKUP_RESTORE_MAX_FILE_COUNT) {
+      throw new Error(`Backup contains too many files. Maximum allowed count is ${BACKUP_RESTORE_MAX_FILE_COUNT}.`);
+    }
+
+    assertZipEntrySize(entry);
+    const reportedSize = getZipEntryUncompressedSize(entry);
+    if (reportedSize !== null) {
+      totalReportedBytes += reportedSize;
+      if (totalReportedBytes > BACKUP_RESTORE_MAX_TOTAL_BYTES) {
+        throw new Error(
+          `Backup is too large after extraction. Maximum allowed size is ${formatByteLimit(BACKUP_RESTORE_MAX_TOTAL_BYTES)}.`
+        );
+      }
+    }
+  }
+}
+
+function readZipEntryData(entry, options = {}) {
+  const entryName = normalizeZipEntryName(entry?.entryName);
+  const maxEntryBytes = options.maxEntryBytes || getZipEntryMaxBytes(entryName);
+  assertZipEntrySize(entry, { maxEntryBytes });
+  const data = entry.getData();
+  if (data.length > maxEntryBytes) {
+    throw new Error(
+      `Backup entry ${entryName || '(unknown)'} is too large. Maximum allowed size is ${formatByteLimit(maxEntryBytes)}.`
+    );
+  }
+  return data;
+}
+
 const WINDOWS_RESERVED_BASENAME_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 const WINDOWS_RESERVED_PATH_CHARS_RE = /[<>:"|?*\u0000-\u001F]/;
 
@@ -384,7 +467,9 @@ function readBackupManifest(zip) {
   if (!entry || entry.isDirectory) return null;
 
   try {
-    const manifest = JSON.parse(entry.getData().toString('utf8'));
+    const manifest = JSON.parse(readZipEntryData(entry, {
+      maxEntryBytes: BACKUP_RESTORE_MAX_MANIFEST_BYTES,
+    }).toString('utf8'));
     if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null;
     return manifest;
   } catch {
@@ -460,6 +545,9 @@ function getAppStateEntriesToRestore(zip) {
     }
 
     entriesToRestore.push({ entry, normalized });
+    if (entriesToRestore.length > BACKUP_RESTORE_MAX_FILE_COUNT) {
+      throw new Error(`Backup contains too many app-state files. Maximum allowed count is ${BACKUP_RESTORE_MAX_FILE_COUNT}.`);
+    }
   }
 
   return entriesToRestore;
@@ -472,7 +560,7 @@ function stageAppStateFromZip(zip, stagingDir) {
   for (const { entry, normalized } of entriesToRestore) {
     const targetPath = resolveInside(stagingDir, normalized);
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, entry.getData());
+    fs.writeFileSync(targetPath, readZipEntryData(entry));
     filesRestored++;
   }
 
@@ -570,7 +658,9 @@ async function downloadImageToDir(imageUrl, albumId, targetImagesDir) {
     throw new Error(`Failed to download album art: ${response.status}`);
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
+  const buffer = await responseToBufferWithLimit(response, {
+    maxBytes: BACKUP_ART_IMAGE_MAX_BYTES,
+  });
   fs.mkdirSync(targetImagesDir, { recursive: true });
   fs.writeFileSync(filepath, buffer);
 
@@ -850,6 +940,82 @@ function sanitizeBackupAlbumImagePaths(connection) {
   return sanitizedImagePaths;
 }
 
+function sanitizeBackupArtistsLinksValue(value) {
+  if (typeof value !== 'string') return { artists: value, sanitized: false };
+  let artists;
+  try {
+    artists = JSON.parse(value || '[]');
+  } catch {
+    return { artists: value, sanitized: false };
+  }
+
+  const normalized = normalizeArtistExternalLinks(artists);
+  const serialized = JSON.stringify(normalized);
+  return {
+    artists: serialized,
+    sanitized: serialized !== value,
+  };
+}
+
+function sanitizeBackupExternalLinks(connection) {
+  const hasAlbumLink = tableHasColumn(connection, 'albums', 'album_link');
+  const hasArtistLink = tableHasColumn(connection, 'albums', 'artist_link');
+  const hasArtists = tableHasColumn(connection, 'albums', 'artists');
+  if (!hasAlbumLink && !hasArtistLink && !hasArtists) return 0;
+
+  const selectColumns = [
+    'rowid AS rowid',
+    hasAlbumLink ? 'album_link' : 'NULL AS album_link',
+    hasArtistLink ? 'artist_link' : 'NULL AS artist_link',
+    hasArtists ? 'artists' : 'NULL AS artists',
+  ];
+  const rows = connection.prepare(`
+    SELECT ${selectColumns.join(', ')}
+    FROM albums
+  `).all();
+
+  const assignments = [];
+  if (hasAlbumLink) assignments.push('album_link = :album_link');
+  if (hasArtistLink) assignments.push('artist_link = :artist_link');
+  if (hasArtists) assignments.push('artists = :artists');
+  if (!assignments.length) return 0;
+
+  const update = connection.prepare(`
+    UPDATE albums
+    SET ${assignments.join(', ')}
+    WHERE rowid = :rowid
+  `);
+  let sanitizedLinks = 0;
+
+  const run = connection.transaction(items => {
+    for (const row of items) {
+      const next = { rowid: row.rowid };
+      let sanitized = false;
+
+      if (hasAlbumLink) {
+        next.album_link = normalizeExternalLink(row.album_link);
+        sanitized = sanitized || next.album_link !== row.album_link;
+      }
+      if (hasArtistLink) {
+        next.artist_link = normalizeExternalLink(row.artist_link);
+        sanitized = sanitized || next.artist_link !== row.artist_link;
+      }
+      if (hasArtists) {
+        const artists = sanitizeBackupArtistsLinksValue(row.artists);
+        next.artists = artists.artists;
+        sanitized = sanitized || artists.sanitized;
+      }
+
+      if (!sanitized) continue;
+      update.run(next);
+      sanitizedLinks++;
+    }
+  });
+  run(rows);
+
+  return sanitizedLinks;
+}
+
 function ensureBackupAlbumImagePathColumn(connection) {
   if (tableHasColumn(connection, 'albums', 'image_path')) return false;
   connection.exec('ALTER TABLE albums ADD COLUMN image_path TEXT');
@@ -1046,7 +1212,9 @@ function stageMergeZipImage(entry, preferredImagePath, stagingImagesDir) {
   );
   if (!asset) return null;
 
-  fs.writeFileSync(asset.stagedFullPath, entry.getData());
+  fs.writeFileSync(asset.stagedFullPath, readZipEntryData(entry, {
+    maxEntryBytes: BACKUP_ART_IMAGE_MAX_BYTES,
+  }));
   return asset;
 }
 
@@ -1058,7 +1226,9 @@ async function downloadImageToPath(imageUrl, imagePath, targetImagesDir) {
     throw new Error(`Failed to download album art: ${response.status}`);
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
+  const buffer = await responseToBufferWithLimit(response, {
+    maxBytes: BACKUP_ART_IMAGE_MAX_BYTES,
+  });
   fs.mkdirSync(path.dirname(filepath), { recursive: true });
   fs.writeFileSync(filepath, buffer);
 
@@ -1462,7 +1632,9 @@ async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
       if (entry) {
         const destPath = resolveAlbumImagePath(entryKey, targetImagesDir).fullPath;
         if (isRestore || !fs.existsSync(destPath)) {
-          fs.writeFileSync(destPath, entry.getData());
+          fs.writeFileSync(destPath, readZipEntryData(entry, {
+            maxEntryBytes: BACKUP_ART_IMAGE_MAX_BYTES,
+          }));
           imagesCopied++;
         }
         restoredImagePath = entryKey;
@@ -1687,6 +1859,7 @@ router.post('/restore', upload.single('backup'), async (req, res) => {
 
 async function importFromZip(zip) {
   validateZipEntryNames(zip);
+  validateZipExtractionLimits(zip);
   const dbEntry = zip.getEntry('albums.db');
   if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
 
@@ -1710,10 +1883,13 @@ async function importFromZip(zip) {
 
     let added = 0, skipped = 0, imagesCopied = 0, imagesRefetched = 0;
     let sanitizedImagePaths = 0;
+    let sanitizedLinks = 0;
 
     try {
       writeMergeJournal(mergeJournal);
-      fs.writeFileSync(tmpPath, dbEntry.getData());
+      fs.writeFileSync(tmpPath, readZipEntryData(dbEntry, {
+        maxEntryBytes: BACKUP_RESTORE_MAX_DB_BYTES,
+      }));
       srcDb = new BetterSqlite(tmpPath);
 
       const tableCheck = srcDb.prepare(
@@ -1722,6 +1898,7 @@ async function importFromZip(zip) {
       if (!tableCheck) throw new Error('Backup database does not contain an albums table.');
 
       sanitizedImagePaths = sanitizeBackupAlbumImagePaths(srcDb);
+      sanitizedLinks = sanitizeBackupExternalLinks(srcDb);
       const backupAlbums = srcDb.prepare('SELECT * FROM albums').all().map(normalizeBackupAlbumRow);
       const { insertColumns, statement: insertStmt } = buildAlbumInsertStatement(srcDb, {
         extraColumns: ['image_path'],
@@ -1770,7 +1947,7 @@ async function importFromZip(zip) {
       }
     }
 
-    return { added, skipped, imagesCopied, imagesRefetched, sanitizedImagePaths };
+    return { added, skipped, imagesCopied, imagesRefetched, sanitizedImagePaths, sanitizedLinks };
   } finally {
     endBackupMutation('merge');
   }
@@ -1790,6 +1967,7 @@ async function restoreFromZip(zip) {
   let restoreSucceeded = false;
   let journal = null;
   let sanitizedImagePaths = 0;
+  let sanitizedLinks = 0;
   const manifest = readBackupManifest(zip);
   const shouldRestoreAppState = manifest?.includesAppState === true;
 
@@ -1802,7 +1980,10 @@ async function restoreFromZip(zip) {
       throw new Error('Could not finish cleanup for previous merge temporary files. Please retry after cleanup can complete.');
     }
     validateZipEntryNames(zip);
-    fs.writeFileSync(tmpPath, dbEntry.getData());
+    validateZipExtractionLimits(zip);
+    fs.writeFileSync(tmpPath, readZipEntryData(dbEntry, {
+      maxEntryBytes: BACKUP_RESTORE_MAX_DB_BYTES,
+    }));
     const BetterSqlite = require('better-sqlite3');
     backupDb = new BetterSqlite(tmpPath);
     const tableCheck = backupDb.prepare(
@@ -1812,6 +1993,7 @@ async function restoreFromZip(zip) {
 
     ensureBackupAlbumImagePathColumn(backupDb);
     sanitizedImagePaths = sanitizeBackupAlbumImagePaths(backupDb);
+    sanitizedLinks = sanitizeBackupExternalLinks(backupDb);
     const restoredAlbums = backupDb.prepare('SELECT rowid AS __restore_rowid, * FROM albums ORDER BY created_at ASC').all();
     stagingImagesDir = createRestoreTempDir('_restore_images_');
     const { imagesCopied, imagesRefetched, imagePathUpdates } = await restoreAlbumImages(
@@ -1877,6 +2059,7 @@ async function restoreFromZip(zip) {
       imagesCopied,
       imagesRefetched,
       sanitizedImagePaths,
+      sanitizedLinks,
       appStateRestored: shouldRestoreAppState,
       appStateFilesRestored,
     };
@@ -1918,7 +2101,13 @@ recoverInterruptedMergeAtStartup();
 
 router.__private = {
   APP_STATE_BACKUP_ITEMS,
+  BACKUP_ART_IMAGE_MAX_BYTES,
   BACKUP_MANIFEST_NAME,
+  BACKUP_RESTORE_MAX_DB_BYTES,
+  BACKUP_RESTORE_MAX_ENTRY_BYTES,
+  BACKUP_RESTORE_MAX_FILE_COUNT,
+  BACKUP_RESTORE_MAX_MANIFEST_BYTES,
+  BACKUP_RESTORE_MAX_TOTAL_BYTES,
   BACKUP_UPLOAD_MAX_BYTES,
   BACKUP_UPLOADS_DIR,
   MERGE_JOURNAL_NAME,
@@ -1931,6 +2120,7 @@ router.__private = {
   importFromZip,
   openUploadedBackupZip,
   readBackupManifest,
+  readZipEntryData,
   readMergeJournal,
   readRestoreJournal,
   recoverInterruptedMerge,
@@ -1939,8 +2129,10 @@ router.__private = {
   restoreAppStateFromZip,
   stageAppStateFromZip,
   restoreFromZip,
+  sanitizeBackupExternalLinks,
   sanitizeBackupAlbumImagePathValue,
   sanitizeBackupAlbumImagePaths,
+  validateZipExtractionLimits,
   validateZipEntryNames,
   writeMergeJournal,
   writeRestoreJournal,

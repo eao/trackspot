@@ -33,6 +33,10 @@ const {
   InvalidImportPayloadError,
   importSpotifyGraphqlAlbum,
 } = require('../import-service');
+const {
+  normalizeArtistExternalLinks,
+  normalizeExternalLink,
+} = require('../external-links');
 const { normalizeSpotifyNoteLinks } = require('../spotify-note-links');
 const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
@@ -103,9 +107,15 @@ function normalizeEtagHeader(value) {
 
 const KNOWN_ALBUM_TYPES = ['ALBUM', 'EP', 'SINGLE', 'COMPILATION'];
 const REFETCH_TEMP_IMAGE_FILENAME_RE = /^_temp_\d+_\d+\.jpg$/i;
+const MANUAL_UPLOAD_IMAGE_FILENAME_RE = /^manual_\d+_[a-z0-9]+\.(?:jpg|png|webp)$/i;
 
 function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj || {}, key);
+}
+
+function normalizeAlbumArtistsForStorage(artists) {
+  const list = Array.isArray(artists) ? artists : [{ name: artists }];
+  return normalizeArtistExternalLinks(list);
 }
 
 function resolveAlbumImage(imagePath) {
@@ -157,6 +167,18 @@ function normalizeRefetchTempImagePath(value, albumId = null) {
     (expectedPrefix && !filename.startsWith(expectedPrefix))
   ) {
     throw new Error('Invalid refetched album art path.');
+  }
+
+  return imagePath;
+}
+
+function normalizeManualUploadedImagePath(value) {
+  const imagePath = normalizeAlbumImagePath(value);
+  if (!imagePath) throw new Error('Uploaded album art path is required.');
+
+  const filename = getAlbumImageFilename(imagePath);
+  if (!MANUAL_UPLOAD_IMAGE_FILENAME_RE.test(filename)) {
+    throw new Error('Invalid uploaded album art path.');
   }
 
   return imagePath;
@@ -935,7 +957,7 @@ router.post('/', async (req, res) => {
     share_url:            share_url ?? null,
     album_name,
     album_type:           album_type ?? null,
-    artists:              JSON.stringify(Array.isArray(artists) ? artists : [{ name: artists }]),
+    artists:              JSON.stringify(normalizeAlbumArtistsForStorage(artists)),
     release_date:         releaseFields.release_date,
     release_year:         releaseFields.release_year,
     label:                label ?? null,
@@ -959,8 +981,8 @@ router.post('/', async (req, res) => {
     image_url_medium:     image_url_medium ?? null,
     image_url_large:      image_url_large  ?? null,
     source:               source === 'spotify' ? 'spotify' : 'manual',
-    album_link:           album_link || null,
-    artist_link:          artist_link || null,
+    album_link:           normalizeExternalLink(album_link),
+    artist_link:          normalizeExternalLink(artist_link),
     spotify_release_date: releaseFields.spotify_release_date ? JSON.stringify(releaseFields.spotify_release_date) : null,
     spotify_first_track:  normalizedSpotifyFirstTrack ? JSON.stringify(normalizedSpotifyFirstTrack) : null,
     spotify_graphql_json: spotify_graphql_json ? JSON.stringify(spotify_graphql_json) : null,
@@ -1063,7 +1085,7 @@ router.patch('/:id', async (req, res) => {
     listened_at:  listened_at !== undefined ? (listened_at || null) : existing.listened_at,
     duration_ms:  duration_ms !== undefined ? (duration_ms ?? null) : existing.duration_ms,
     track_count:  validatedTrackCount,
-    artists:      artists !== undefined ? JSON.stringify(artists) : existing.artists,
+    artists:      artists !== undefined ? JSON.stringify(normalizeAlbumArtistsForStorage(artists)) : existing.artists,
     album_name:   album_name ?? existing.album_name,
     release_date: releaseFields.release_date,
     release_year: releaseFields.release_year,
@@ -1071,8 +1093,8 @@ router.patch('/:id', async (req, res) => {
     repeats:      validatedRepeats,
     priority:     validatedPriority,
     album_type:   album_type !== undefined ? (album_type ?? null) : existing.album_type,
-    album_link:   album_link !== undefined ? (album_link || null) : existing.album_link,
-    artist_link:  artist_link !== undefined ? (artist_link || null) : existing.artist_link,
+    album_link:   album_link !== undefined ? normalizeExternalLink(album_link) : existing.album_link,
+    artist_link:  artist_link !== undefined ? normalizeExternalLink(artist_link) : existing.artist_link,
     spotify_release_date: releaseFields.spotify_release_date
       ? JSON.stringify(releaseFields.spotify_release_date)
       : null,
@@ -1298,6 +1320,26 @@ router.post('/discard-temp-art', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/albums/discard-uploaded-art
+// Deletes an uncommitted manual upload if no album references it.
+// ---------------------------------------------------------------------------
+
+router.post('/discard-uploaded-art', (req, res) => {
+  const imgPath = req.body?.image_path ?? req.body?.path;
+  if (!imgPath) return res.json({ ok: true, deleted: false });
+
+  let uploadedImage;
+  try {
+    uploadedImage = resolveAlbumImage(normalizeManualUploadedImagePath(imgPath));
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
+  const deleted = cleanupUnusedAlbumImage(uploadedImage.imagePath);
+  res.json({ ok: true, deleted });
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/albums/:id/delete-art
 // Deletes the album's image file and clears image_path (debug feature).
 // ---------------------------------------------------------------------------
@@ -1353,6 +1395,7 @@ router.__private = {
   buildAlbumIndexRevision,
   filterManualAlbumImage,
   normalizeEtagHeader,
+  normalizeManualUploadedImagePath,
 };
 
 

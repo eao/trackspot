@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { state, el } from './state.js';
-import { escHtml } from './utils.js';
+import { escHtml, getSafeExternalHref } from './utils.js';
 import { loadAlbums, resetPagination } from './render.js';
 
 // ---------------------------------------------------------------------------
@@ -21,7 +21,9 @@ export function renderArtistSpans(artists, manualLink = null) {
   list.forEach((a, i) => {
     const name   = typeof a === 'string' ? a : a.name;
     const id     = typeof a === 'object' ? a.id : null;
-    const link   = typeof a === 'object' ? (a.manual_link || manualLink || null) : manualLink;
+    const link   = getSafeExternalHref(
+      typeof a === 'object' ? (a.manual_link || manualLink || null) : manualLink
+    );
     const chipEl = document.createElement('span');
     chipEl.className = 'artist-chip';
     chipEl.textContent = name;
@@ -144,7 +146,8 @@ function openArtistPopover(anchorEl, artistName, artistId, artistLink) {
         resetPagination();
         loadAlbums();
       } else if (action === 'link') {
-        window.open(artistLink, '_blank', 'noopener,noreferrer');
+        const safeArtistLink = getSafeExternalHref(artistLink);
+        if (safeArtistLink) window.open(safeArtistLink, '_blank', 'noopener,noreferrer');
       } else if (action === 'spotify') {
         window.location.href = `spotify:artist:${artistId}`;
       }

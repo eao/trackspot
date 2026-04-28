@@ -163,6 +163,23 @@ const SPOTIFY_URI_RE = /^spotify:(track|album|artist|playlist):([A-Za-z0-9]+)$/i
 const SPOTIFY_WEB_URL_RE = /^https:\/\/open\.spotify\.com\/(track|album|artist|playlist)\/([A-Za-z0-9]+)(?:[/?#].*)?$/i;
 const NOTES_LINK_PATTERN = /\[([^\]]*)\]\(((?:https?:\/\/|spotify:)[^)]+)\)|(https?:\/\/\S+|spotify:(?:track|album|artist|playlist):[A-Za-z0-9]+)/g;
 
+export function getSafeExternalHref(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return null;
+
+  const spotifyMatch = raw.match(SPOTIFY_URI_RE);
+  if (spotifyMatch) {
+    return `spotify:${spotifyMatch[1].toLowerCase()}:${spotifyMatch[2]}`;
+  }
+
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function parseSpotifyNotesTarget(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();

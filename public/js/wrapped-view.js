@@ -4,7 +4,7 @@
 
 import { state } from './state.js';
 import { computeYear, parseDateValue } from './stats-compute.js';
-import { getPreferredAlbumArtUrl, renderNotesHtml } from './utils.js';
+import { getPreferredAlbumArtUrl, getSafeExternalHref, renderNotesHtml } from './utils.js';
 import { copyWrappedShareCard, exportWrappedShareCard } from './wrapped-share-export.js';
 import { persistWrappedName, setWrappedName, WRAPPED_NAME_EVENT } from './wrapped-name.js';
 
@@ -227,10 +227,9 @@ function spotifyTrackEmbedHtml(track) {
 }
 
 function albumExternalLink(album) {
-  if (album?.album_link) return album.album_link;
-  if (album?.share_url) return album.share_url;
-  if (album?.spotify_url) return album.spotify_url;
-  return null;
+  return getSafeExternalHref(album?.album_link)
+    || getSafeExternalHref(album?.share_url)
+    || getSafeExternalHref(album?.spotify_url);
 }
 
 function discordCopyIconHtml() {

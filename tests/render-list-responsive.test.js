@@ -115,6 +115,7 @@ vi.mock('../public/js/utils.js', () => ({
   formatAlbumMetaTooltip: album => album.track_count != null ? `Album・${album.track_count} tracks` : '',
   artUrl: () => null,
   escHtml: value => value,
+  getSafeExternalHref: value => value || null,
   renderNotesHtml: value => value,
   normalizeAlbumCollectionClientShape: albums => albums,
 }));

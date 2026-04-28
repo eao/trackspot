@@ -310,6 +310,28 @@ describe('modal save payloads', () => {
     expect(elMock.btnSave.disabled).toBe(false);
   });
 
+  it('discards an uploaded manual image when saving fails after upload', async () => {
+    const { handleSaveNew } = await import('../public/js/modal.js');
+    fillManualFields();
+    stateMock.modal.pendingMeta = { image_path: 'images/manual_123_orphan.jpg' };
+    apiFetchMock
+      .mockRejectedValueOnce(new Error('Validation failed.'))
+      .mockResolvedValueOnce({ ok: true, deleted: true });
+
+    await handleSaveNew();
+
+    expect(apiFetchMock).toHaveBeenNthCalledWith(1, '/api/albums', {
+      method: 'POST',
+      body: expect.any(String),
+    });
+    expect(apiFetchMock).toHaveBeenNthCalledWith(2, '/api/albums/discard-uploaded-art', {
+      method: 'POST',
+      body: JSON.stringify({ image_path: 'images/manual_123_orphan.jpg' }),
+    });
+    expect(stateMock.modal.pendingMeta).toBeNull();
+    expect(elMock.fetchError.textContent).toBe('Validation failed.');
+  });
+
   it('guards modal close while saving or uploading unless forced', async () => {
     const { closeModal } = await import('../public/js/modal.js');
 
@@ -326,6 +348,22 @@ describe('modal save payloads', () => {
     expect(closeModal({ force: true })).toBe(true);
     expect(stateMock.modal.open).toBe(false);
     expect(elMock.modalOverlay.classList.contains('hidden')).toBe(true);
+  });
+
+  it('discards an uploaded manual image when the modal closes before save', async () => {
+    const { closeModal } = await import('../public/js/modal.js');
+    stateMock.modal.pendingMeta = { image_path: 'images/manual_123_orphan.jpg' };
+    apiFetchMock.mockResolvedValueOnce({ ok: true, deleted: true });
+
+    expect(closeModal()).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/albums/discard-uploaded-art', {
+      method: 'POST',
+      body: JSON.stringify({ image_path: 'images/manual_123_orphan.jpg' }),
+    });
+    expect(stateMock.modal.pendingMeta).toBeNull();
   });
 
   it('keeps the edit modal context when delete confirmation is canceled', async () => {
