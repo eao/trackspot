@@ -106,11 +106,9 @@ async function snapshotDb(tmpPath) {
   await db.backup(tmpPath);
 }
 
-function clearImagesDir() {
-  if (!fs.existsSync(IMAGES_DIR)) return;
-  for (const fileName of fs.readdirSync(IMAGES_DIR)) {
-    fs.rmSync(path.join(IMAGES_DIR, fileName), { recursive: true, force: true });
-  }
+function createRestoreTempDir(prefix) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  return fs.mkdtempSync(path.join(DATA_DIR, prefix));
 }
 
 function buildBackupManifest(kind, includesAppState) {
@@ -205,10 +203,6 @@ function clearAppStateBackupTargets() {
   }
 }
 
-function createAppStateTempDir(prefix) {
-  return fs.mkdtempSync(path.join(DATA_DIR, prefix));
-}
-
 function copyAppStateItems(sourceRoot, targetRoot, options = {}) {
   const { createMissingDirectories = false } = options;
   for (const item of APP_STATE_BACKUP_ITEMS) {
@@ -235,7 +229,7 @@ function restoreAppStateRollback(rollbackDir) {
   copyAppStateItems(rollbackDir, DATA_DIR);
 }
 
-function restoreAppStateFromZip(zip) {
+function getAppStateEntriesToRestore(zip) {
   const entriesToRestore = [];
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory) continue;
@@ -258,19 +252,26 @@ function restoreAppStateFromZip(zip) {
     entriesToRestore.push({ entry, normalized });
   }
 
-  const stagingDir = createAppStateTempDir('_restore_app_state_');
-  let rollbackDir = null;
+  return entriesToRestore;
+}
+
+function stageAppStateFromZip(zip, stagingDir) {
+  const entriesToRestore = getAppStateEntriesToRestore(zip);
   let filesRestored = 0;
 
-  try {
-    for (const { entry, normalized } of entriesToRestore) {
-      const targetPath = resolveInside(stagingDir, normalized);
-      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-      fs.writeFileSync(targetPath, entry.getData());
-      filesRestored++;
-    }
+  for (const { entry, normalized } of entriesToRestore) {
+    const targetPath = resolveInside(stagingDir, normalized);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, entry.getData());
+    filesRestored++;
+  }
 
-    rollbackDir = createAppStateTempDir('_restore_app_state_rollback_');
+  return filesRestored;
+}
+
+function commitAppStateFromStaging(stagingDir) {
+  const rollbackDir = createRestoreTempDir('_restore_app_state_rollback_');
+  try {
     copyAppStateItems(DATA_DIR, rollbackDir);
 
     try {
@@ -285,11 +286,73 @@ function restoreAppStateFromZip(zip) {
       throw error;
     }
   } finally {
+    fs.rmSync(rollbackDir, { recursive: true, force: true });
+  }
+}
+
+function restoreAppStateFromZip(zip) {
+  const stagingDir = createRestoreTempDir('_restore_app_state_');
+  try {
+    const filesRestored = stageAppStateFromZip(zip, stagingDir);
+    commitAppStateFromStaging(stagingDir);
+    return filesRestored;
+  } finally {
     fs.rmSync(stagingDir, { recursive: true, force: true });
-    if (rollbackDir) fs.rmSync(rollbackDir, { recursive: true, force: true });
+  }
+}
+
+function moveImagesDirToRollback() {
+  const rollbackDir = createRestoreTempDir('_restore_images_rollback_');
+  fs.rmSync(rollbackDir, { recursive: true, force: true });
+  if (fs.existsSync(IMAGES_DIR)) {
+    fs.renameSync(IMAGES_DIR, rollbackDir);
+    return { path: rollbackDir, hadImagesDir: true };
+  }
+  return { path: rollbackDir, hadImagesDir: false };
+}
+
+function restoreImagesRollback(rollback) {
+  fs.rmSync(IMAGES_DIR, { recursive: true, force: true });
+  if (rollback?.hadImagesDir && fs.existsSync(rollback.path)) {
+    fs.renameSync(rollback.path, IMAGES_DIR);
+  } else {
+    fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  }
+}
+
+function commitImagesFromStaging(stagingImagesDir) {
+  const rollback = moveImagesDirToRollback();
+  try {
+    fs.renameSync(stagingImagesDir, IMAGES_DIR);
+    return rollback;
+  } catch (error) {
+    try {
+      restoreImagesRollback(rollback);
+    } catch (rollbackError) {
+      console.error('Image restore rollback failed:', rollbackError);
+    }
+    throw error;
+  }
+}
+
+async function downloadImageToDir(imageUrl, albumId, targetImagesDir) {
+  const filename = `${albumId}.jpg`;
+  const filepath = path.join(targetImagesDir, filename);
+
+  if (fs.existsSync(filepath)) {
+    return `images/${filename}`;
   }
 
-  return filesRestored;
+  const response = await fetch(imageUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download album art: ${response.status}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs.mkdirSync(targetImagesDir, { recursive: true });
+  fs.writeFileSync(filepath, buffer);
+
+  return `images/${filename}`;
 }
 
 function getAlbumTableColumns(connection) {
@@ -325,26 +388,30 @@ function buildAlbumInsertStatement(srcDb) {
   };
 }
 
-async function restoreAlbumImages(rows, zip, isRestore) {
+async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
+  const targetImagesDir = options.targetImagesDir || IMAGES_DIR;
   let imagesCopied = 0;
   let imagesRefetched = 0;
 
   const zipImageEntries = new Map();
   for (const entry of zip.getEntries()) {
-    if (entry.entryName.startsWith('images/') && !entry.isDirectory) {
-      zipImageEntries.set(entry.entryName, entry);
+    const normalized = normalizeZipEntryName(entry.entryName);
+    if (normalized.startsWith('images/') && !entry.isDirectory) {
+      zipImageEntries.set(normalized, entry);
     }
   }
 
-  fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  const { downloadImage } = require('../spotify-helpers');
+  fs.mkdirSync(targetImagesDir, { recursive: true });
+  const { downloadImage } = targetImagesDir === IMAGES_DIR
+    ? require('../spotify-helpers')
+    : { downloadImage: (imageUrl, albumId) => downloadImageToDir(imageUrl, albumId, targetImagesDir) };
 
   for (const row of rows) {
     if (row.image_path) {
       const entryKey = row.image_path.replace(/\\/g, '/');
       const entry = zipImageEntries.get(entryKey);
       if (entry) {
-        const destPath = path.join(IMAGES_DIR, path.basename(entryKey));
+        const destPath = path.join(targetImagesDir, path.basename(entryKey));
         if (isRestore || !fs.existsSync(destPath)) {
           fs.writeFileSync(destPath, entry.getData());
           imagesCopied++;
@@ -356,7 +423,7 @@ async function restoreAlbumImages(rows, zip, isRestore) {
     if (!row.spotify_album_id) continue;
     const imageUrl = row.image_url_large || row.image_url_medium || row.image_url_small;
     if (!imageUrl) continue;
-    const destPath = path.join(IMAGES_DIR, `${row.spotify_album_id}.jpg`);
+    const destPath = path.join(targetImagesDir, `${row.spotify_album_id}.jpg`);
     if (!isRestore && fs.existsSync(destPath)) continue;
 
     try {
@@ -571,7 +638,13 @@ async function restoreFromZip(zip) {
   if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
 
   const tmpPath = path.join(DATA_DIR, `_restore_tmp_${Date.now()}.db`);
+  const rollbackDbPath = path.join(DATA_DIR, `_restore_rollback_${Date.now()}.db`);
+  let stagingImagesDir = null;
+  let stagingAppStateDir = null;
+  let imageRollback = null;
   let backupDb = null;
+  let liveSwapStarted = false;
+  let restoreSucceeded = false;
   const manifest = readBackupManifest(zip);
   const shouldRestoreAppState = manifest?.includesAppState === true;
 
@@ -585,11 +658,32 @@ async function restoreFromZip(zip) {
     ).get();
     if (!tableCheck) throw new Error('Backup database does not contain an albums table.');
 
+    const restoredAlbums = backupDb.prepare('SELECT * FROM albums ORDER BY created_at ASC').all();
+    stagingImagesDir = createRestoreTempDir('_restore_images_');
+    const { imagesCopied, imagesRefetched } = await restoreAlbumImages(
+      restoredAlbums,
+      zip,
+      true,
+      { targetImagesDir: stagingImagesDir },
+    );
+
+    let appStateFilesRestored = 0;
+    if (shouldRestoreAppState) {
+      stagingAppStateDir = createRestoreTempDir('_restore_app_state_');
+      appStateFilesRestored = stageAppStateFromZip(zip, stagingAppStateDir);
+    }
+
+    await db.backup(rollbackDbPath);
     replaceDatabaseFile(tmpPath);
-    clearImagesDir();
-    const restoredAlbums = db.prepare('SELECT * FROM albums ORDER BY created_at ASC').all();
-    const { imagesCopied, imagesRefetched } = await restoreAlbumImages(restoredAlbums, zip, true);
-    const appStateFilesRestored = shouldRestoreAppState ? restoreAppStateFromZip(zip) : 0;
+    liveSwapStarted = true;
+    imageRollback = commitImagesFromStaging(stagingImagesDir);
+    stagingImagesDir = null;
+
+    if (shouldRestoreAppState) {
+      commitAppStateFromStaging(stagingAppStateDir);
+    }
+
+    restoreSucceeded = true;
     return {
       added: restoredAlbums.length,
       skipped: 0,
@@ -598,9 +692,32 @@ async function restoreFromZip(zip) {
       appStateRestored: shouldRestoreAppState,
       appStateFilesRestored,
     };
+  } catch (error) {
+    if (liveSwapStarted) {
+      try {
+        if (fs.existsSync(rollbackDbPath)) replaceDatabaseFile(rollbackDbPath);
+      } catch (rollbackError) {
+        console.error('Database restore rollback failed:', rollbackError);
+      }
+      if (imageRollback) {
+        try {
+          restoreImagesRollback(imageRollback);
+          imageRollback = null;
+        } catch (rollbackError) {
+          console.error('Image restore rollback failed:', rollbackError);
+        }
+      }
+    }
+    throw error;
   } finally {
     backupDb?.close();
     if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    if (fs.existsSync(rollbackDbPath)) fs.unlinkSync(rollbackDbPath);
+    if (stagingImagesDir) fs.rmSync(stagingImagesDir, { recursive: true, force: true });
+    if (stagingAppStateDir) fs.rmSync(stagingAppStateDir, { recursive: true, force: true });
+    if (restoreSucceeded && imageRollback) {
+      fs.rmSync(imageRollback.path, { recursive: true, force: true });
+    }
   }
 }
 
@@ -611,6 +728,7 @@ router.__private = {
   importFromZip,
   readBackupManifest,
   restoreAppStateFromZip,
+  stageAppStateFromZip,
   restoreFromZip,
 };
 

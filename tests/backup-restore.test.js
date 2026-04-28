@@ -218,6 +218,140 @@ describe('backup and restore', () => {
     expect(fs.existsSync(path.join(dataDir, 'images', 'current-only.jpg'))).toBe(false);
   }, 15000);
 
+  it('preserves current DB and images when album image staging fails', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'images', 'backup-art.jpg'), Buffer.from('backup-image'));
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, image_path, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      42,
+      'Backup Album',
+      JSON.stringify([{ name: 'Backup Artist' }]),
+      'completed',
+      'images/backup-art.jpg',
+      'manual',
+      '2026-04-01 00:00:00',
+      '2026-04-01 00:00:00',
+    );
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addLocalFile(path.join(dataDir, 'images', 'backup-art.jpg'), 'images', 'backup-art.jpg');
+
+    db.prepare('DELETE FROM albums').run();
+    writeFileEnsured(path.join(dataDir, 'images', 'current-art.jpg'), Buffer.from('current-image'));
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, image_path, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      7,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'planned',
+      'images/current-art.jpg',
+      'manual',
+      '2026-04-02 00:00:00',
+      '2026-04-02 00:00:00',
+    );
+
+    const originalWriteFileSync = fs.writeFileSync;
+    fs.writeFileSync = function writeFileSyncWithImageFailure(filePath, contents, options) {
+      if (String(filePath).includes('_restore_images_') && String(filePath).endsWith('backup-art.jpg')) {
+        throw new Error('simulated image staging failure');
+      }
+      return originalWriteFileSync.call(this, filePath, contents, options);
+    };
+
+    try {
+      await expect(backupRouter.__private.restoreFromZip(zip)).rejects.toThrow(/simulated image staging failure/);
+    } finally {
+      fs.writeFileSync = originalWriteFileSync;
+    }
+
+    const currentAlbum = db.prepare('SELECT id, album_name, image_path FROM albums').get();
+    expect(currentAlbum).toEqual({
+      id: 7,
+      album_name: 'Current Album',
+      image_path: 'images/current-art.jpg',
+    });
+    expect(fs.readFileSync(path.join(dataDir, 'images', 'current-art.jpg')).toString()).toBe('current-image');
+    expect(fs.readFileSync(path.join(dataDir, 'images', 'backup-art.jpg')).toString()).toBe('backup-image');
+  }, 15000);
+
+  it('rolls back DB and images when the final image swap fails', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'images', 'backup-art.jpg'), Buffer.from('backup-image'));
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, image_path, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      42,
+      'Backup Album',
+      JSON.stringify([{ name: 'Backup Artist' }]),
+      'completed',
+      'images/backup-art.jpg',
+      'manual',
+      '2026-04-01 00:00:00',
+      '2026-04-01 00:00:00',
+    );
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addLocalFile(path.join(dataDir, 'images', 'backup-art.jpg'), 'images', 'backup-art.jpg');
+
+    db.prepare('DELETE FROM albums').run();
+    fs.rmSync(path.join(dataDir, 'images', 'backup-art.jpg'), { force: true });
+    writeFileEnsured(path.join(dataDir, 'images', 'current-art.jpg'), Buffer.from('current-image'));
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, image_path, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      7,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'planned',
+      'images/current-art.jpg',
+      'manual',
+      '2026-04-02 00:00:00',
+      '2026-04-02 00:00:00',
+    );
+
+    const originalRenameSync = fs.renameSync;
+    fs.renameSync = function renameSyncWithSwapFailure(oldPath, newPath) {
+      const oldPathText = String(oldPath);
+      if (
+        oldPathText.includes('_restore_images_')
+        && !oldPathText.includes('_restore_images_rollback_')
+        && path.resolve(String(newPath)) === path.resolve(path.join(dataDir, 'images'))
+      ) {
+        throw new Error('simulated image swap failure');
+      }
+      return originalRenameSync.call(this, oldPath, newPath);
+    };
+
+    try {
+      await expect(backupRouter.__private.restoreFromZip(zip)).rejects.toThrow(/simulated image swap failure/);
+    } finally {
+      fs.renameSync = originalRenameSync;
+    }
+
+    const currentAlbum = db.prepare('SELECT id, album_name, image_path FROM albums').get();
+    expect(currentAlbum).toEqual({
+      id: 7,
+      album_name: 'Current Album',
+      image_path: 'images/current-art.jpg',
+    });
+    expect(fs.readFileSync(path.join(dataDir, 'images', 'current-art.jpg')).toString()).toBe('current-image');
+    expect(fs.existsSync(path.join(dataDir, 'images', 'backup-art.jpg'))).toBe(false);
+  }, 15000);
+
   it('restores app-state files from new full backups', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
