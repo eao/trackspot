@@ -4,7 +4,12 @@
 
 import { state } from './state.js';
 import { computeYear, parseDateValue } from './stats-compute.js';
-import { getPreferredAlbumArtUrl, getSafeExternalHref, renderNotesHtml } from './utils.js';
+import {
+  getPreferredAlbumArtUrl,
+  getSafeExternalHref,
+  normalizeCssHexColor,
+  renderNotesHtml,
+} from './utils.js';
 import { copyWrappedShareCard, exportWrappedShareCard } from './wrapped-share-export.js';
 import { persistWrappedName, setWrappedName, WRAPPED_NAME_EVENT } from './wrapped-name.js';
 
@@ -95,8 +100,8 @@ function countdownUnitHtml(unit, value) {
 
 function coverHtml(album, size = 64, rounded = 4, { fluid = false } = {}) {
   const src = getPreferredAlbumArtUrl(album);
-  const dark = album.dominant_color_dark || '#334155';
-  const light = album.dominant_color_light || '#94a3b8';
+  const dark = normalizeCssHexColor(album.dominant_color_dark, '#334155');
+  const light = normalizeCssHexColor(album.dominant_color_light, '#94a3b8');
   const id = Number(album.id) || 0;
   const seed = (id * 2654435761) >>> 0;
   const angle = seed % 360;

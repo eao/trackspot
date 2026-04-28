@@ -33,19 +33,21 @@ Copy `.env.example` to `.env` and adjust as needed:
 
 ```text
 PORT=1060
-HOST=127.0.0.1
+HOST=0.0.0.0
 DATA_DIR=./data
 ```
 
 Relative paths in `.env`, including `DATA_DIR=./data`, are resolved from the Trackspot app directory. This keeps server startup and helper scripts pointed at the same data folder even when the process is launched by a service manager from another working directory.
 
-Use `HOST=127.0.0.1` for local-only use. Use `HOST=0.0.0.0` when you intentionally want Trackspot reachable from your LAN or Tailscale network; after that, open it from another device with the server's LAN IP, Tailscale IP, or Tailscale DNS name:
+Trackspot defaults to `HOST=0.0.0.0` so it is easy to reach from your LAN or Tailscale network; open it from another device with the server's LAN IP, Tailscale IP, or Tailscale DNS name:
 
 ```text
 http://192.168.1.50:1060
 http://100.x.y.z:1060
 http://your-machine.your-tailnet.ts.net:1060
 ```
+
+For local-only use, set `HOST=127.0.0.1` in `.env`.
 
 ## Home Server Notes
 

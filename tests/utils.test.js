@@ -4,6 +4,7 @@ import {
   formatDuration,
   getPreferredAlbumArtUrl,
   getSafeExternalHref,
+  normalizeCssHexColor,
   parseArtistInput,
   renderNotesHtml,
 } from '../public/js/utils.js';
@@ -56,6 +57,14 @@ describe('frontend utils', () => {
     expect(getSafeExternalHref('spotify:ALBUM:3rHzUZDIsTv0zVyoNDN8YQ')).toBe('spotify:album:3rHzUZDIsTv0zVyoNDN8YQ');
     expect(getSafeExternalHref('javascript:alert(1)')).toBeNull();
     expect(getSafeExternalHref('data:text/html,<script></script>')).toBeNull();
+  });
+
+  it('normalizes inline CSS colors to hex values only', () => {
+    expect(normalizeCssHexColor(' #abc ', '#000000')).toBe('#abc');
+    expect(normalizeCssHexColor('#123456', '#000000')).toBe('#123456');
+    expect(normalizeCssHexColor('#123456cc', '#000000')).toBe('#123456cc');
+    expect(normalizeCssHexColor('red', '#000000')).toBe('#000000');
+    expect(normalizeCssHexColor('#fff" onmouseover="alert(1)', '#000000')).toBe('#000000');
   });
 
   it('prefers stored album art over Spotify CDN URLs', () => {

@@ -4,6 +4,7 @@ const {
   buildManagedAlbumImagePath,
   resolveAlbumImagePath,
 } = require('./album-image-paths');
+const { DEFAULT_MAX_DOWNLOAD_BYTES, responseToBufferWithLimit } = require('./http-downloads');
 const {
   deriveReleaseYear,
   getReleaseDateFromSpotifyReleaseDate,
@@ -80,7 +81,9 @@ async function downloadImportImage(imageUrl, albumId) {
     '.jpg',
   );
   const tempFullPath = getImageFullPath(tempImagePath);
-  const buffer = Buffer.from(await response.arrayBuffer());
+  const buffer = await responseToBufferWithLimit(response, {
+    maxBytes: DEFAULT_MAX_DOWNLOAD_BYTES,
+  });
   fs.writeFileSync(tempFullPath, buffer);
 
   return {

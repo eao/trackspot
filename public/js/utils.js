@@ -159,6 +159,13 @@ export function escapeHtml(str) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+const CSS_HEX_COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+export function normalizeCssHexColor(value, fallback) {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return CSS_HEX_COLOR_RE.test(normalized) ? normalized : fallback;
+}
+
 const SPOTIFY_URI_RE = /^spotify:(track|album|artist|playlist):([A-Za-z0-9]+)$/i;
 const SPOTIFY_WEB_URL_RE = /^https:\/\/open\.spotify\.com\/(track|album|artist|playlist)\/([A-Za-z0-9]+)(?:[/?#].*)?$/i;
 const NOTES_LINK_PATTERN = /\[([^\]]*)\]\(((?:https?:\/\/|spotify:)[^)]+)\)|(https?:\/\/\S+|spotify:(?:track|album|artist|playlist):[A-Za-z0-9]+)/g;

@@ -170,4 +170,23 @@ describe('stats view spotify links', () => {
     window.removeEventListener('stats:open-top-artist', onOpenTopArtist);
     cleanupStatsView(container);
   });
+
+  it('falls back when album cover colors are unsafe for inline styles', () => {
+    const container = document.createElement('div');
+    const stats = makeStats();
+    stats.topRated[0].dominant_color_dark = '#fff" onmouseover="alert(1)';
+    stats.topRated[0].dominant_color_light = 'red';
+
+    renderStatsView(container, stats);
+
+    const topRatedCard = Array.from(container.querySelectorAll('.a-card'))
+      .find(card => card.querySelector('.a-card-title')?.textContent === 'Your dearest');
+    const style = topRatedCard?.querySelector('.ts-cover')?.getAttribute('style') || '';
+    expect(style).toContain('#334155');
+    expect(style).toContain('#94a3b8');
+    expect(style).not.toContain('onmouseover');
+    expect(container.innerHTML).not.toContain('onmouseover');
+
+    cleanupStatsView(container);
+  });
 });

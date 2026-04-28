@@ -231,6 +231,35 @@ describe('wrapped view notes rendering', () => {
     container._wrappedCleanup?.();
   });
 
+  it('falls back when album cover colors are unsafe for inline styles', () => {
+    const container = document.createElement('div');
+    const album = makeAlbum({
+      id: 1,
+      listened_at: '2025-01-10',
+      album_name: 'Unsafe Color Album',
+      artist_name: 'Artist One',
+      rating: 88,
+      notes: 'color check',
+    });
+    album.dominant_color_dark = '#fff" onmouseover="alert(1)';
+    album.dominant_color_light = 'red';
+
+    renderWrappedView(container, {
+      albums: [album],
+      year: 2025,
+      yearsAvailable: [2025],
+      onYearChange: vi.fn(),
+    });
+
+    const style = container.querySelector('.ts-cover')?.getAttribute('style') || '';
+    expect(style).toContain('#334155');
+    expect(style).toContain('#94a3b8');
+    expect(style).not.toContain('onmouseover');
+    expect(container.innerHTML).not.toContain('onmouseover');
+
+    container._wrappedCleanup?.();
+  });
+
   it('uses the second-longest note as the fallback most-notable card when the longest is already Screed', () => {
     const container = document.createElement('div');
     const albums = [

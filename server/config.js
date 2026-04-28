@@ -7,7 +7,7 @@ const ENV_PATH = path.join(APP_ROOT, '.env');
 dotenv.config({ path: ENV_PATH, quiet: true });
 
 const DEFAULT_PORT = '1060';
-const DEFAULT_HOST = '127.0.0.1';
+const DEFAULT_HOST = '0.0.0.0';
 const DEFAULT_BACKUP_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
 const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '[::]', '*']);
 

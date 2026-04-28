@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { isoDate, parseDateValue } from './stats-compute.js';
-import { getPreferredAlbumArtUrl } from './utils.js';
+import { getPreferredAlbumArtUrl, normalizeCssHexColor } from './utils.js';
 
 function escHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, ch => (
@@ -41,8 +41,8 @@ function fmtWholeHours(h) {
 
 function coverHtml(album, size = 64, rounded = 4) {
   const src = getPreferredAlbumArtUrl(album);
-  const dark = album.dominant_color_dark || '#334155';
-  const light = album.dominant_color_light || '#94a3b8';
+  const dark = normalizeCssHexColor(album.dominant_color_dark, '#334155');
+  const light = normalizeCssHexColor(album.dominant_color_light, '#94a3b8');
   const id = Number(album.id) || 0;
   const seed = (id * 2654435761) >>> 0;
   const angle = seed % 360;

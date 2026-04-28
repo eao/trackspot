@@ -164,7 +164,7 @@ describe('Express app integration', () => {
   });
 
   it('rejects mutation requests with untrusted Host headers', async () => {
-    delete process.env.HOST;
+    process.env.HOST = '127.0.0.1';
     testServer = await startTestServer(loadAppContext());
 
     const rejected = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
