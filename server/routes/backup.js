@@ -2,9 +2,11 @@ const express  = require('express');
 const router   = express.Router();
 const path     = require('path');
 const fs       = require('fs');
+const zlib     = require('zlib');
 const archiver = require('archiver');
 const AdmZip   = require('adm-zip');
 const multer   = require('multer');
+const ZipUtils = require('adm-zip/util');
 const { db, DATA_DIR, IMAGES_DIR, replaceDatabaseFile } = require('../db');
 const { getBackupUploadMaxBytes, getConfiguredPath } = require('../config');
 const { beginBackupMutation, endBackupMutation } = require('../backup-mutation-lock');
@@ -340,11 +342,12 @@ function getZipEntryUncompressedSize(entry) {
     entry?.header?.uncompressedSize,
     entry?.rawEntry?.uncompressedSize,
   ];
+  const sizes = [];
   for (const candidate of candidates) {
     const parsed = Number(candidate);
-    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    if (Number.isFinite(parsed) && parsed >= 0) sizes.push(parsed);
   }
-  return null;
+  return sizes.length ? Math.max(...sizes) : null;
 }
 
 function getZipEntryMaxBytes(entryName) {
@@ -358,14 +361,24 @@ function formatByteLimit(bytes) {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
 
+function backupEntryTooLargeError(entryName, maxBytes) {
+  return new Error(
+    `Backup entry ${entryName || '(unknown)'} is too large. Maximum allowed size is ${formatByteLimit(maxBytes)}.`
+  );
+}
+
+function backupTotalTooLargeError(maxBytes = BACKUP_RESTORE_MAX_TOTAL_BYTES) {
+  return new Error(
+    `Backup is too large after extraction. Maximum allowed size is ${formatByteLimit(maxBytes)}.`
+  );
+}
+
 function assertZipEntrySize(entry, options = {}) {
   const entryName = normalizeZipEntryName(entry?.entryName);
-  const maxEntryBytes = options.maxEntryBytes || getZipEntryMaxBytes(entryName);
+  const maxEntryBytes = options.maxEntryBytes ?? getZipEntryMaxBytes(entryName);
   const reportedSize = getZipEntryUncompressedSize(entry);
   if (reportedSize !== null && reportedSize > maxEntryBytes) {
-    throw new Error(
-      `Backup entry ${entryName || '(unknown)'} is too large. Maximum allowed size is ${formatByteLimit(maxEntryBytes)}.`
-    );
+    throw backupEntryTooLargeError(entryName, maxEntryBytes);
   }
 }
 
@@ -393,16 +406,116 @@ function validateZipExtractionLimits(zip) {
   }
 }
 
+function createZipExtractionTracker(options = {}) {
+  return {
+    maxTotalBytes: options.maxTotalBytes ?? BACKUP_RESTORE_MAX_TOTAL_BYTES,
+    totalBytes: 0,
+  };
+}
+
+function getZipExtractionReadLimit(tracker, maxEntryBytes) {
+  if (!tracker) return maxEntryBytes;
+  const remainingBytes = tracker.maxTotalBytes - tracker.totalBytes;
+  if (remainingBytes <= 0) throw backupTotalTooLargeError(tracker.maxTotalBytes);
+  return Math.min(maxEntryBytes, remainingBytes);
+}
+
+function recordZipExtractionBytes(tracker, byteLength) {
+  if (!tracker) return;
+  const nextTotalBytes = tracker.totalBytes + byteLength;
+  if (nextTotalBytes > tracker.maxTotalBytes) {
+    throw backupTotalTooLargeError(tracker.maxTotalBytes);
+  }
+  tracker.totalBytes = nextTotalBytes;
+}
+
+function throwZipReadLimitError(entryName, readLimit, maxEntryBytes, tracker) {
+  if (tracker && readLimit < maxEntryBytes) {
+    throw backupTotalTooLargeError(tracker.maxTotalBytes);
+  }
+  throw backupEntryTooLargeError(entryName, maxEntryBytes);
+}
+
+function getZipEntryMethod(entry) {
+  const method = Number(entry?.header?.method);
+  return Number.isFinite(method) ? method : null;
+}
+
+function getZipEntryCrc(entry) {
+  const crc = Number(entry?.header?.crc);
+  return Number.isFinite(crc) ? crc >>> 0 : null;
+}
+
+function isZipEntryEncrypted(entry) {
+  if (entry?.header?.encrypted === true) return true;
+  const flags = Number(entry?.header?.flags);
+  return Number.isFinite(flags) && (flags & ZipUtils.Constants.FLG_ENC) === ZipUtils.Constants.FLG_ENC;
+}
+
+function readZipEntryDataFromCompressed(entry, entryName, readLimit, maxEntryBytes, tracker) {
+  if (typeof entry?.getCompressedData !== 'function') return null;
+
+  const method = getZipEntryMethod(entry);
+  if (method === null) return null;
+  if (isZipEntryEncrypted(entry)) {
+    throw new Error(`Backup entry ${entryName || '(unknown)'} is encrypted and cannot be restored.`);
+  }
+
+  let compressedData = entry.getCompressedData();
+  if (!Buffer.isBuffer(compressedData)) compressedData = Buffer.from(compressedData || []);
+
+  let data;
+  if (method === ZipUtils.Constants.STORED) {
+    if (compressedData.length > readLimit) {
+      throwZipReadLimitError(entryName, readLimit, maxEntryBytes, tracker);
+    }
+    data = Buffer.from(compressedData);
+  } else if (method === ZipUtils.Constants.DEFLATED) {
+    try {
+      data = zlib.inflateRawSync(compressedData, { maxOutputLength: readLimit });
+    } catch (error) {
+      if (error?.code === 'ERR_BUFFER_TOO_LARGE') {
+        throwZipReadLimitError(entryName, readLimit, maxEntryBytes, tracker);
+      }
+      throw error;
+    }
+  } else {
+    throw new Error(`Backup entry ${entryName || '(unknown)'} uses an unsupported compression method.`);
+  }
+
+  const reportedSize = getZipEntryUncompressedSize(entry);
+  if (reportedSize !== null && data.length !== reportedSize) {
+    throw new Error(`Backup entry ${entryName || '(unknown)'} has invalid size metadata.`);
+  }
+
+  const expectedCrc = getZipEntryCrc(entry);
+  if (expectedCrc !== null && ZipUtils.crc32(data) !== expectedCrc) {
+    throw new Error(`Backup entry ${entryName || '(unknown)'} failed integrity validation.`);
+  }
+
+  return data;
+}
+
 function readZipEntryData(entry, options = {}) {
   const entryName = normalizeZipEntryName(entry?.entryName);
-  const maxEntryBytes = options.maxEntryBytes || getZipEntryMaxBytes(entryName);
+  const maxEntryBytes = options.maxEntryBytes ?? getZipEntryMaxBytes(entryName);
+  const tracker = options.extractionTracker || options.tracker || null;
   assertZipEntrySize(entry, { maxEntryBytes });
-  const data = entry.getData();
-  if (data.length > maxEntryBytes) {
-    throw new Error(
-      `Backup entry ${entryName || '(unknown)'} is too large. Maximum allowed size is ${formatByteLimit(maxEntryBytes)}.`
-    );
+  const readLimit = getZipExtractionReadLimit(tracker, maxEntryBytes);
+  const reportedSize = getZipEntryUncompressedSize(entry);
+  if (reportedSize !== null && reportedSize > readLimit) {
+    throwZipReadLimitError(entryName, readLimit, maxEntryBytes, tracker);
   }
+
+  let data = readZipEntryDataFromCompressed(entry, entryName, readLimit, maxEntryBytes, tracker);
+  if (!data) {
+    data = entry.getData();
+    if (data.length > readLimit) {
+      throwZipReadLimitError(entryName, readLimit, maxEntryBytes, tracker);
+    }
+  }
+
+  recordZipExtractionBytes(tracker, data.length);
   return data;
 }
 
@@ -462,13 +575,14 @@ function resolveInside(basePath, relativePath) {
   return targetPath;
 }
 
-function readBackupManifest(zip) {
+function readBackupManifest(zip, options = {}) {
   const entry = zip.getEntry(BACKUP_MANIFEST_NAME);
   if (!entry || entry.isDirectory) return null;
 
   try {
     const manifest = JSON.parse(readZipEntryData(entry, {
       maxEntryBytes: BACKUP_RESTORE_MAX_MANIFEST_BYTES,
+      extractionTracker: options.extractionTracker,
     }).toString('utf8'));
     if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null;
     return manifest;
@@ -553,14 +667,16 @@ function getAppStateEntriesToRestore(zip) {
   return entriesToRestore;
 }
 
-function stageAppStateFromZip(zip, stagingDir) {
+function stageAppStateFromZip(zip, stagingDir, options = {}) {
   const entriesToRestore = getAppStateEntriesToRestore(zip);
   let filesRestored = 0;
 
   for (const { entry, normalized } of entriesToRestore) {
     const targetPath = resolveInside(stagingDir, normalized);
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, readZipEntryData(entry));
+    fs.writeFileSync(targetPath, readZipEntryData(entry, {
+      extractionTracker: options.extractionTracker,
+    }));
     filesRestored++;
   }
 
@@ -592,8 +708,9 @@ function commitAppStateFromStaging(stagingDir, rollbackDir = null) {
 
 function restoreAppStateFromZip(zip) {
   const stagingDir = createRestoreTempDir('_restore_app_state_');
+  const extractionTracker = createZipExtractionTracker();
   try {
-    const filesRestored = stageAppStateFromZip(zip, stagingDir);
+    const filesRestored = stageAppStateFromZip(zip, stagingDir, { extractionTracker });
     commitAppStateFromStaging(stagingDir);
     return filesRestored;
   } finally {
@@ -1204,7 +1321,7 @@ function createStagedMergeImageAsset(preferredImagePath, stagingImagesDir, sourc
   };
 }
 
-function stageMergeZipImage(entry, preferredImagePath, stagingImagesDir) {
+function stageMergeZipImage(entry, preferredImagePath, stagingImagesDir, options = {}) {
   const asset = createStagedMergeImageAsset(
     preferredImagePath,
     stagingImagesDir,
@@ -1214,6 +1331,7 @@ function stageMergeZipImage(entry, preferredImagePath, stagingImagesDir) {
 
   fs.writeFileSync(asset.stagedFullPath, readZipEntryData(entry, {
     maxEntryBytes: BACKUP_ART_IMAGE_MAX_BYTES,
+    extractionTracker: options.extractionTracker,
   }));
   return asset;
 }
@@ -1276,7 +1394,7 @@ function getCurrentAlbumImagePathReservations() {
     .filter(Boolean));
 }
 
-async function prepareMergeAlbumRows(rows, zip, stagingImagesDir) {
+async function prepareMergeAlbumRows(rows, zip, stagingImagesDir, options = {}) {
   const zipImageEntries = getZipAlbumImageEntries(zip);
   const stagedAssetsBySourceKey = new Map();
   const preparedRows = [];
@@ -1306,6 +1424,7 @@ async function prepareMergeAlbumRows(rows, zip, stagingImagesDir) {
           zipImage.entry,
           zipImage.entryKey,
           stagingImagesDir,
+          { extractionTracker: options.extractionTracker },
         );
         stagedAssetsBySourceKey.set(sourceKey, imageAsset);
       }
@@ -1606,6 +1725,7 @@ function commitMergeImportRows(
 
 async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
   const targetImagesDir = options.targetImagesDir || IMAGES_DIR;
+  const extractionTracker = options.extractionTracker || null;
   let imagesCopied = 0;
   let imagesRefetched = 0;
   const imagePathUpdates = [];
@@ -1634,6 +1754,7 @@ async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
         if (isRestore || !fs.existsSync(destPath)) {
           fs.writeFileSync(destPath, readZipEntryData(entry, {
             maxEntryBytes: BACKUP_ART_IMAGE_MAX_BYTES,
+            extractionTracker,
           }));
           imagesCopied++;
         }
@@ -1858,6 +1979,7 @@ router.post('/restore', upload.single('backup'), async (req, res) => {
 // ---------------------------------------------------------------------------
 
 async function importFromZip(zip) {
+  const extractionTracker = createZipExtractionTracker();
   validateZipEntryNames(zip);
   validateZipExtractionLimits(zip);
   const dbEntry = zip.getEntry('albums.db');
@@ -1889,6 +2011,7 @@ async function importFromZip(zip) {
       writeMergeJournal(mergeJournal);
       fs.writeFileSync(tmpPath, readZipEntryData(dbEntry, {
         maxEntryBytes: BACKUP_RESTORE_MAX_DB_BYTES,
+        extractionTracker,
       }));
       srcDb = new BetterSqlite(tmpPath);
 
@@ -1918,7 +2041,12 @@ async function importFromZip(zip) {
       mergeJournal.stagingImagesDir = stagingImagesDir;
       writeMergeJournal(mergeJournal);
       fs.mkdirSync(stagingImagesDir);
-      const preparedRows = await prepareMergeAlbumRows(selectedRows.candidateRows, zip, stagingImagesDir);
+      const preparedRows = await prepareMergeAlbumRows(
+        selectedRows.candidateRows,
+        zip,
+        stagingImagesDir,
+        { extractionTracker },
+      );
       ({ added, skipped, imagesCopied, imagesRefetched } = commitMergeImportRows(
         preparedRows,
         insertColumns,
@@ -1968,7 +2096,8 @@ async function restoreFromZip(zip) {
   let journal = null;
   let sanitizedImagePaths = 0;
   let sanitizedLinks = 0;
-  const manifest = readBackupManifest(zip);
+  const extractionTracker = createZipExtractionTracker();
+  const manifest = readBackupManifest(zip, { extractionTracker });
   const shouldRestoreAppState = manifest?.includesAppState === true;
 
   beginBackupMutation('restore');
@@ -1983,6 +2112,7 @@ async function restoreFromZip(zip) {
     validateZipExtractionLimits(zip);
     fs.writeFileSync(tmpPath, readZipEntryData(dbEntry, {
       maxEntryBytes: BACKUP_RESTORE_MAX_DB_BYTES,
+      extractionTracker,
     }));
     const BetterSqlite = require('better-sqlite3');
     backupDb = new BetterSqlite(tmpPath);
@@ -2000,14 +2130,14 @@ async function restoreFromZip(zip) {
       restoredAlbums,
       zip,
       true,
-      { targetImagesDir: stagingImagesDir },
+      { targetImagesDir: stagingImagesDir, extractionTracker },
     );
     applyRestoreImagePathUpdates(backupDb, imagePathUpdates);
 
     let appStateFilesRestored = 0;
     if (shouldRestoreAppState) {
       stagingAppStateDir = createRestoreTempDir('_restore_app_state_');
-      appStateFilesRestored = stageAppStateFromZip(zip, stagingAppStateDir);
+      appStateFilesRestored = stageAppStateFromZip(zip, stagingAppStateDir, { extractionTracker });
       appStateRollbackDir = createAppStateRollback();
     }
 
@@ -2119,6 +2249,7 @@ router.__private = {
   isWindowsReservedPathSegment,
   importFromZip,
   openUploadedBackupZip,
+  createZipExtractionTracker,
   readBackupManifest,
   readZipEntryData,
   readMergeJournal,

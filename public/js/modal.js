@@ -80,6 +80,31 @@ function getPendingUploadedArtPath() {
   return state.modal.pendingMeta?.image_path || null;
 }
 
+function getPendingUploadedArtPaths(modalState = state.modal) {
+  const paths = Array.isArray(modalState?.pendingUploadedArtPaths)
+    ? [...modalState.pendingUploadedArtPaths]
+    : [];
+  const currentPath = modalState?.pendingMeta?.image_path || null;
+  if (currentPath && !paths.includes(currentPath)) paths.push(currentPath);
+  return paths;
+}
+
+function trackPendingUploadedArtPath(imagePath, modalState = state.modal) {
+  if (!imagePath || !modalState) return;
+  if (!Array.isArray(modalState.pendingUploadedArtPaths)) {
+    modalState.pendingUploadedArtPaths = [];
+  }
+  if (!modalState.pendingUploadedArtPaths.includes(imagePath)) {
+    modalState.pendingUploadedArtPaths.push(imagePath);
+  }
+}
+
+function untrackPendingUploadedArtPath(imagePath, modalState = state.modal) {
+  if (!imagePath || !Array.isArray(modalState?.pendingUploadedArtPaths)) return;
+  modalState.pendingUploadedArtPaths = modalState.pendingUploadedArtPaths
+    .filter(path => path !== imagePath);
+}
+
 async function discardUploadedArtPath(imagePath) {
   if (!imagePath) return false;
   try {
@@ -99,21 +124,49 @@ function clearPendingUploadedArtReference(imagePath = getPendingUploadedArtPath(
 }
 
 function clearPendingUploadedArtReferenceFromState(modalState, imagePath) {
-  if (!modalState?.pendingMeta?.image_path) return;
-  if (imagePath && modalState.pendingMeta.image_path !== imagePath) return;
-  delete modalState.pendingMeta.image_path;
-  if (Object.keys(modalState.pendingMeta).length === 0) {
-    modalState.pendingMeta = null;
+  untrackPendingUploadedArtPath(imagePath, modalState);
+  if (modalState?.pendingMeta?.image_path) {
+    if (imagePath && modalState.pendingMeta.image_path !== imagePath) return;
+    delete modalState.pendingMeta.image_path;
+    if (Object.keys(modalState.pendingMeta).length === 0) {
+      modalState.pendingMeta = null;
+    }
   }
 }
 
-async function discardPendingUploadedArt() {
+function restoreModalArtPreviewAfterDiscard() {
+  const album = state.modal.albumId ? getAlbumById(state.modal.albumId) : null;
+  const url = album ? artUrl(album.image_path) : null;
+  if (url) {
+    el.metaArt.src = url;
+    el.metaArt.classList.remove('hidden');
+  } else {
+    el.metaArt.src = '';
+    el.metaArt.classList.add('hidden');
+  }
+  setArtUploadStatus('');
+  if (el.metaArtUpload) el.metaArtUpload.value = '';
+}
+
+async function discardPendingUploadedArt(options = {}) {
   const modalState = state.modal;
-  const imagePath = modalState?.pendingMeta?.image_path || null;
-  if (!imagePath) return false;
-  const discarded = await discardUploadedArtPath(imagePath);
-  if (discarded) clearPendingUploadedArtReferenceFromState(modalState, imagePath);
-  return discarded;
+  const currentImagePath = modalState?.pendingMeta?.image_path || null;
+  const imagePaths = getPendingUploadedArtPaths(modalState);
+  let discardedAny = false;
+  let discardedCurrent = false;
+
+  for (const imagePath of imagePaths) {
+    const discarded = await discardUploadedArtPath(imagePath);
+    if (!discarded) continue;
+    clearPendingUploadedArtReferenceFromState(modalState, imagePath);
+    discardedAny = true;
+    discardedCurrent = discardedCurrent || imagePath === currentImagePath;
+  }
+
+  if (options.resetPreview && discardedCurrent) {
+    restoreModalArtPreviewAfterDiscard();
+  }
+  return discardedAny;
 }
 
 function syncAlbumModalBusyControls() {
@@ -142,6 +195,7 @@ function createModalState(overrides = {}) {
     isUploadingArt: false,
     artUploadPromise: null,
     artUploadError: null,
+    pendingUploadedArtPaths: [],
     pendingMeta: null,
     ...overrides,
   };
@@ -437,9 +491,20 @@ export async function handleImageUpload(file) {
       const data = await result.json();
       if (!result.ok) throw new Error(data.error || 'Upload failed.');
 
+      const previousImagePath = getPendingUploadedArtPath();
+      if (previousImagePath && previousImagePath !== data.image_path) {
+        const discardedPrevious = await discardUploadedArtPath(previousImagePath);
+        if (discardedPrevious) {
+          clearPendingUploadedArtReference(previousImagePath);
+        } else {
+          trackPendingUploadedArtPath(previousImagePath);
+        }
+      }
+
       // Store the returned path in pendingMeta so it gets saved with the album.
       if (!state.modal.pendingMeta) state.modal.pendingMeta = {};
       state.modal.pendingMeta.image_path = data.image_path;
+      trackPendingUploadedArtPath(data.image_path);
 
       // Show a preview.
       el.metaArt.src = '/' + data.image_path;
@@ -541,7 +606,7 @@ export async function handleSaveNew() {
     closeModal({ force: true });
 
   } catch (e) {
-    await discardPendingUploadedArt();
+    await discardPendingUploadedArt({ resetPreview: true });
     showError(getMessage(e));
     focusSaveError();
   } finally {
@@ -749,7 +814,7 @@ export async function handleSaveEdit() {
     closeModal({ force: true });
 
   } catch (e) {
-    await discardPendingUploadedArt();
+    await discardPendingUploadedArt({ resetPreview: true });
     showError(getMessage(e));
     focusSaveError();
   } finally {

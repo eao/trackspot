@@ -215,6 +215,51 @@ describe('backup and restore', () => {
       .toThrow(/too large/i);
   });
 
+  it('caps inflation without calling getData when ZIP metadata is false', () => {
+    const { dbModule, backupRouter } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const zip = new AdmZip();
+    zip.addFile('preferences.json', Buffer.from('12345'));
+    const entry = zip.getEntry('preferences.json');
+    entry.header.size = 1;
+    const getDataSpy = vi.spyOn(entry, 'getData');
+
+    expect(() => backupRouter.__private.readZipEntryData(entry, { maxEntryBytes: 4 }))
+      .toThrow(/too large/i);
+    expect(getDataSpy).not.toHaveBeenCalled();
+  });
+
+  it('tracks actual extracted bytes across entries', () => {
+    const { dbModule, backupRouter } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const tracker = backupRouter.__private.createZipExtractionTracker({ maxTotalBytes: 6 });
+    const firstEntry = {
+      entryName: 'themes/one.json',
+      isDirectory: false,
+      header: { size: 4 },
+      getData: vi.fn(() => Buffer.from('1234')),
+    };
+    const secondEntry = {
+      entryName: 'themes/two.json',
+      isDirectory: false,
+      header: { size: 4 },
+      getData: vi.fn(() => Buffer.from('5678')),
+    };
+
+    expect(backupRouter.__private.readZipEntryData(firstEntry, {
+      maxEntryBytes: 10,
+      extractionTracker: tracker,
+    }).toString()).toBe('1234');
+    expect(tracker.totalBytes).toBe(4);
+    expect(() => backupRouter.__private.readZipEntryData(secondEntry, {
+      maxEntryBytes: 10,
+      extractionTracker: tracker,
+    })).toThrow(/too large after extraction/i);
+    expect(secondEntry.getData).not.toHaveBeenCalled();
+  });
+
   it('sanitizes unsafe links from backup databases before restore', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;

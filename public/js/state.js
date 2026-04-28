@@ -112,6 +112,7 @@ export const state = {
     isUploadingArt: false,
     artUploadPromise: null,
     artUploadError: null,
+    pendingUploadedArtPaths: [],
     // Pending metadata from Spotify fetch or manual entry.
     // This is what gets submitted to POST /api/albums.
     pendingMeta: null,

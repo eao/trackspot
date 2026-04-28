@@ -14,6 +14,7 @@ const stateMock = {
     albumId: null,
     isManual: true,
     isSaving: false,
+    pendingUploadedArtPaths: [],
     pendingMeta: null,
   },
   debugMode: false,
@@ -123,6 +124,7 @@ function resetState() {
     albumId: null,
     isManual: true,
     isSaving: false,
+    pendingUploadedArtPaths: [],
     pendingMeta: null,
   };
 }
@@ -314,6 +316,11 @@ describe('modal save payloads', () => {
     const { handleSaveNew } = await import('../public/js/modal.js');
     fillManualFields();
     stateMock.modal.pendingMeta = { image_path: 'images/manual_123_orphan.jpg' };
+    stateMock.modal.pendingUploadedArtPaths = ['images/manual_123_orphan.jpg'];
+    elMock.metaArt.src = '/images/manual_123_orphan.jpg';
+    elMock.metaArt.classList.remove('hidden');
+    elMock.metaArtUploadStatus.textContent = 'Art uploaded.';
+    elMock.metaArtUploadStatus.classList.remove('hidden');
     apiFetchMock
       .mockRejectedValueOnce(new Error('Validation failed.'))
       .mockResolvedValueOnce({ ok: true, deleted: true });
@@ -329,7 +336,36 @@ describe('modal save payloads', () => {
       body: JSON.stringify({ image_path: 'images/manual_123_orphan.jpg' }),
     });
     expect(stateMock.modal.pendingMeta).toBeNull();
+    expect(stateMock.modal.pendingUploadedArtPaths).toEqual([]);
+    expect(elMock.metaArt.getAttribute('src') || '').toBe('');
+    expect(elMock.metaArt.classList.contains('hidden')).toBe(true);
+    expect(elMock.metaArtUploadStatus.classList.contains('hidden')).toBe(true);
     expect(elMock.fetchError.textContent).toBe('Validation failed.');
+  });
+
+  it('discards the previous manual image when a replacement upload succeeds', async () => {
+    const { handleImageUpload } = await import('../public/js/modal.js');
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ image_path: 'images/manual_1_first.jpg' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ image_path: 'images/manual_2_second.jpg' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+    apiFetchMock.mockResolvedValue({ ok: true, deleted: true });
+
+    await handleImageUpload(new File(['first'], 'first.jpg', { type: 'image/jpeg' }));
+    await handleImageUpload(new File(['second'], 'second.jpg', { type: 'image/jpeg' }));
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/albums/discard-uploaded-art', {
+      method: 'POST',
+      body: JSON.stringify({ image_path: 'images/manual_1_first.jpg' }),
+    });
+    expect(stateMock.modal.pendingMeta).toEqual({ image_path: 'images/manual_2_second.jpg' });
+    expect(stateMock.modal.pendingUploadedArtPaths).toEqual(['images/manual_2_second.jpg']);
+    expect(elMock.metaArt.src).toContain('/images/manual_2_second.jpg');
   });
 
   it('guards modal close while saving or uploading unless forced', async () => {
