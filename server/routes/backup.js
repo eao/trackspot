@@ -119,22 +119,61 @@ function createRestoreTempPath(prefix) {
   return path.join(DATA_DIR, `${prefix}${unique}`);
 }
 
+function fsyncDirectoryBestEffort(directoryPath) {
+  let dirFd = null;
+  try {
+    dirFd = fs.openSync(directoryPath, 'r');
+    fs.fsyncSync(dirFd);
+  } catch {
+    // Directory fsync is not supported on every platform/filesystem.
+  } finally {
+    if (dirFd !== null) {
+      try {
+        fs.closeSync(dirFd);
+      } catch {
+        // Best-effort durability only.
+      }
+    }
+  }
+}
+
 function writeRestoreJournal(journal) {
-  fs.writeFileSync(
-    RESTORE_JOURNAL_PATH,
-    `${JSON.stringify({ ...journal, updatedAt: new Date().toISOString() }, null, 2)}\n`,
-  );
+  const tempPath = createRestoreTempPath('_restore_journal_');
+  const contents = `${JSON.stringify({ ...journal, updatedAt: new Date().toISOString() }, null, 2)}\n`;
+  let fileFd = null;
+
+  try {
+    fileFd = fs.openSync(tempPath, 'w');
+    fs.writeFileSync(fileFd, contents);
+    fs.fsyncSync(fileFd);
+    fs.closeSync(fileFd);
+    fileFd = null;
+    fs.renameSync(tempPath, RESTORE_JOURNAL_PATH);
+    fsyncDirectoryBestEffort(DATA_DIR);
+  } catch (error) {
+    if (fileFd !== null) {
+      try {
+        fs.closeSync(fileFd);
+      } catch {
+        // Preserve the original write/rename error.
+      }
+    }
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
 }
 
 function readRestoreJournal() {
   if (!fs.existsSync(RESTORE_JOURNAL_PATH)) return null;
   try {
     const journal = JSON.parse(fs.readFileSync(RESTORE_JOURNAL_PATH, 'utf8'));
-    if (!journal || journal.operation !== 'restore') return null;
+    if (!journal || typeof journal !== 'object' || Array.isArray(journal) || journal.operation !== 'restore') {
+      throw new Error('Restore journal is invalid.');
+    }
     return journal;
   } catch (error) {
     console.error('Could not read restore journal:', error);
-    return null;
+    throw new Error(`Could not read restore journal: ${error.message}`);
   }
 }
 
@@ -447,39 +486,86 @@ function cleanupRestoreArtifacts(journal) {
   }
 }
 
+function recordRestoreRollbackError(errors, label, error) {
+  console.error(`${label} failed:`, error);
+  errors.push({ label, error });
+}
+
+function throwRestoreRollbackErrors(errors) {
+  if (!errors.length) return;
+  const message = errors
+    .map(({ label, error }) => `${label}: ${error.message}`)
+    .join('; ');
+  const aggregate = new Error(`Interrupted restore recovery completed with errors: ${message}`);
+  aggregate.errors = errors.map(({ error }) => error);
+  throw aggregate;
+}
+
 function rollbackInterruptedRestore(journal) {
   if (!journal) return;
+  const rollbackErrors = [];
 
   if (journal.phase === 'committed') {
-    cleanupRestoreArtifacts(journal);
-    removeRestoreJournal();
+    try {
+      cleanupRestoreArtifacts(journal);
+    } catch (error) {
+      recordRestoreRollbackError(rollbackErrors, 'Committed restore artifact cleanup', error);
+    }
+    try {
+      removeRestoreJournal();
+    } catch (error) {
+      recordRestoreRollbackError(rollbackErrors, 'Committed restore journal removal', error);
+    }
+    throwRestoreRollbackErrors(rollbackErrors);
     return;
   }
 
   if (restorePhaseReached(journal, 'app-state-swapping') && journal.appStateRollbackDir) {
-    const appStateRollbackDir = resolveRestoreArtifact(journal.appStateRollbackDir);
-    if (appStateRollbackDir && fs.existsSync(appStateRollbackDir)) {
-      restoreAppStateRollback(appStateRollbackDir);
+    try {
+      const appStateRollbackDir = resolveRestoreArtifact(journal.appStateRollbackDir);
+      if (appStateRollbackDir && fs.existsSync(appStateRollbackDir)) {
+        restoreAppStateRollback(appStateRollbackDir);
+      }
+    } catch (error) {
+      recordRestoreRollbackError(rollbackErrors, 'App-state restore rollback', error);
     }
   }
 
   if (restorePhaseReached(journal, 'images-swapping') && journal.imageRollback) {
-    const imageRollbackPath = resolveRestoreArtifact(journal.imageRollback.path);
-    restoreImagesRollback({
-      ...journal.imageRollback,
-      path: imageRollbackPath || '',
-    });
-  }
-
-  if (restorePhaseReached(journal, 'db-swapping')) {
-    const rollbackDbPath = resolveRestoreArtifact(journal.rollbackDbPath);
-    if (rollbackDbPath && fs.existsSync(rollbackDbPath)) {
-      replaceDatabaseFile(rollbackDbPath);
+    try {
+      const imageRollbackPath = resolveRestoreArtifact(journal.imageRollback.path);
+      restoreImagesRollback({
+        ...journal.imageRollback,
+        path: imageRollbackPath || '',
+      });
+    } catch (error) {
+      recordRestoreRollbackError(rollbackErrors, 'Image restore rollback', error);
     }
   }
 
-  cleanupRestoreArtifacts(journal);
-  removeRestoreJournal();
+  if (restorePhaseReached(journal, 'db-swapping')) {
+    try {
+      const rollbackDbPath = resolveRestoreArtifact(journal.rollbackDbPath);
+      if (rollbackDbPath && fs.existsSync(rollbackDbPath)) {
+        replaceDatabaseFile(rollbackDbPath);
+      }
+    } catch (error) {
+      recordRestoreRollbackError(rollbackErrors, 'Database restore rollback', error);
+    }
+  }
+
+  try {
+    cleanupRestoreArtifacts(journal);
+  } catch (error) {
+    recordRestoreRollbackError(rollbackErrors, 'Restore artifact cleanup', error);
+  }
+  try {
+    removeRestoreJournal();
+  } catch (error) {
+    recordRestoreRollbackError(rollbackErrors, 'Restore journal removal', error);
+  }
+
+  throwRestoreRollbackErrors(rollbackErrors);
 }
 
 function recoverInterruptedRestore() {
@@ -901,10 +987,12 @@ router.__private = {
   buildBackupManifest,
   importFromZip,
   readBackupManifest,
+  readRestoreJournal,
   recoverInterruptedRestore,
   restoreAppStateFromZip,
   stageAppStateFromZip,
   restoreFromZip,
+  writeRestoreJournal,
 };
 
 module.exports = router;

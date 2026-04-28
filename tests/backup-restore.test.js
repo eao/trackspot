@@ -427,6 +427,213 @@ describe('backup and restore', () => {
     expect(fs.existsSync(path.join(dataDir, backupRouter.__private.RESTORE_JOURNAL_NAME))).toBe(false);
   }, 15000);
 
+  it('fails closed and preserves a corrupt restore journal', () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const journalPath = path.join(dataDir, backupRouter.__private.RESTORE_JOURNAL_NAME);
+    fs.writeFileSync(journalPath, '{"operation":"restore",');
+
+    expect(() => backupRouter.__private.recoverInterruptedRestore()).toThrow(/Could not read restore journal/);
+    expect(fs.readFileSync(journalPath, 'utf8')).toBe('{"operation":"restore",');
+  });
+
+  it('keeps the previous restore journal when an atomic journal write fails', () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const journalPath = path.join(dataDir, backupRouter.__private.RESTORE_JOURNAL_NAME);
+    backupRouter.__private.writeRestoreJournal({
+      operation: 'restore',
+      phase: 'prepared',
+      rollbackDbPath: path.join(dataDir, '_restore_rollback_existing.db'),
+    });
+    const previousContents = fs.readFileSync(journalPath, 'utf8');
+
+    const originalWriteFileSync = fs.writeFileSync;
+    fs.writeFileSync = function writeFileSyncWithJournalFailure(filePath, contents, options) {
+      if (typeof filePath === 'number') {
+        throw new Error('simulated journal temp write failure');
+      }
+      return originalWriteFileSync.call(this, filePath, contents, options);
+    };
+
+    try {
+      expect(() => backupRouter.__private.writeRestoreJournal({
+        operation: 'restore',
+        phase: 'db-swapping',
+        rollbackDbPath: path.join(dataDir, '_restore_rollback_new.db'),
+      })).toThrow(/simulated journal temp write failure/);
+    } finally {
+      fs.writeFileSync = originalWriteFileSync;
+    }
+
+    expect(fs.readFileSync(journalPath, 'utf8')).toBe(previousContents);
+    expect(backupRouter.__private.readRestoreJournal().phase).toBe('prepared');
+  });
+
+  it('restores the DB even when interrupted image rollback fails', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'images', 'current-art.jpg'), Buffer.from('current-image'));
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, image_path, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      7,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'planned',
+      'images/current-art.jpg',
+      'manual',
+      '2026-04-02 00:00:00',
+      '2026-04-02 00:00:00',
+    );
+
+    const rollbackDbPath = path.join(dataDir, '_restore_rollback_test.db');
+    await db.backup(rollbackDbPath);
+
+    db.prepare('DELETE FROM albums').run();
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, image_path, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      42,
+      'Backup Album',
+      JSON.stringify([{ name: 'Backup Artist' }]),
+      'completed',
+      'images/backup-art.jpg',
+      'manual',
+      '2026-04-01 00:00:00',
+      '2026-04-01 00:00:00',
+    );
+
+    const imageRollbackDir = fs.mkdtempSync(path.join(dataDir, '_restore_images_rollback_'));
+    writeFileEnsured(path.join(imageRollbackDir, 'current-art.jpg'), Buffer.from('current-image'));
+    backupRouter.__private.writeRestoreJournal({
+      operation: 'restore',
+      phase: 'images-swapping',
+      tmpPath: path.join(dataDir, '_restore_tmp_test.db'),
+      rollbackDbPath,
+      stagingImagesDir: null,
+      stagingAppStateDir: null,
+      imageRollback: {
+        path: imageRollbackDir,
+        hadImagesDir: true,
+      },
+      appStateRollbackDir: null,
+    });
+
+    const originalRenameSync = fs.renameSync;
+    fs.renameSync = function renameSyncWithImageRollbackFailure(oldPath, newPath) {
+      if (
+        path.resolve(String(oldPath)) === path.resolve(imageRollbackDir)
+        && path.resolve(String(newPath)) === path.resolve(path.join(dataDir, 'images'))
+      ) {
+        throw new Error('simulated interrupted image rollback failure');
+      }
+      return originalRenameSync.call(this, oldPath, newPath);
+    };
+
+    try {
+      expect(() => backupRouter.__private.recoverInterruptedRestore())
+        .toThrow(/Image restore rollback: simulated interrupted image rollback failure/);
+    } finally {
+      fs.renameSync = originalRenameSync;
+    }
+
+    const currentAlbum = db.prepare('SELECT id, album_name, image_path FROM albums').get();
+    expect(currentAlbum).toEqual({
+      id: 7,
+      album_name: 'Current Album',
+      image_path: 'images/current-art.jpg',
+    });
+  }, 15000);
+
+  it('restores images and DB even when interrupted app-state rollback fails', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'images', 'current-art.jpg'), Buffer.from('current-image'));
+    writeFileEnsured(path.join(dataDir, 'images', 'backup-art.jpg'), Buffer.from('backup-image'));
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Backup Name' }));
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, image_path, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      7,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'planned',
+      'images/current-art.jpg',
+      'manual',
+      '2026-04-02 00:00:00',
+      '2026-04-02 00:00:00',
+    );
+
+    const rollbackDbPath = path.join(dataDir, '_restore_rollback_test.db');
+    await db.backup(rollbackDbPath);
+    const imageRollbackDir = fs.mkdtempSync(path.join(dataDir, '_restore_images_rollback_'));
+    writeFileEnsured(path.join(imageRollbackDir, 'current-art.jpg'), Buffer.from('current-image'));
+    const appStateRollbackDir = fs.mkdtempSync(path.join(dataDir, '_restore_app_state_rollback_'));
+    writeFileEnsured(path.join(appStateRollbackDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Current Name' }));
+
+    db.prepare('DELETE FROM albums').run();
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, image_path, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      42,
+      'Backup Album',
+      JSON.stringify([{ name: 'Backup Artist' }]),
+      'completed',
+      'images/backup-art.jpg',
+      'manual',
+      '2026-04-01 00:00:00',
+      '2026-04-01 00:00:00',
+    );
+
+    backupRouter.__private.writeRestoreJournal({
+      operation: 'restore',
+      phase: 'app-state-swapping',
+      tmpPath: path.join(dataDir, '_restore_tmp_test.db'),
+      rollbackDbPath,
+      stagingImagesDir: null,
+      stagingAppStateDir: null,
+      imageRollback: {
+        path: imageRollbackDir,
+        hadImagesDir: true,
+      },
+      appStateRollbackDir,
+    });
+
+    const originalCopyFileSync = fs.copyFileSync;
+    fs.copyFileSync = function copyFileSyncWithAppStateRollbackFailure(sourcePath, targetPath, mode) {
+      if (String(sourcePath).startsWith(appStateRollbackDir)) {
+        throw new Error('simulated interrupted app-state rollback failure');
+      }
+      return originalCopyFileSync.call(this, sourcePath, targetPath, mode);
+    };
+
+    try {
+      expect(() => backupRouter.__private.recoverInterruptedRestore())
+        .toThrow(/App-state restore rollback: simulated interrupted app-state rollback failure/);
+    } finally {
+      fs.copyFileSync = originalCopyFileSync;
+    }
+
+    const currentAlbum = db.prepare('SELECT id, album_name, image_path FROM albums').get();
+    expect(currentAlbum).toEqual({
+      id: 7,
+      album_name: 'Current Album',
+      image_path: 'images/current-art.jpg',
+    });
+    expect(fs.readFileSync(path.join(dataDir, 'images', 'current-art.jpg')).toString()).toBe('current-image');
+  }, 15000);
+
   it('restores app-state files from new full backups', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
