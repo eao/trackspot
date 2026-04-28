@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { getConfiguredPath, getCorsAllowedOrigins } = require('./config');
+const { getConfiguredPath, getCorsAllowedOrigins, getTrustedHosts, normalizeHostName } = require('./config');
 
 function getOriginFromReferer(referer) {
   try {
@@ -16,20 +16,35 @@ function getRequestOrigin(req) {
   return `${req.protocol || 'http'}://${host}`;
 }
 
+function getRequestHostName(req) {
+  return normalizeHostName(req.headers.host);
+}
+
 function isReadOnlyRequest(req) {
   return req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
 }
 
-function isAllowedBrowserOrigin(req, browserOrigin, allowedOrigins) {
+function isAllowedBrowserOrigin(browserOrigin, allowedOrigins) {
   if (!browserOrigin) return true;
-  return allowedOrigins.has(browserOrigin) || browserOrigin === getRequestOrigin(req);
+  return allowedOrigins.has(browserOrigin);
+}
+
+function isTrustedRequestHost(req, trustedHosts) {
+  const hostName = getRequestHostName(req);
+  if (!hostName) return true;
+  return trustedHosts.has(hostName);
 }
 
 function createApp() {
   const app = express();
 
   const allowedOrigins = new Set(getCorsAllowedOrigins());
+  const trustedHosts = new Set(getTrustedHosts());
   app.use((req, res, next) => {
+    if (!isTrustedRequestHost(req, trustedHosts)) {
+      return res.status(403).json({ error: 'Request host is not trusted.' });
+    }
+
     const origin = req.headers.origin;
     if (origin && allowedOrigins.has(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
@@ -42,7 +57,7 @@ function createApp() {
     }
     if (!isReadOnlyRequest(req)) {
       const browserOrigin = origin || getOriginFromReferer(req.headers.referer);
-      if (!isAllowedBrowserOrigin(req, browserOrigin, allowedOrigins)) {
+      if (!isAllowedBrowserOrigin(browserOrigin, allowedOrigins)) {
         return res.status(403).json({ error: 'Cross-origin mutation rejected.' });
       }
     }
@@ -129,7 +144,9 @@ function createApp() {
 module.exports = {
   createApp,
   getOriginFromReferer,
+  getRequestHostName,
   getRequestOrigin,
   isAllowedBrowserOrigin,
   isReadOnlyRequest,
+  isTrustedRequestHost,
 };

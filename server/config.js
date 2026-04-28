@@ -9,6 +9,7 @@ dotenv.config({ path: ENV_PATH, quiet: true });
 const DEFAULT_PORT = '1060';
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_BACKUP_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
+const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '[::]', '*']);
 
 function resolveConfigPath(rawValue, fallbackPath) {
   const value = typeof rawValue === 'string' ? rawValue.trim() : '';
@@ -41,21 +42,86 @@ function getBackupUploadMaxBytes() {
   return parsePositiveInteger(process.env.BACKUP_UPLOAD_MAX_BYTES, DEFAULT_BACKUP_UPLOAD_MAX_BYTES);
 }
 
-function parseOriginList(value) {
+function parseList(value) {
   return String(value || '')
     .split(',')
-    .map(origin => origin.trim())
+    .map(item => item.trim())
     .filter(Boolean);
 }
 
+function parseOriginList(value) {
+  return parseList(value)
+    .map(origin => {
+      try {
+        return new URL(origin).origin;
+      } catch {
+        return origin.replace(/\/+$/, '');
+      }
+    });
+}
+
+function normalizeHostName(value) {
+  let raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+
+  const protocolIndex = raw.indexOf('://');
+  if (protocolIndex !== -1) raw = raw.slice(protocolIndex + 3);
+  raw = raw.split('/')[0];
+
+  if (raw.startsWith('[')) {
+    const closingBracket = raw.indexOf(']');
+    return closingBracket === -1 ? raw : raw.slice(1, closingBracket);
+  }
+
+  const colonCount = (raw.match(/:/g) || []).length;
+  if (colonCount === 1) return raw.split(':')[0];
+  return raw;
+}
+
+function formatHostForOrigin(host) {
+  const normalized = normalizeHostName(host);
+  if (!normalized) return '';
+  return normalized.includes(':') ? `[${normalized}]` : normalized;
+}
+
+function getConfiguredHostOrigin() {
+  const host = normalizeHostName(getHost());
+  if (!host || WILDCARD_HOSTS.has(host)) return null;
+  return `http://${formatHostForOrigin(host)}:${getPort()}`;
+}
+
+function getHostNameFromOrigin(origin) {
+  try {
+    return normalizeHostName(new URL(origin).hostname);
+  } catch {
+    return '';
+  }
+}
+
 function getCorsAllowedOrigins() {
-  return [
+  return [...new Set([
     'https://open.spotify.com',
     'https://xpui.app.spotify.com',
     `http://localhost:${getPort()}`,
     `http://127.0.0.1:${getPort()}`,
+    `http://[::1]:${getPort()}`,
+    getConfiguredHostOrigin(),
     ...parseOriginList(process.env.CORS_ALLOWED_ORIGINS),
+  ].filter(Boolean))];
+}
+
+function getTrustedHosts() {
+  const configuredOrigins = parseOriginList(process.env.CORS_ALLOWED_ORIGINS);
+  const configuredHost = normalizeHostName(getHost());
+  const hosts = [
+    'localhost',
+    '127.0.0.1',
+    '::1',
+    WILDCARD_HOSTS.has(configuredHost) ? '' : configuredHost,
+    ...configuredOrigins.map(getHostNameFromOrigin),
+    ...parseList(process.env.TRUSTED_HOSTS).map(normalizeHostName),
   ];
+  return [...new Set(hosts.filter(Boolean))];
 }
 
 module.exports = {
@@ -70,6 +136,8 @@ module.exports = {
   getDataDir,
   getHost,
   getPort,
+  getTrustedHosts,
+  normalizeHostName,
   parsePositiveInteger,
   resolveConfigPath,
 };

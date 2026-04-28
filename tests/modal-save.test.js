@@ -312,7 +312,7 @@ describe('modal save payloads', () => {
     expect(elMock.btnSave.disabled).toBe(false);
   });
 
-  it('discards an uploaded manual image when saving fails after upload', async () => {
+  it('preserves an uploaded manual image when saving fails so the user can retry', async () => {
     const { handleSaveNew } = await import('../public/js/modal.js');
     fillManualFields();
     stateMock.modal.pendingMeta = { image_path: 'images/manual_123_orphan.jpg' };
@@ -321,25 +321,21 @@ describe('modal save payloads', () => {
     elMock.metaArt.classList.remove('hidden');
     elMock.metaArtUploadStatus.textContent = 'Art uploaded.';
     elMock.metaArtUploadStatus.classList.remove('hidden');
-    apiFetchMock
-      .mockRejectedValueOnce(new Error('Validation failed.'))
-      .mockResolvedValueOnce({ ok: true, deleted: true });
+    apiFetchMock.mockRejectedValueOnce(new Error('Validation failed.'));
 
     await handleSaveNew();
 
-    expect(apiFetchMock).toHaveBeenNthCalledWith(1, '/api/albums', {
+    expect(apiFetchMock).toHaveBeenCalledOnce();
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/albums', {
       method: 'POST',
       body: expect.any(String),
     });
-    expect(apiFetchMock).toHaveBeenNthCalledWith(2, '/api/albums/discard-uploaded-art', {
-      method: 'POST',
-      body: JSON.stringify({ image_path: 'images/manual_123_orphan.jpg' }),
-    });
-    expect(stateMock.modal.pendingMeta).toBeNull();
-    expect(stateMock.modal.pendingUploadedArtPaths).toEqual([]);
-    expect(elMock.metaArt.getAttribute('src') || '').toBe('');
-    expect(elMock.metaArt.classList.contains('hidden')).toBe(true);
-    expect(elMock.metaArtUploadStatus.classList.contains('hidden')).toBe(true);
+    expect(JSON.parse(apiFetchMock.mock.calls[0][1].body).image_path).toBe('images/manual_123_orphan.jpg');
+    expect(stateMock.modal.pendingMeta).toEqual({ image_path: 'images/manual_123_orphan.jpg' });
+    expect(stateMock.modal.pendingUploadedArtPaths).toEqual(['images/manual_123_orphan.jpg']);
+    expect(elMock.metaArt.src).toContain('/images/manual_123_orphan.jpg');
+    expect(elMock.metaArt.classList.contains('hidden')).toBe(false);
+    expect(elMock.metaArtUploadStatus.textContent).toBe('Art uploaded.');
     expect(elMock.fetchError.textContent).toBe('Validation failed.');
   });
 

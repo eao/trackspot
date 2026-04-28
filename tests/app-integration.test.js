@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import http from 'node:http';
 import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -34,12 +35,48 @@ let dbModule;
 let testServer;
 let consoleErrorSpy;
 
+const originalEnv = {
+  CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
+  TRUSTED_HOSTS: process.env.TRUSTED_HOSTS,
+};
+
 function loadAppContext() {
   dataDir = createTempDataDir('trackspot-app-integration-');
   resetServerModules(serverModulePaths);
   dbModule = require('../server/db.js');
   const { createApp } = require('../server/app.js');
   return createApp();
+}
+
+function requestJsonWithHost(baseUrl, requestPath, { host, origin, body }) {
+  const url = new URL(requestPath, baseUrl);
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: `${url.pathname}${url.search}`,
+      method: 'PATCH',
+      headers: {
+        Host: host,
+        Origin: origin,
+        'Content-Type': 'application/json',
+      },
+    }, res => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => {
+        text += chunk;
+      });
+      res.on('end', () => {
+        resolve({
+          status: res.statusCode,
+          body: text ? JSON.parse(text) : null,
+        });
+      });
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
 }
 
 beforeEach(() => {
@@ -52,6 +89,10 @@ afterEach(async () => {
   dbModule?.db?.close();
   dbModule = null;
   delete process.env.DATA_DIR;
+  for (const [key, value] of Object.entries(originalEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   resetServerModules(serverModulePaths);
   removeTempDir(dataDir);
   dataDir = null;
@@ -94,30 +135,44 @@ describe('Express app integration', () => {
     expect(preferences.body.preferences.contentWidthPx).not.toBe(1234);
   });
 
-  it('allows same-origin and configured browser mutation origins', async () => {
+  it('allows default loopback and configured browser mutation origins', async () => {
+    process.env.CORS_ALLOWED_ORIGINS = 'http://trackspot.local:1060';
     testServer = await startTestServer(loadAppContext());
 
-    const sameOrigin = await requestJson(testServer.baseUrl, '/api/preferences', {
+    const loopbackOrigin = await requestJson(testServer.baseUrl, '/api/preferences', {
       method: 'PATCH',
       headers: {
-        Origin: testServer.baseUrl,
+        Origin: 'http://127.0.0.1:1060',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ contentWidthPx: 1234 }),
     });
-    const spotifyOrigin = await requestJson(testServer.baseUrl, '/api/preferences', {
+    const configuredOrigin = await requestJson(testServer.baseUrl, '/api/preferences', {
       method: 'PATCH',
       headers: {
-        Origin: 'https://open.spotify.com',
+        Origin: 'http://trackspot.local:1060',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ contentWidthPx: 1250 }),
     });
 
-    expect(sameOrigin.status).toBe(200);
-    expect(spotifyOrigin.status).toBe(200);
-    expect(spotifyOrigin.headers.get('access-control-allow-origin')).toBe('https://open.spotify.com');
-    expect(spotifyOrigin.body.preferences.contentWidthPx).toBe(1250);
+    expect(loopbackOrigin.status).toBe(200);
+    expect(configuredOrigin.status).toBe(200);
+    expect(configuredOrigin.headers.get('access-control-allow-origin')).toBe('http://trackspot.local:1060');
+    expect(configuredOrigin.body.preferences.contentWidthPx).toBe(1250);
+  });
+
+  it('rejects mutation requests with untrusted Host headers', async () => {
+    testServer = await startTestServer(loadAppContext());
+
+    const rejected = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
+      host: 'evil.example:1060',
+      origin: 'http://evil.example:1060',
+      body: JSON.stringify({ contentWidthPx: 1234 }),
+    });
+
+    expect(rejected.status).toBe(403);
+    expect(rejected.body).toEqual({ error: 'Request host is not trusted.' });
   });
 
   it('rejects unsafe referer-only browser mutations but allows direct local tools', async () => {

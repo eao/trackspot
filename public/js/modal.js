@@ -606,7 +606,6 @@ export async function handleSaveNew() {
     closeModal({ force: true });
 
   } catch (e) {
-    await discardPendingUploadedArt({ resetPreview: true });
     showError(getMessage(e));
     focusSaveError();
   } finally {
@@ -814,7 +813,6 @@ export async function handleSaveEdit() {
     closeModal({ force: true });
 
   } catch (e) {
-    await discardPendingUploadedArt({ resetPreview: true });
     showError(getMessage(e));
     focusSaveError();
   } finally {

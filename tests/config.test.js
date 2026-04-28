@@ -10,6 +10,7 @@ const originalEnv = {
   DATA_DIR: process.env.DATA_DIR,
   HOST: process.env.HOST,
   PORT: process.env.PORT,
+  TRUSTED_HOSTS: process.env.TRUSTED_HOSTS,
 };
 
 function resetConfigModule() {
@@ -37,8 +38,9 @@ describe('server config', () => {
     delete process.env.HOST;
     process.env.PORT = '4242';
     process.env.CORS_ALLOWED_ORIGINS = 'http://example.test, http://lan.test:4242';
+    process.env.TRUSTED_HOSTS = 'trackspot.local, 100.64.0.10:4242';
     resetConfigModule();
-    const { getCorsAllowedOrigins, getHost, getPort } = require('../server/config.js');
+    const { getCorsAllowedOrigins, getHost, getPort, getTrustedHosts } = require('../server/config.js');
 
     expect(getHost()).toBe('127.0.0.1');
     expect(getPort()).toBe('4242');
@@ -46,8 +48,18 @@ describe('server config', () => {
       'https://open.spotify.com',
       'https://xpui.app.spotify.com',
       'http://localhost:4242',
+      'http://[::1]:4242',
       'http://example.test',
       'http://lan.test:4242',
+    ]));
+    expect(getTrustedHosts()).toEqual(expect.arrayContaining([
+      'localhost',
+      '127.0.0.1',
+      '::1',
+      'example.test',
+      'lan.test',
+      'trackspot.local',
+      '100.64.0.10',
     ]));
   });
 });
