@@ -82,6 +82,117 @@ function normalizeEtagHeader(value) {
 }
 
 const KNOWN_ALBUM_TYPES = ['ALBUM', 'EP', 'SINGLE', 'COMPILATION'];
+const MANAGED_ALBUM_IMAGE_PREFIX = 'images/';
+const ALBUM_IMAGE_FILENAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]*\.(?:jpe?g|png|webp)$/i;
+const REFETCH_TEMP_IMAGE_FILENAME_RE = /^_temp_\d+_\d+\.jpg$/i;
+
+function hasOwn(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj || {}, key);
+}
+
+function getAlbumImageFilename(imagePath) {
+  return imagePath.slice(MANAGED_ALBUM_IMAGE_PREFIX.length);
+}
+
+function normalizeAlbumImagePath(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') throw new Error('Invalid album image path.');
+
+  const normalized = value.trim().replace(/\\/g, '/');
+  if (!normalized.startsWith(MANAGED_ALBUM_IMAGE_PREFIX)) {
+    throw new Error('Album image paths must stay under images/.');
+  }
+
+  const filename = getAlbumImageFilename(normalized);
+  if (
+    !ALBUM_IMAGE_FILENAME_RE.test(filename) ||
+    filename !== path.basename(filename)
+  ) {
+    throw new Error('Invalid album image filename.');
+  }
+
+  return `${MANAGED_ALBUM_IMAGE_PREFIX}${filename}`;
+}
+
+function resolveAlbumImage(imagePath) {
+  const normalized = normalizeAlbumImagePath(imagePath);
+  if (!normalized) return null;
+
+  const fullPath = path.resolve(IMAGES_DIR, getAlbumImageFilename(normalized));
+  const imagesRoot = path.resolve(IMAGES_DIR);
+  const relativePath = path.relative(imagesRoot, fullPath);
+  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    throw new Error('Album image path escapes the images directory.');
+  }
+
+  return { imagePath: normalized, fullPath };
+}
+
+function requireExistingAlbumImagePath(imagePath) {
+  const resolved = resolveAlbumImage(imagePath);
+  if (!resolved || !fs.existsSync(resolved.fullPath)) {
+    throw new Error('Album image file does not exist.');
+  }
+  return resolved.imagePath;
+}
+
+function cleanupUnusedAlbumImage(imagePath) {
+  let resolved;
+  try {
+    resolved = resolveAlbumImage(imagePath);
+  } catch {
+    return false;
+  }
+  if (!resolved) return false;
+
+  const inUse = db.prepare(`
+    SELECT 1
+    FROM albums
+    WHERE image_path = ? OR image_path = ?
+    LIMIT 1
+  `).get(imagePath, resolved.imagePath);
+  if (inUse) return false;
+
+  try {
+    if (fs.existsSync(resolved.fullPath)) fs.unlinkSync(resolved.fullPath);
+    return true;
+  } catch (error) {
+    console.warn('Album image cleanup failed:', error);
+    return false;
+  }
+}
+
+function buildUniqueAlbumImagePath(prefix, ext = '.jpg') {
+  const safePrefix = String(prefix || 'album').replace(/[^A-Za-z0-9_-]/g, '_') || 'album';
+  const safeExt = ['.jpg', '.jpeg', '.png', '.webp'].includes(String(ext).toLowerCase())
+    ? String(ext).toLowerCase()
+    : '.jpg';
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}${attempt ? `_${attempt}` : ''}`;
+    const imagePath = `${MANAGED_ALBUM_IMAGE_PREFIX}${safePrefix}_${suffix}${safeExt}`;
+    const resolved = resolveAlbumImage(imagePath);
+    if (!fs.existsSync(resolved.fullPath)) return resolved;
+  }
+
+  throw new Error('Could not allocate a unique album image filename.');
+}
+
+function normalizeRefetchTempImagePath(value, albumId = null) {
+  const imagePath = normalizeAlbumImagePath(value);
+  if (!imagePath) throw new Error('Refetched album art path is required.');
+
+  const filename = getAlbumImageFilename(imagePath);
+  const expectedPrefix = albumId === null ? null : `_temp_${albumId}_`;
+  if (
+    !REFETCH_TEMP_IMAGE_FILENAME_RE.test(filename) ||
+    (expectedPrefix && !filename.startsWith(expectedPrefix))
+  ) {
+    throw new Error('Invalid refetched album art path.');
+  }
+
+  return imagePath;
+}
 
 function parsePositiveInt(value, fallback = null) {
   const parsed = Number.parseInt(String(value), 10);
@@ -825,6 +936,15 @@ router.post('/', async (req, res) => {
     spotify_graphql_json,
   });
 
+  let normalizedImagePath = null;
+  try {
+    normalizedImagePath = image_path == null || image_path === ''
+      ? null
+      : requireExistingAlbumImagePath(image_path);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
   const result = db.prepare(`
     INSERT INTO albums (
       spotify_url, spotify_album_id, share_url, album_name, album_type,
@@ -859,7 +979,7 @@ router.post('/', async (req, res) => {
     dominant_color_dark:  dominant_color_dark ?? null,
     dominant_color_light: dominant_color_light ?? null,
     dominant_color_raw:   dominant_color_raw ?? null,
-    image_path:           image_path ?? null,
+    image_path:           normalizedImagePath,
     status:               validatedStatus,
     rating:               validatedRating,
     notes:                normalizedNotes,
@@ -934,6 +1054,16 @@ router.patch('/:id', async (req, res) => {
     existingSpotifyFirstTrack: parseJsonField(existing.spotify_first_track, null),
   });
 
+  const hasIncomingImagePath = hasOwn(req.body, 'image_path');
+  let nextImagePath = existing.image_path;
+  try {
+    if (hasIncomingImagePath && image_path !== null && image_path !== undefined && image_path !== '') {
+      nextImagePath = requireExistingAlbumImagePath(image_path);
+    }
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
   db.prepare(`
     UPDATE albums SET
       status      = :status,
@@ -969,7 +1099,7 @@ router.patch('/:id', async (req, res) => {
     album_name:   album_name ?? existing.album_name,
     release_date: releaseFields.release_date,
     release_year: releaseFields.release_year,
-    image_path:   image_path ?? existing.image_path,
+    image_path:   nextImagePath,
     repeats:      validatedRepeats,
     priority:     validatedPriority,
     album_type:   album_type !== undefined ? (album_type ?? null) : existing.album_type,
@@ -990,6 +1120,9 @@ router.patch('/:id', async (req, res) => {
   const updated = parseAlbum(
     db.prepare(`SELECT * FROM albums WHERE id = ?`).get(req.params.id)
   );
+  if (hasIncomingImagePath && nextImagePath !== existing.image_path) {
+    cleanupUnusedAlbumImage(existing.image_path);
+  }
   res.json(updated);
 });
 
@@ -1000,13 +1133,9 @@ router.patch('/:id', async (req, res) => {
 
 router.delete('/wipe', (req, res) => {
   const albums = db.prepare('SELECT image_path FROM albums').all();
+  const imagePaths = [...new Set(albums.map(album => album.image_path).filter(Boolean))];
   db.prepare('DELETE FROM albums').run();
-  for (const album of albums) {
-    if (album.image_path) {
-      const fullPath = path.join(IMAGES_DIR, '..', album.image_path);
-      try { fs.unlinkSync(fullPath); } catch (_) {}
-    }
-  }
+  for (const imagePath of imagePaths) cleanupUnusedAlbumImage(imagePath);
   res.json({ ok: true });
 });
 
@@ -1020,15 +1149,8 @@ router.delete('/:id', (req, res) => {
   const existing = db.prepare(`SELECT * FROM albums WHERE id = ?`).get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Album not found.' });
 
-  // Delete the image file if there is one.
-  if (existing.image_path) {
-    const fullPath = path.join(IMAGES_DIR, '..', existing.image_path);
-    if (fs.existsSync(fullPath)) {
-      fs.unlinkSync(fullPath);
-    }
-  }
-
   db.prepare(`DELETE FROM albums WHERE id = ?`).run(req.params.id);
+  cleanupUnusedAlbumImage(existing.image_path);
   res.json({ deleted: true, id: parseInt(req.params.id, 10) });
 });
 
@@ -1102,7 +1224,9 @@ router.post('/:id/refetch-art', async (req, res) => {
   try {
     if (!existing.image_path) {
       // No existing art — download and apply directly.
-      const imagePath = await downloadImage(imageUrl, existing.spotify_album_id || `manual_${existing.id}`);
+      const imagePath = requireExistingAlbumImagePath(
+        await downloadImage(imageUrl, existing.spotify_album_id || `manual_${existing.id}`)
+      );
       db.prepare('UPDATE albums SET image_path = ? WHERE id = ?').run(imagePath, existing.id);
       const updated = parseAlbum(db.prepare('SELECT * FROM albums WHERE id = ?').get(existing.id));
       return res.json({ image_path: imagePath, ...updated });
@@ -1110,22 +1234,77 @@ router.post('/:id/refetch-art', async (req, res) => {
 
     // Has existing art — download to a temp path and compare.
     const tempId = `_temp_${existing.id}_${Date.now()}`;
-    const newPath = await downloadImage(imageUrl, tempId);
+    const newPath = requireExistingAlbumImagePath(await downloadImage(imageUrl, tempId));
 
-    const oldFull = path.join(IMAGES_DIR, '..', existing.image_path);
-    const newFull = path.join(IMAGES_DIR, '..', newPath);
+    let oldFull = null;
+    try {
+      oldFull = resolveAlbumImage(existing.image_path)?.fullPath ?? null;
+    } catch {
+      oldFull = null;
+    }
+    const newFull = resolveAlbumImage(newPath).fullPath;
 
     const hashFile = f => {
       const buf = fs.readFileSync(f);
       return crypto.createHash('md5').update(buf).digest('hex');
     };
 
-    const identical = fs.existsSync(oldFull) && hashFile(oldFull) === hashFile(newFull);
+    const identical = oldFull ? fs.existsSync(oldFull) && hashFile(oldFull) === hashFile(newFull) : false;
     return res.json({ new_image_path: newPath, identical });
 
   } catch (e) {
     console.error('Refetch art error:', e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/albums/:id/replace-refetched-art
+// Commits a refetched temp art file, updates the album, and removes the old
+// file only after the database no longer references it.
+// ---------------------------------------------------------------------------
+
+router.post('/:id/replace-refetched-art', (req, res) => {
+  const existing = db.prepare('SELECT * FROM albums WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Album not found.' });
+
+  let tempImage;
+  try {
+    const tempImagePath = normalizeRefetchTempImagePath(req.body?.image_path ?? req.body?.path, existing.id);
+    tempImage = resolveAlbumImage(tempImagePath);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
+  if (!fs.existsSync(tempImage.fullPath)) {
+    return res.status(404).json({ error: 'Refetched album art file not found.' });
+  }
+
+  const ext = path.extname(getAlbumImageFilename(tempImage.imagePath)) || '.jpg';
+  const finalImage = buildUniqueAlbumImagePath(`refetch_${existing.id}`, ext);
+  let renamed = false;
+
+  try {
+    fs.renameSync(tempImage.fullPath, finalImage.fullPath);
+    renamed = true;
+
+    db.prepare('UPDATE albums SET image_path = ? WHERE id = ?').run(finalImage.imagePath, existing.id);
+    cleanupUnusedAlbumImage(existing.image_path);
+
+    const updated = parseAlbum(db.prepare('SELECT * FROM albums WHERE id = ?').get(existing.id));
+    return res.json(updated);
+  } catch (e) {
+    if (renamed) {
+      try {
+        if (fs.existsSync(finalImage.fullPath) && !fs.existsSync(tempImage.fullPath)) {
+          fs.renameSync(finalImage.fullPath, tempImage.fullPath);
+        }
+      } catch (rollbackError) {
+        console.warn('Refetched art rollback failed:', rollbackError);
+      }
+    }
+    console.error('Replace refetched art error:', e);
+    return res.status(500).json({ error: e.message });
   }
 });
 
@@ -1137,8 +1316,16 @@ router.post('/:id/refetch-art', async (req, res) => {
 router.post('/discard-temp-art', (req, res) => {
   const { path: imgPath } = req.body;
   if (!imgPath) return res.json({ ok: true });
-  const fullPath = path.join(IMAGES_DIR, '..', imgPath);
-  if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+
+  let tempImage;
+  try {
+    tempImage = resolveAlbumImage(normalizeRefetchTempImagePath(imgPath));
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
+  const inUse = db.prepare('SELECT 1 FROM albums WHERE image_path = ? LIMIT 1').get(tempImage.imagePath);
+  if (!inUse && fs.existsSync(tempImage.fullPath)) fs.unlinkSync(tempImage.fullPath);
   res.json({ ok: true });
 });
 
@@ -1151,12 +1338,8 @@ router.post('/:id/delete-art', (req, res) => {
   const existing = db.prepare('SELECT * FROM albums WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Album not found.' });
 
-  if (existing.image_path) {
-    const fullPath = path.join(IMAGES_DIR, '..', existing.image_path);
-    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-  }
-
   db.prepare('UPDATE albums SET image_path = NULL WHERE id = ?').run(existing.id);
+  cleanupUnusedAlbumImage(existing.image_path);
   const updated = parseAlbum(db.prepare('SELECT * FROM albums WHERE id = ?').get(existing.id));
   res.json(updated);
 });
@@ -1177,19 +1360,21 @@ router.post('/:id/random-art', (req, res) => {
   if (!donors) return res.status(404).json({ error: 'No other albums with art found.' });
 
   // Copy the donor image to a new filename so it's independent.
-  const srcPath = path.join(IMAGES_DIR, '..', donors.image_path);
-  const destName = `random_${existing.id}_${Date.now()}.jpg`;
-  const destPath = path.join(IMAGES_DIR, destName);
-
-  // Delete old image if it exists.
-  if (existing.image_path) {
-    const oldPath = path.join(IMAGES_DIR, '..', existing.image_path);
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  let sourceImage;
+  try {
+    sourceImage = resolveAlbumImage(donors.image_path);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  if (!sourceImage || !fs.existsSync(sourceImage.fullPath)) {
+    return res.status(404).json({ error: 'Donor album art file not found.' });
   }
 
-  fs.copyFileSync(srcPath, destPath);
-  const newRelPath = `images/${destName}`;
-  db.prepare('UPDATE albums SET image_path = ? WHERE id = ?').run(newRelPath, existing.id);
+  const newImage = buildUniqueAlbumImagePath(`random_${existing.id}`, '.jpg');
+
+  fs.copyFileSync(sourceImage.fullPath, newImage.fullPath);
+  db.prepare('UPDATE albums SET image_path = ? WHERE id = ?').run(newImage.imagePath, existing.id);
+  cleanupUnusedAlbumImage(existing.image_path);
   const updated = parseAlbum(db.prepare('SELECT * FROM albums WHERE id = ?').get(existing.id));
   res.json(updated);
 });

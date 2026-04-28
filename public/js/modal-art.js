@@ -70,8 +70,8 @@ export async function handleArtRefetchReplace() {
   const newPath = el.btnArtRefetchReplace.dataset.newPath;
   if (!newPath || !state.modal.albumId) return;
   try {
-    const updated = normalizeAlbumClientShape(await apiFetch(`/api/albums/${state.modal.albumId}`, {
-      method: 'PATCH',
+    const updated = normalizeAlbumClientShape(await apiFetch(`/api/albums/${state.modal.albumId}/replace-refetched-art`, {
+      method: 'POST',
       body: JSON.stringify({ image_path: newPath }),
     }));
     const idx = state.albums.findIndex(a => a.id === state.modal.albumId);

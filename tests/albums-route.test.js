@@ -80,6 +80,16 @@ function createResponse() {
   };
 }
 
+function imageFullPath(dbModule, imagePath) {
+  return path.join(dbModule.IMAGES_DIR, path.basename(imagePath));
+}
+
+function writeImage(dbModule, imagePath, contents = 'image') {
+  const fullPath = imageFullPath(dbModule, imagePath);
+  fs.writeFileSync(fullPath, contents);
+  return fullPath;
+}
+
 function makeImportPayload(overrides = {}) {
   return {
     spotifyUrl: 'https://open.spotify.com/album/ABCDEFGHIJKLMNOPQRSTUV',
@@ -148,6 +158,193 @@ describe('albums route helpers', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.jsonBody).toEqual({ error: 'No image file received.' });
+  });
+
+  it('commits refetched art through the replacement endpoint and removes old art', async () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const oldPath = 'images/old-art.jpg';
+    const oldFullPath = writeImage(dbModule, oldPath, Buffer.from([1, 2, 3]));
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, image_path, image_url_large
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Refetchable Album',
+      JSON.stringify([{ name: 'Art Worker' }]),
+      'completed',
+      'spotify',
+      oldPath,
+      'https://cdn.example.test/new-art.jpg',
+    );
+
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([9, 8, 7]).buffer,
+    }));
+
+    const refetchHandler = getRouteHandler(albumsRouter, 'post', '/:id/refetch-art');
+    const refetchRes = createResponse();
+    await refetchHandler({ params: { id: '1' } }, refetchRes);
+
+    expect(refetchRes.statusCode).toBe(200);
+    expect(refetchRes.jsonBody).toMatchObject({ identical: false });
+    expect(refetchRes.jsonBody.new_image_path).toMatch(/^images\/_temp_1_\d+\.jpg$/);
+
+    const tempPath = refetchRes.jsonBody.new_image_path;
+    const tempFullPath = imageFullPath(dbModule, tempPath);
+    expect(fs.existsSync(tempFullPath)).toBe(true);
+
+    const replaceHandler = getRouteHandler(albumsRouter, 'post', '/:id/replace-refetched-art');
+    const replaceRes = createResponse();
+    replaceHandler({ params: { id: '1' }, body: { image_path: tempPath } }, replaceRes);
+
+    expect(replaceRes.statusCode).toBe(200);
+    expect(replaceRes.jsonBody.image_path).toMatch(/^images\/refetch_1_\d+_[a-z0-9]+\.jpg$/);
+    expect(fs.existsSync(oldFullPath)).toBe(false);
+    expect(fs.existsSync(tempFullPath)).toBe(false);
+    expect(fs.existsSync(imageFullPath(dbModule, replaceRes.jsonBody.image_path))).toBe(true);
+
+    const stored = db.prepare('SELECT image_path FROM albums WHERE id = ?').get(1);
+    expect(stored.image_path).toBe(replaceRes.jsonBody.image_path);
+  });
+
+  it('rejects refetched temp art that belongs to a different album', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const oldPath = 'images/current-art.jpg';
+    const tempPath = 'images/_temp_2_12345.jpg';
+    const oldFullPath = writeImage(dbModule, oldPath, 'old');
+    const tempFullPath = writeImage(dbModule, tempPath, 'temp');
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, image_path
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Wrong Temp Album',
+      JSON.stringify([{ name: 'Art Worker' }]),
+      'completed',
+      'spotify',
+      oldPath,
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'post', '/:id/replace-refetched-art');
+    const res = createResponse();
+    handler({ params: { id: '1' }, body: { image_path: tempPath } }, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(fs.existsSync(oldFullPath)).toBe(true);
+    expect(fs.existsSync(tempFullPath)).toBe(true);
+    expect(db.prepare('SELECT image_path FROM albums WHERE id = ?').get(1).image_path).toBe(oldPath);
+  });
+
+  it('deletes unreferenced old manual art when image_path changes through PATCH', async () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const oldPath = 'images/manual-old.jpg';
+    const newPath = 'images/manual-new.jpg';
+    const oldFullPath = writeImage(dbModule, oldPath, 'old');
+    const newFullPath = writeImage(dbModule, newPath, 'new');
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, image_path
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Manual Album',
+      JSON.stringify([{ name: 'Manual Artist' }]),
+      'completed',
+      'manual',
+      oldPath,
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'patch', '/:id');
+    const res = createResponse();
+    await handler({ params: { id: '1' }, body: { image_path: newPath } }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.image_path).toBe(newPath);
+    expect(fs.existsSync(oldFullPath)).toBe(false);
+    expect(fs.existsSync(newFullPath)).toBe(true);
+    expect(db.prepare('SELECT image_path FROM albums WHERE id = ?').get(1).image_path).toBe(newPath);
+  });
+
+  it('keeps old manual art when another album still references it', async () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const sharedPath = 'images/shared-manual.jpg';
+    const newPath = 'images/manual-replacement.jpg';
+    const sharedFullPath = writeImage(dbModule, sharedPath, 'shared');
+    writeImage(dbModule, newPath, 'new');
+
+    [
+      { id: 1, name: 'First Album' },
+      { id: 2, name: 'Second Album' },
+    ].forEach(album => {
+      db.prepare(`
+        INSERT INTO albums (
+          id, album_name, artists, status, source, image_path
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        album.id,
+        album.name,
+        JSON.stringify([{ name: 'Shared Artist' }]),
+        'completed',
+        'manual',
+        sharedPath,
+      );
+    });
+
+    const handler = getRouteHandler(albumsRouter, 'patch', '/:id');
+    const res = createResponse();
+    await handler({ params: { id: '1' }, body: { image_path: newPath } }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fs.existsSync(sharedFullPath)).toBe(true);
+    expect(db.prepare('SELECT image_path FROM albums WHERE id = ?').get(2).image_path).toBe(sharedPath);
+  });
+
+  it('rejects unsafe image_path changes without deleting current art', async () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const oldPath = 'images/safe-current.jpg';
+    const oldFullPath = writeImage(dbModule, oldPath, 'old');
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, image_path
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Unsafe Path Album',
+      JSON.stringify([{ name: 'Careful Artist' }]),
+      'completed',
+      'manual',
+      oldPath,
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'patch', '/:id');
+    const res = createResponse();
+    await handler({ params: { id: '1' }, body: { image_path: 'images/../preferences.json' } }, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(fs.existsSync(oldFullPath)).toBe(true);
+    expect(db.prepare('SELECT image_path FROM albums WHERE id = ?').get(1).image_path).toBe(oldPath);
   });
 
   it('searches artist names without matching unrelated artist JSON metadata', () => {
