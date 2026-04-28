@@ -34,9 +34,32 @@ function loadContext() {
 
   const dbModule = require('../server/db.js');
   const welcomeStore = require('../server/welcome-tour-store.js');
+  const welcomeRouter = require('../server/routes/welcome-tour.js');
   const importService = require('../server/import-service.js');
   openDbs.push(dbModule.db);
-  return { dbModule, welcomeStore, importService };
+  return { dbModule, welcomeStore, welcomeRouter, importService };
+}
+
+function getRouteHandler(router, method, routePath) {
+  const layer = router.stack.find(entry =>
+    entry.route?.path === routePath && entry.route.methods?.[method]
+  );
+  return layer?.route?.stack?.[0]?.handle ?? null;
+}
+
+function createResponse() {
+  return {
+    statusCode: 200,
+    jsonBody: undefined,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.jsonBody = payload;
+      return this;
+    },
+  };
 }
 
 function makeImportPayload(spotifyId = '4pj54JwPaS9XsSRTTgAWZg') {
@@ -261,5 +284,92 @@ describe('welcome tour store', () => {
     welcomeStore.releaseWelcomeTourLock('session-1');
     welcomeStore.rejectIfWelcomeTourLocked({}, res, () => { nextCalled = true; });
     expect(nextCalled).toBe(true);
+  });
+
+  it('keeps the welcome tour lock exclusive to one session', () => {
+    const { welcomeStore } = loadContext();
+
+    const first = welcomeStore.upsertWelcomeTourLock();
+    const renewed = welcomeStore.upsertWelcomeTourLock(first.sessionId);
+
+    expect(renewed.sessionId).toBe(first.sessionId);
+    expect(() => welcomeStore.upsertWelcomeTourLock('different-session')).toThrow(/welcome tour/i);
+    expect(welcomeStore.getActiveWelcomeTourLockSessionId()).toBe(first.sessionId);
+  });
+
+  it('finishes with samples atomically for the active lock owner', () => {
+    const { dbModule, welcomeStore } = loadContext();
+    const { sessionId } = welcomeStore.upsertWelcomeTourLock('owner-session');
+
+    const result = welcomeStore.finishWelcomeTour({
+      sessionId,
+      skipped: false,
+      addSamples: true,
+    });
+    const rows = dbModule.db.prepare(`
+      SELECT album_name, welcome_sample_key
+      FROM albums
+      ORDER BY id ASC
+    `).all();
+
+    expect(result.insertedCount).toBe(2);
+    expect(result.replacedCount).toBe(0);
+    expect(result.preferences.welcomeTourCompletedAt).toBeTypeOf('string');
+    expect(result.preferences.welcomeTourSkippedAt).toBeNull();
+    expect(result.preferences.welcomeSamplesAddedAt).toBe(result.preferences.welcomeTourCompletedAt);
+    expect(result.status.sampleCount).toBe(2);
+    expect(rows.map(row => row.welcome_sample_key)).toEqual([
+      welcomeStore.SAMPLE_KEYS.SPOTIFY,
+      welcomeStore.SAMPLE_KEYS.MANUAL,
+    ]);
+  });
+
+  it('rejects finish and sample insertion without the active owner session', () => {
+    const { dbModule, welcomeRouter, welcomeStore } = loadContext();
+    welcomeStore.upsertWelcomeTourLock('owner-session');
+
+    const finishHandler = getRouteHandler(welcomeRouter, 'post', '/finish');
+    const finishRes = createResponse();
+    finishHandler({ body: { sessionId: 'other-session', addSamples: true } }, finishRes);
+
+    expect(finishRes.statusCode).toBe(423);
+    expect(finishRes.jsonBody.code).toBe('welcome_tour_active');
+    expect(dbModule.db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+
+    const samplesHandler = getRouteHandler(welcomeRouter, 'post', '/samples');
+    const samplesRes = createResponse();
+    samplesHandler({ body: {} }, samplesRes);
+
+    expect(samplesRes.statusCode).toBe(403);
+    expect(samplesRes.jsonBody.code).toBe('welcome_tour_session_required');
+    expect(dbModule.db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+  });
+
+  it('allows unlocked sample removal but blocks another session while locked', () => {
+    const { dbModule, welcomeRouter, welcomeStore } = loadContext();
+    welcomeStore.insertWelcomeSamples();
+
+    const deleteHandler = getRouteHandler(welcomeRouter, 'delete', '/samples');
+    const unlockedRes = createResponse();
+    deleteHandler({ body: {} }, unlockedRes);
+
+    expect(unlockedRes.statusCode).toBe(200);
+    expect(unlockedRes.jsonBody.removedCount).toBe(2);
+    expect(dbModule.db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+
+    welcomeStore.insertWelcomeSamples();
+    welcomeStore.upsertWelcomeTourLock('owner-session');
+
+    const blockedRes = createResponse();
+    deleteHandler({ body: { sessionId: 'other-session' } }, blockedRes);
+    expect(blockedRes.statusCode).toBe(423);
+    expect(blockedRes.jsonBody.code).toBe('welcome_tour_active');
+    expect(dbModule.db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(2);
+
+    const ownerRes = createResponse();
+    deleteHandler({ body: { sessionId: 'owner-session' } }, ownerRes);
+    expect(ownerRes.statusCode).toBe(200);
+    expect(ownerRes.jsonBody.removedCount).toBe(2);
+    expect(dbModule.db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
   });
 });

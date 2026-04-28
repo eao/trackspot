@@ -32,7 +32,7 @@ const stateMock = {
   },
 };
 
-const apiFetchMock = vi.fn(async url => {
+async function defaultApiFetch(url) {
   if (url === '/api/welcome-tour/status') {
     return {
       preferences: {},
@@ -44,13 +44,17 @@ const apiFetchMock = vi.fn(async url => {
     return { sessionId: 'tour-session' };
   }
   return {};
-});
+}
+
+const apiFetchMock = vi.fn(defaultApiFetch);
 
 const renderMock = vi.fn();
-const setPageMock = vi.fn(async page => {
+async function defaultSetPage(page) {
   stateMock.navigation.page = page;
   stateMock.view = stateMock.navigation.collectionView;
-});
+}
+
+const setPageMock = vi.fn(defaultSetPage);
 const setUButtonsMock = vi.fn(enabled => {
   globalThis.document?.body?.classList.toggle('u-buttons-enabled', enabled);
 });
@@ -149,12 +153,24 @@ async function advanceTourStep() {
   await flushTourStep();
 }
 
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('welcome tour UI preparation', () => {
   beforeEach(() => {
     vi.resetModules();
     apiFetchMock.mockClear();
+    apiFetchMock.mockImplementation(defaultApiFetch);
     renderMock.mockClear();
     setPageMock.mockClear();
+    setPageMock.mockImplementation(defaultSetPage);
     setUButtonsMock.mockClear();
     sidebarMocks.animateGridSidebarToggle.mockClear();
     syncAppShellLayoutMock.mockClear();
@@ -225,6 +241,53 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.body.classList.contains('sidebar-collapsed')).toBe(true);
   });
 
+  it('waits for the initial lock before rendering interactive tour steps', async () => {
+    const lock = createDeferred();
+    apiFetchMock.mockImplementation((url, options = {}) => {
+      if (url === '/api/welcome-tour/status') return defaultApiFetch(url, options);
+      if (url === '/api/welcome-tour/lock' && options.method === 'POST') return lock.promise;
+      return defaultApiFetch(url, options);
+    });
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    const startPromise = startWelcomeTour({ replay: true });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Starting tour');
+    expect(globalThis.document.querySelector('[data-action="next"]')).toBeNull();
+    expect(globalThis.document.querySelector('.welcome-tour-highlight-interactive')).toBeNull();
+    expect(stateMock.welcomeTour.lockSessionId).toBeNull();
+
+    lock.resolve({ sessionId: 'tour-session' });
+    await startPromise;
+    await flushTourStep();
+
+    expect(stateMock.welcomeTour.lockSessionId).toBe('tour-session');
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Welcome to Trackspot');
+  });
+
+  it('unwinds startup state when the initial lock fails', async () => {
+    apiFetchMock.mockImplementation((url, options = {}) => {
+      if (url === '/api/welcome-tour/status') return defaultApiFetch(url, options);
+      if (url === '/api/welcome-tour/lock' && options.method === 'POST') {
+        return Promise.reject({ status: 423, message: 'Another welcome tour is already active.' });
+      }
+      return defaultApiFetch(url, options);
+    });
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    expect(stateMock.welcomeTour.active).toBe(false);
+    expect(globalThis.document.body.classList.contains('welcome-tour-active')).toBe(false);
+    expect(globalThis.document.querySelector('header')?.inert).toBe(false);
+    expect(globalThis.document.querySelector('header')?.getAttribute('aria-hidden')).toBeNull();
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Tour could not start');
+    expect(globalThis.document.querySelector('.welcome-tour-error')?.textContent).toBe('Another welcome tour is already active.');
+  });
+
   it('applies tour theme previews without persisting them', async () => {
     const settings = await import('../public/js/settings.js');
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
@@ -233,6 +296,32 @@ describe('welcome tour UI preparation', () => {
     await advanceTourStep();
 
     expect(settings.applyThemeByName).toHaveBeenCalledWith('Basic Blue', { persist: false });
+  });
+
+  it('ignores rapid next clicks while a step effect is still running', async () => {
+    const themeEffect = createDeferred();
+    const settings = await import('../public/js/settings.js');
+    settings.applyThemeByName.mockClear();
+    settings.applyThemeByName.mockImplementationOnce(() => themeEffect.promise);
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    const next = globalThis.document.querySelector('[data-action="next"]');
+    next?.click();
+    next?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Welcome to Trackspot');
+    expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(true);
+
+    themeEffect.resolve();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Themes');
+    expect(settings.applyThemeByName).toHaveBeenCalledTimes(1);
   });
 
   it('orders welcome demo albums by logged date descending', async () => {
@@ -384,6 +473,23 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.querySelector('[data-action="next"]')?.disabled).toBe(true);
 
     globalThis.document.querySelector('.welcome-tour-highlight-interactive')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Manual Album Log');
+  });
+
+  it('advances only once when an auto-advance highlight is double clicked', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    for (let i = 0; i < 10; i += 1) {
+      await advanceTourStep();
+    }
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Log Album Button');
+    const highlight = globalThis.document.querySelector('.welcome-tour-highlight-interactive');
+    highlight?.click();
+    highlight?.click();
     await flushTourStep();
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Manual Album Log');
@@ -693,16 +799,127 @@ describe('welcome tour UI preparation', () => {
     globalThis.document.querySelector('[data-action="samples"]')?.click();
     await flushTourStep();
 
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/finish', expect.anything());
     expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/samples', expect.anything());
     expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/complete', expect.anything());
 
     globalThis.document.querySelector('[data-action="finish"]')?.click();
     await flushTourStep();
 
-    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/samples', { method: 'POST' });
-    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/complete', expect.objectContaining({
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/finish', expect.objectContaining({
       method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'tour-session',
+        skipped: true,
+        addSamples: true,
+      }),
     }));
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/samples', expect.anything());
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/complete', expect.anything());
+  });
+
+  it('keeps the lock and overlay until stats-page restore completes', async () => {
+    const statsRestore = createDeferred();
+    setPageMock.mockImplementation(async (page, options = {}) => {
+      if (page === 'stats' && options.initial) {
+        await statsRestore.promise;
+      }
+      stateMock.navigation.page = page;
+      stateMock.view = stateMock.navigation.collectionView;
+    });
+    stateMock.navigation = {
+      page: 'stats',
+      collectionView: 'list',
+      wrappedYear: null,
+    };
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+    apiFetchMock.mockClear();
+
+    globalThis.document.querySelector('[data-action="skip"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="empty"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="finish"]')?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(globalThis.document.querySelector('#welcome-tour-overlay')).not.toBeNull();
+    expect(globalThis.document.body.classList.contains('welcome-tour-active')).toBe(true);
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/finish', expect.anything());
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/lock', expect.objectContaining({ method: 'DELETE' }));
+
+    statsRestore.resolve();
+    await flushTourStep();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/finish', expect.objectContaining({ method: 'POST' }));
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/lock', expect.objectContaining({ method: 'DELETE' }));
+    expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
+  });
+
+  it('keeps the wrapped restore overlay in place until personalization restore completes', async () => {
+    const personalizationRestore = createDeferred();
+    const settings = await import('../public/js/settings.js');
+    settings.restorePersonalizationFromStorage.mockImplementationOnce(() => personalizationRestore.promise);
+    stateMock.navigation = {
+      page: 'wrapped',
+      collectionView: 'grid',
+      wrappedYear: 2025,
+    };
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+    apiFetchMock.mockClear();
+
+    globalThis.document.querySelector('[data-action="skip"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="empty"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="finish"]')?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(globalThis.document.querySelector('#welcome-tour-overlay')).not.toBeNull();
+    expect(globalThis.document.body.classList.contains('welcome-tour-active')).toBe(true);
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/finish', expect.anything());
+
+    personalizationRestore.resolve();
+    await flushTourStep();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/finish', expect.objectContaining({ method: 'POST' }));
+    expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
+  });
+
+  it('keeps the tour active and locked when snapshot restore fails', async () => {
+    const settings = await import('../public/js/settings.js');
+    settings.restorePersonalizationFromStorage.mockRejectedValueOnce(new Error('Could not restore theme.'));
+    stateMock.navigation = {
+      page: 'wrapped',
+      collectionView: 'list',
+      wrappedYear: 2025,
+    };
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+    apiFetchMock.mockClear();
+
+    globalThis.document.querySelector('[data-action="skip"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="empty"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="finish"]')?.click();
+    await flushTourStep();
+
+    expect(stateMock.welcomeTour.active).toBe(true);
+    expect(globalThis.document.querySelector('#welcome-tour-overlay')).not.toBeNull();
+    expect(globalThis.document.body.classList.contains('welcome-tour-active')).toBe(true);
+    expect(globalThis.document.querySelector('.welcome-tour-error')?.textContent).toBe('Could not restore theme.');
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/finish', expect.anything());
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/lock', expect.objectContaining({ method: 'DELETE' }));
   });
 
   it('positions control and modal steps with the top bar cards', async () => {

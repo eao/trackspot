@@ -323,6 +323,8 @@ let statusCache = null;
 let inertSnapshots = [];
 let heartbeatGeneration = 0;
 let isFinishingTour = false;
+let isStepTransitioning = false;
+let stepTransitionToken = 0;
 let stepHighlightActionComplete = false;
 let completedRequiredStepIds = new Set();
 let endingSampleChoice = null;
@@ -720,6 +722,7 @@ function showTourError(message) {
 }
 
 function chooseTourEnding(addSamplesChoice) {
+  if (isStepTransitioning || isFinishingTour) return;
   endingSampleChoice = addSamplesChoice ? 'samples' : 'empty';
   void showStep(currentStepIndex + 1);
 }
@@ -727,6 +730,21 @@ function chooseTourEnding(addSamplesChoice) {
 function setTourControlsDisabled(disabled) {
   card?.querySelectorAll('button').forEach(button => {
     button.disabled = disabled;
+  });
+  highlightLayer?.querySelectorAll('.welcome-tour-highlight-interactive').forEach(highlight => {
+    highlight.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    if (disabled) {
+      highlight.dataset.previousTabIndex = highlight.getAttribute('tabindex') ?? '';
+      highlight.tabIndex = -1;
+    } else if (highlight.dataset.previousTabIndex !== undefined) {
+      const previousTabIndex = highlight.dataset.previousTabIndex;
+      if (previousTabIndex) {
+        highlight.setAttribute('tabindex', previousTabIndex);
+      } else {
+        highlight.removeAttribute('tabindex');
+      }
+      delete highlight.dataset.previousTabIndex;
+    }
   });
   card?.setAttribute('aria-busy', disabled ? 'true' : 'false');
 }
@@ -780,7 +798,7 @@ function positionHighlights(step) {
 }
 
 function handleHighlightAction(step) {
-  if (!state.welcomeTour.active || !step?.highlightAction) return;
+  if (!state.welcomeTour.active || isStepTransitioning || isFinishingTour || !step?.highlightAction) return;
 
   if (step.highlightAction === 'sidebar-toggle') {
     if (document.body.classList.contains('collection-view-grid')) {
@@ -871,6 +889,40 @@ function renderWarning() {
   focusTourControl();
 }
 
+function renderStartupLoading() {
+  positionHighlights(null);
+  card.className = 'welcome-tour-card welcome-tour-card-centered';
+  card.style.setProperty('--welcome-tour-card-bg-opacity', '96%');
+  card.setAttribute('aria-busy', 'true');
+  card.innerHTML = `
+    <div class="welcome-tour-kicker">Welcome tour</div>
+    <h2>Starting tour</h2>
+    <p>Preparing a safe tour session...</p>
+    <div class="welcome-tour-actions">
+      <button class="btn btn-primary" disabled>Starting...</button>
+    </div>
+  `;
+}
+
+function renderStartupFailure(message) {
+  positionHighlights(null);
+  card.className = 'welcome-tour-card welcome-tour-card-centered';
+  card.style.setProperty('--welcome-tour-card-bg-opacity', '96%');
+  card.setAttribute('aria-busy', 'false');
+  card.innerHTML = `
+    <div class="welcome-tour-kicker">Welcome tour</div>
+    <h2>Tour could not start</h2>
+    <p class="welcome-tour-note welcome-tour-error" role="alert"></p>
+    <div class="welcome-tour-actions">
+      <button class="btn btn-primary" data-action="close">Close</button>
+    </div>
+  `;
+  const error = card.querySelector('.welcome-tour-error');
+  if (error) error.textContent = message || 'Something went wrong. Please try again.';
+  card.querySelector('[data-action="close"]')?.addEventListener('click', () => removeOverlay());
+  focusTourControl();
+}
+
 function renderStep(step) {
   const progress = `${currentStepIndex + 1} / ${TOUR_STEPS.length}`;
   const sampleCount = statusCache?.sampleCount ?? state.welcomeTour.sampleCount ?? 0;
@@ -917,7 +969,9 @@ function renderStep(step) {
     addSamples: endingSampleChoice === 'samples',
   }));
   positionHighlights(step);
+  const renderToken = stepTransitionToken;
   requestAnimationFrame(() => {
+    if (!state.welcomeTour.active || isStepTransitioning || renderToken !== stepTransitionToken) return;
     positionCard(step);
     positionHighlights(step);
   });
@@ -925,12 +979,17 @@ function renderStep(step) {
 }
 
 async function showStep(index) {
+  if (!state.welcomeTour.active || isFinishingTour || isStepTransitioning) return;
+  const token = ++stepTransitionToken;
   const previousStepIndex = currentStepIndex;
   const previousStep = TOUR_STEPS[previousStepIndex] ?? null;
   currentStepIndex = Math.max(0, Math.min(index, TOUR_STEPS.length - 1));
   const step = TOUR_STEPS[currentStepIndex];
   const direction = Math.sign(currentStepIndex - previousStepIndex);
   stepHighlightActionComplete = completedRequiredStepIds.has(step.id);
+  isStepTransitioning = true;
+  setTourControlsDisabled(true);
+  positionHighlights(null);
   try {
     await step.effect(step, {
       direction,
@@ -939,6 +998,13 @@ async function showStep(index) {
     });
   } catch (error) {
     console.error('Welcome tour step failed:', error);
+  } finally {
+    if (token === stepTransitionToken) {
+      isStepTransitioning = false;
+    }
+  }
+  if (!state.welcomeTour.active || isFinishingTour || token !== stepTransitionToken) {
+    return;
   }
   renderStep(step);
 }
@@ -967,9 +1033,28 @@ async function heartbeatLock(generation = heartbeatGeneration) {
   }
 }
 
-function startHeartbeat() {
+async function acquireInitialLock() {
   const generation = ++heartbeatGeneration;
-  void heartbeatLock(generation);
+  const result = await apiFetch('/api/welcome-tour/lock', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId: state.welcomeTour.lockSessionId }),
+  });
+  if (!state.welcomeTour.active || generation !== heartbeatGeneration) {
+    if (result.sessionId) {
+      apiFetch('/api/welcome-tour/lock', {
+        method: 'DELETE',
+        body: JSON.stringify({ sessionId: result.sessionId }),
+      }).catch(error => {
+        console.warn('Welcome tour late initial lock cleanup failed:', error);
+      });
+    }
+    throw new Error('Welcome tour startup was cancelled.');
+  }
+  state.welcomeTour.lockSessionId = result.sessionId;
+  return generation;
+}
+
+function startHeartbeat(generation = heartbeatGeneration) {
   heartbeatTimer = setInterval(() => {
     void heartbeatLock(generation);
   }, LOCK_HEARTBEAT_MS);
@@ -1075,24 +1160,22 @@ async function restoreSnapshot() {
   return targetPage;
 }
 
-async function markComplete() {
-  const result = await apiFetch('/api/welcome-tour/complete', {
+async function finishTourOnServer({ shouldMarkComplete, shouldAddSamples }) {
+  if (!shouldMarkComplete) return null;
+  const result = await apiFetch('/api/welcome-tour/finish', {
     method: 'POST',
-    body: JSON.stringify({ skipped: skippedToFinal }),
+    body: JSON.stringify({
+      sessionId: state.welcomeTour.lockSessionId,
+      skipped: skippedToFinal,
+      addSamples: shouldAddSamples,
+    }),
   });
   if (result.preferences) {
     applyPreferencesToState(result.preferences);
   }
   statusCache = result.status ?? statusCache;
-}
-
-async function addSamples() {
-  const result = await apiFetch('/api/welcome-tour/samples', { method: 'POST' });
-  if (result.status?.preferences) {
-    applyPreferencesToState(result.status.preferences);
-  }
-  statusCache = result.status ?? statusCache;
   state.welcomeTour.sampleCount = statusCache?.sampleCount ?? 0;
+  return result;
 }
 
 async function finishTour(options = {}) {
@@ -1107,13 +1190,13 @@ async function finishTour(options = {}) {
   clearTourError();
   setTourControlsDisabled(true);
 
+  let restoredPage;
   try {
-    if (shouldAddSamples) {
-      await addSamples();
-    }
-    if (shouldMarkComplete) {
-      await markComplete();
-    }
+    restoredPage = await restoreSnapshot();
+    await finishTourOnServer({
+      shouldMarkComplete,
+      shouldAddSamples,
+    });
   } catch (error) {
     console.error('Welcome tour finish failed:', error);
     showTourError(error.message || 'Something went wrong. Please try again.');
@@ -1130,13 +1213,16 @@ async function finishTour(options = {}) {
   await releaseLock();
 
   try {
-    const restoredPage = await restoreSnapshot();
     snapshot = null;
     skippedToFinal = false;
     endingSampleChoice = null;
+    isStepTransitioning = false;
+    stepTransitionToken += 1;
     completedRequiredStepIds.clear();
     if (!restoreOnly && shouldAddSamples && restoredPage === 'collection') {
-      await loadAlbums();
+      Promise.resolve(loadAlbums()).catch(error => {
+        console.warn('Welcome tour post-finish album reload failed:', error);
+      });
     }
   } finally {
     isFinishingTour = false;
@@ -1145,6 +1231,7 @@ async function finishTour(options = {}) {
 }
 
 function skipTour() {
+  if (isStepTransitioning || isFinishingTour) return;
   skippedToFinal = true;
   const penultimateIndex = TOUR_STEPS.findIndex(step => step.id === 'penultimate');
   showStep(penultimateIndex >= 0 ? penultimateIndex : Math.max(TOUR_STEPS.length - 2, 0));
@@ -1162,25 +1249,47 @@ export async function startWelcomeTour(options = {}) {
   state.welcomeTour.active = true;
   state.welcomeTour.replay = replay;
   state.welcomeTour.lockSessionId = null;
-  snapshot = captureSnapshot();
   skippedToFinal = false;
   endingSampleChoice = null;
+  isStepTransitioning = false;
+  isFinishingTour = false;
+  stepTransitionToken += 1;
   completedRequiredStepIds = new Set();
-  setEarlyWrappedEnabled(false, { persist: false });
-  setQuickActionsToolbarVisibilityMode('visible', { persist: false });
-  setTourReserveSidebarSpace(false);
-  neutralizeFilters();
+  removeOverlay();
   createOverlay();
   setAppInert(true);
   document.body.classList.add('welcome-tour-active');
-  startHeartbeat();
+  renderStartupLoading();
 
-  if (window.innerWidth < MOBILE_WARNING_WIDTH) {
-    renderWarning();
-    return;
+  try {
+    const lockGeneration = await acquireInitialLock();
+    startHeartbeat(lockGeneration);
+    snapshot = captureSnapshot();
+    setEarlyWrappedEnabled(false, { persist: false });
+    setQuickActionsToolbarVisibilityMode('visible', { persist: false });
+    setTourReserveSidebarSpace(false);
+    neutralizeFilters();
+
+    if (window.innerWidth < MOBILE_WARNING_WIDTH) {
+      renderWarning();
+      return;
+    }
+
+    await showStep(0);
+  } catch (error) {
+    console.error('Welcome tour startup failed:', error);
+    await releaseLock();
+    state.welcomeTour.active = false;
+    state.welcomeTour.lockSessionId = null;
+    document.body.classList.remove('welcome-tour-active');
+    setAppInert(false);
+    snapshot = null;
+    skippedToFinal = false;
+    endingSampleChoice = null;
+    isStepTransitioning = false;
+    completedRequiredStepIds.clear();
+    renderStartupFailure(error.message || 'Could not start the welcome tour.');
   }
-
-  await showStep(0);
 }
 
 export async function maybeStartWelcomeTour() {

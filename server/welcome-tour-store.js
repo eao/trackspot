@@ -14,6 +14,15 @@ const LOCK_TTL_MS = 20000;
 const SAMPLE_ASSET_DIR = path.join(__dirname, '..', 'public', 'assets', 'welcome');
 const activeLocks = new Map();
 
+class WelcomeTourLockError extends Error {
+  constructor(message, { status = 423, code = 'welcome_tour_active' } = {}) {
+    super(message);
+    this.name = 'WelcomeTourLockError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -57,10 +66,19 @@ function hasActiveWelcomeTourLock() {
   return activeLocks.size > 0;
 }
 
+function getActiveWelcomeTourLockSessionId() {
+  pruneExpiredLocks();
+  return activeLocks.keys().next().value || null;
+}
+
 function upsertWelcomeTourLock(sessionId) {
   const normalizedSessionId = typeof sessionId === 'string' && sessionId.trim()
     ? sessionId.trim()
     : `welcome-tour-${Math.random().toString(36).slice(2)}`;
+  const activeSessionId = getActiveWelcomeTourLockSessionId();
+  if (activeSessionId && activeSessionId !== normalizedSessionId) {
+    throw new WelcomeTourLockError('Finish or leave the Trackspot welcome tour before starting another tour.');
+  }
   const expiresAt = Date.now() + LOCK_TTL_MS;
   activeLocks.set(normalizedSessionId, { expiresAt });
   return {
@@ -76,6 +94,38 @@ function releaseWelcomeTourLock(sessionId) {
   }
   pruneExpiredLocks();
   return { active: hasActiveWelcomeTourLock() };
+}
+
+function assertWelcomeTourSessionCanMutate(sessionId, options = {}) {
+  const { allowUnlocked = false } = options;
+  const normalizedSessionId = typeof sessionId === 'string' && sessionId.trim()
+    ? sessionId.trim()
+    : '';
+  const activeSessionId = getActiveWelcomeTourLockSessionId();
+
+  if (!activeSessionId) {
+    if (allowUnlocked) return { sessionId: null, active: false };
+    throw new WelcomeTourLockError('A welcome tour session is required for this action.', {
+      status: 403,
+      code: 'welcome_tour_session_required',
+    });
+  }
+
+  if (!normalizedSessionId) {
+    throw new WelcomeTourLockError('A welcome tour session is required for this action.', {
+      status: 403,
+      code: 'welcome_tour_session_required',
+    });
+  }
+
+  if (normalizedSessionId !== activeSessionId) {
+    throw new WelcomeTourLockError('Finish or leave the Trackspot welcome tour before changing welcome samples.', {
+      status: 423,
+      code: 'welcome_tour_active',
+    });
+  }
+
+  return { sessionId: normalizedSessionId, active: true };
 }
 
 function rejectIfWelcomeTourLocked(req, res, next) {
@@ -115,8 +165,11 @@ function getWelcomeTourStatus() {
 }
 
 function markWelcomeTourComplete({ skipped = false } = {}) {
-  const timestamp = nowIso();
-  return updatePreferences(skipped
+  return updatePreferences(getWelcomeTourCompletePreferencePatch({ skipped }));
+}
+
+function getWelcomeTourCompletePreferencePatch({ skipped = false, timestamp = nowIso() } = {}) {
+  return skipped
     ? {
         welcomeTourSkippedAt: timestamp,
         welcomeTourCompletedAt: null,
@@ -124,7 +177,7 @@ function markWelcomeTourComplete({ skipped = false } = {}) {
     : {
         welcomeTourCompletedAt: timestamp,
         welcomeTourSkippedAt: null,
-      });
+      };
 }
 
 function copySampleArt(assetName, destinationName) {
@@ -240,11 +293,8 @@ function buildWelcomeSamples() {
   ];
 }
 
-function insertWelcomeSamples() {
-  const removed = removeWelcomeSamples();
-  const samples = buildWelcomeSamples();
-
-  const insert = db.prepare(`
+function getWelcomeSampleInsertStatement() {
+  return db.prepare(`
     INSERT INTO albums (
       spotify_url, spotify_album_id, share_url, album_name, album_type,
       artists, release_date, release_year, label, genres, track_count, duration_ms,
@@ -257,30 +307,49 @@ function insertWelcomeSamples() {
       :listened_at, :repeats, :priority, :source, :album_link, :artist_link, :welcome_sample_key
     )
   `);
+}
 
-  const run = db.transaction(rows => {
-    rows.forEach(row => insert.run(row));
+function deleteWelcomeSampleRows() {
+  db.prepare(`
+    DELETE FROM albums
+    WHERE welcome_sample_key IN (?, ?)
+  `).run(SAMPLE_KEYS.SPOTIFY, SAMPLE_KEYS.MANUAL);
+}
+
+function cleanupWelcomeSampleImagesForRows(rows) {
+  const imagePaths = rows.map(row => row.image_path).filter(Boolean);
+  imagePaths.forEach(cleanupWelcomeSampleImage);
+}
+
+function insertWelcomeSamples() {
+  const rowsToRemove = getWelcomeSampleRows();
+  const samples = buildWelcomeSamples();
+  const insert = getWelcomeSampleInsertStatement();
+  let preferences;
+
+  const run = db.transaction(() => {
+    deleteWelcomeSampleRows();
+    samples.forEach(row => insert.run(row));
+    preferences = updatePreferences({ welcomeSamplesAddedAt: nowIso() });
   });
-  run(samples);
+  run();
+  cleanupWelcomeSampleImagesForRows(rowsToRemove);
 
-  const preferences = updatePreferences({ welcomeSamplesAddedAt: nowIso() });
   return {
     preferences,
     samples: getWelcomeSampleRows().map(row => parseAlbum(row, { includeSpotifyGraphqlJson: false })),
     insertedCount: samples.length,
-    replacedCount: removed.removedCount,
+    replacedCount: rowsToRemove.length,
   };
 }
 
 function removeWelcomeSamples() {
   const rows = getWelcomeSampleRows();
-  const imagePaths = rows.map(row => row.image_path).filter(Boolean);
-  db.prepare(`
-    DELETE FROM albums
-    WHERE welcome_sample_key IN (?, ?)
-  `).run(SAMPLE_KEYS.SPOTIFY, SAMPLE_KEYS.MANUAL);
-
-  imagePaths.forEach(cleanupWelcomeSampleImage);
+  const run = db.transaction(() => {
+    deleteWelcomeSampleRows();
+  });
+  run();
+  cleanupWelcomeSampleImagesForRows(rows);
 
   return {
     removedCount: rows.length,
@@ -288,8 +357,49 @@ function removeWelcomeSamples() {
   };
 }
 
+function finishWelcomeTour({ sessionId, skipped = false, addSamples = false } = {}) {
+  assertWelcomeTourSessionCanMutate(sessionId);
+
+  const timestamp = nowIso();
+  const rowsToRemove = addSamples ? getWelcomeSampleRows() : [];
+  const samples = addSamples ? buildWelcomeSamples() : [];
+  const insert = addSamples ? getWelcomeSampleInsertStatement() : null;
+  let preferences;
+
+  const run = db.transaction(() => {
+    if (addSamples) {
+      deleteWelcomeSampleRows();
+      samples.forEach(row => insert.run(row));
+    }
+    preferences = updatePreferences({
+      ...getWelcomeTourCompletePreferencePatch({ skipped, timestamp }),
+      ...(addSamples ? { welcomeSamplesAddedAt: timestamp } : {}),
+    });
+  });
+  run();
+
+  if (addSamples) cleanupWelcomeSampleImagesForRows(rowsToRemove);
+
+  const result = {
+    preferences,
+    status: getWelcomeTourStatus(),
+  };
+
+  if (addSamples) {
+    result.samples = getWelcomeSampleRows().map(row => parseAlbum(row, { includeSpotifyGraphqlJson: false }));
+    result.insertedCount = samples.length;
+    result.replacedCount = rowsToRemove.length;
+  }
+
+  return result;
+}
+
 module.exports = {
   SAMPLE_KEYS,
+  WelcomeTourLockError,
+  assertWelcomeTourSessionCanMutate,
+  finishWelcomeTour,
+  getActiveWelcomeTourLockSessionId,
   getWelcomeTourStatus,
   markWelcomeTourComplete,
   insertWelcomeSamples,

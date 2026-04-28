@@ -270,6 +270,25 @@ describe('settings album mutation invalidation', () => {
     expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
   });
 
+  it('does not invalidate album state when welcome sample removal is locked', async () => {
+    apiFetchMock.mockRejectedValue({
+      status: 423,
+      message: 'Finish or leave the Trackspot welcome tour before changing welcome samples.',
+      data: { code: 'welcome_tour_active' },
+    });
+
+    const { removeWelcomeSampleAlbums } = await import('../public/js/settings.js');
+    await removeWelcomeSampleAlbums();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/samples', { method: 'DELETE' });
+    expect(elMock.settingsStatus.textContent).toBe('Finish or leave the Trackspot welcome tour before changing welcome samples.');
+    expect(invalidateDashboardCacheMock).not.toHaveBeenCalled();
+    expect(stateMock.albumDetailsCache).toEqual({
+      1: { id: 1, album_name: 'Cached' },
+    });
+    expect(loadAlbumsMock).not.toHaveBeenCalled();
+  });
+
   it('invalidates album-derived state after a successful backup merge', async () => {
     const picker = mockBackupFilePicker();
     globalThis.fetch.mockResolvedValue({
