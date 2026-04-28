@@ -792,7 +792,7 @@ function getAlbumImageReservationKey(imagePath) {
 }
 
 function selectMergeCandidateRows(backupAlbums) {
-  const existingSpotifyIds = new Set(
+  const currentSpotifyIds = new Set(
     db.prepare(`
       SELECT spotify_album_id
       FROM albums
@@ -802,7 +802,7 @@ function selectMergeCandidateRows(backupAlbums) {
       .map(row => normalizeBackupSpotifyAlbumId(row.spotify_album_id))
       .filter(Boolean),
   );
-  const existingManualKeys = new Set(
+  const currentManualKeys = new Set(
     db.prepare(`
       SELECT album_name, artists
       FROM albums
@@ -817,21 +817,19 @@ function selectMergeCandidateRows(backupAlbums) {
 
   for (const row of backupAlbums) {
     if (row.spotify_album_id) {
-      if (existingSpotifyIds.has(row.spotify_album_id)) {
+      if (currentSpotifyIds.has(row.spotify_album_id)) {
         skipped++;
         continue;
       }
-      existingSpotifyIds.add(row.spotify_album_id);
       candidateRows.push(row);
       continue;
     }
 
     const manualKey = getManualMergeKey(row);
-    if (manualKey && existingManualKeys.has(manualKey)) {
+    if (manualKey && currentManualKeys.has(manualKey)) {
       skipped++;
       continue;
     }
-    if (manualKey) existingManualKeys.add(manualKey);
     candidateRows.push(row);
   }
 
@@ -997,7 +995,19 @@ async function prepareMergeAlbumRows(rows, zip, stagingImagesDir) {
 
 function commitMergeImageAsset(asset, committedImagePaths) {
   fs.mkdirSync(path.dirname(asset.finalFullPath), { recursive: true });
-  fs.copyFileSync(asset.stagedFullPath, asset.finalFullPath, fs.constants.COPYFILE_EXCL);
+  const hadFinalBeforeCopy = fs.existsSync(asset.finalFullPath);
+  try {
+    fs.copyFileSync(asset.stagedFullPath, asset.finalFullPath, fs.constants.COPYFILE_EXCL);
+  } catch (error) {
+    if (!hadFinalBeforeCopy && error?.code !== 'EEXIST') {
+      try {
+        fs.rmSync(asset.finalFullPath, { force: true });
+      } catch {
+        // Preserve the original copy failure; outer merge cleanup will continue.
+      }
+    }
+    throw error;
+  }
   committedImagePaths.push(asset.finalFullPath);
 }
 

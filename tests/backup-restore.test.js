@@ -60,6 +60,7 @@ function addLegacyAlbumsDatabase(zip, dataDir, rows) {
         album_name TEXT NOT NULL,
         artists TEXT NOT NULL,
         status TEXT NOT NULL,
+        rating INTEGER,
         image_path TEXT,
         source TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -68,9 +69,9 @@ function addLegacyAlbumsDatabase(zip, dataDir, rows) {
     `);
     const insert = legacyDb.prepare(`
       INSERT INTO albums (
-        id, spotify_album_id, album_name, artists, status, image_path, source, created_at, updated_at
+        id, spotify_album_id, album_name, artists, status, rating, image_path, source, created_at, updated_at
       ) VALUES (
-        :id, :spotify_album_id, :album_name, :artists, :status, :image_path, :source, :created_at, :updated_at
+        :id, :spotify_album_id, :album_name, :artists, :status, :rating, :image_path, :source, :created_at, :updated_at
       )
     `);
     rows.forEach((row, index) => {
@@ -80,6 +81,7 @@ function addLegacyAlbumsDatabase(zip, dataDir, rows) {
         album_name: row.album_name,
         artists: row.artists ?? JSON.stringify([{ name: 'Legacy Artist' }]),
         status: row.status ?? 'completed',
+        rating: row.rating ?? null,
         image_path: row.image_path ?? null,
         source: row.source ?? 'manual',
         created_at: row.created_at ?? '2026-04-01 12:00:00',
@@ -915,7 +917,7 @@ describe('backup and restore', () => {
     expect(fs.readdirSync(dataDir).filter(fileName => fileName.startsWith('_import_tmp_'))).toEqual([]);
   });
 
-  it('rolls back merge rows and retries cleanly when final image copy fails', async () => {
+  it('rolls back merge rows, cleans partial images, and retries cleanly when final image copy fails', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
     openDbs.push(db);
@@ -949,6 +951,7 @@ describe('backup and restore', () => {
         String(sourcePath).includes('_import_images_')
         && String(targetPath).endsWith(path.join('images', 'backup-art.jpg'))
       ) {
+        fs.writeFileSync(targetPath, Buffer.from('partial-image'));
         throw new Error('simulated merge image commit failure');
       }
       return originalCopyFileSync.call(this, sourcePath, targetPath, mode);
@@ -1463,6 +1466,70 @@ describe('backup and restore', () => {
       {
         album_name: 'Second Legacy Manual Album',
         spotify_album_id: null,
+      },
+    ]);
+  }, 15000);
+
+  it('tries later backup duplicate keys when earlier duplicate rows are ignored', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const spotifyArtists = JSON.stringify([{ name: 'Duplicate Spotify Artist' }]);
+    const manualArtists = JSON.stringify([{ name: 'Duplicate Manual Artist' }]);
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: 'duplicate-spotify-id',
+        album_name: 'Ignored Spotify Duplicate',
+        artists: spotifyArtists,
+        rating: 101,
+      },
+      {
+        id: 102,
+        spotify_album_id: 'duplicate-spotify-id',
+        album_name: 'Kept Spotify Duplicate',
+        artists: spotifyArtists,
+        rating: 82,
+      },
+      {
+        id: 103,
+        spotify_album_id: '',
+        album_name: 'Legacy Manual Duplicate',
+        artists: manualArtists,
+        rating: 101,
+      },
+      {
+        id: 104,
+        spotify_album_id: '',
+        album_name: 'Legacy Manual Duplicate',
+        artists: manualArtists,
+        rating: 77,
+      },
+    ]);
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare(`
+      SELECT spotify_album_id, album_name, rating
+      FROM albums
+      ORDER BY album_name
+    `).all();
+
+    expect(result).toMatchObject({
+      added: 2,
+      skipped: 2,
+    });
+    expect(restored).toEqual([
+      {
+        spotify_album_id: 'duplicate-spotify-id',
+        album_name: 'Kept Spotify Duplicate',
+        rating: 82,
+      },
+      {
+        spotify_album_id: null,
+        album_name: 'Legacy Manual Duplicate',
+        rating: 77,
       },
     ]);
   }, 15000);
