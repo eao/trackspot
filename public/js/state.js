@@ -488,6 +488,7 @@ export const el = {
   earlyWrappedConfirmOverlay: document.getElementById('early-wrapped-confirm-overlay'),
   earlyWrappedConfirmFloater: document.getElementById('early-wrapped-confirm-floater'),
   earlyWrappedConfirmText: document.getElementById('early-wrapped-confirm-text'),
+  earlyWrappedCheatToast: document.getElementById('early-wrapped-cheat-toast'),
   btnEarlyWrappedConfirmLeft: document.getElementById('btn-early-wrapped-confirm-left'),
   btnEarlyWrappedConfirmRight: document.getElementById('btn-early-wrapped-confirm-right'),
   settingsWipeSection: document.getElementById('settings-wipe-section'),

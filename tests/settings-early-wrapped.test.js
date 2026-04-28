@@ -160,6 +160,7 @@ describe('early wrapped settings flow', () => {
     elMock.earlyWrappedConfirmOverlay.classList.add('hidden');
     elMock.earlyWrappedConfirmFloater = document.createElement('div');
     elMock.earlyWrappedConfirmText = document.createElement('p');
+    elMock.earlyWrappedCheatToast = document.createElement('div');
     elMock.btnEarlyWrappedConfirmLeft = document.createElement('button');
     elMock.btnEarlyWrappedConfirmRight = document.createElement('button');
 
@@ -263,6 +264,7 @@ describe('early wrapped settings flow', () => {
   });
 
   it('plays the sound and blocks Enter and Space on the moving third-step ok button', async () => {
+    vi.useFakeTimers();
     const { initEarlyWrappedSettingsUi } = await import('../public/js/settings.js');
     initEarlyWrappedSettingsUi();
 
@@ -291,6 +293,12 @@ describe('early wrapped settings flow', () => {
     expect(globalThis.Audio).toHaveBeenCalledWith('/sounds/ha-got-eeem.mp3');
     const audioInstance = globalThis.Audio.mock.results[0]?.value;
     expect(audioInstance.play).toHaveBeenCalledTimes(2);
+    expect(elMock.earlyWrappedCheatToast.textContent).toBe("Nope. You'll have to click the button the old-fashioned way.");
+    expect(elMock.earlyWrappedCheatToast.classList.contains('hidden')).toBe(false);
+    vi.advanceTimersByTime(6000);
+    expect(elMock.earlyWrappedCheatToast.classList.contains('hidden')).toBe(true);
+    expect(elMock.earlyWrappedCheatToast.textContent).toBe('');
+    vi.useRealTimers();
     expect(patchPreferencesMock).not.toHaveBeenCalledWith({ earlyWrapped: true });
   });
 });

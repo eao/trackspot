@@ -58,6 +58,7 @@ let backgroundLoadedBySlot = {
 };
 let earlyWrappedConfirmStepIndex = -1;
 let earlyWrappedUiInitialized = false;
+let earlyWrappedCheatToastTimeout = null;
 let isSyncingThemeSelectUi = false;
 const OPACITY_PRESET_CUSTOM_VALUE = '__custom__';
 const THUMBNAIL_MAX_DIMENSION = 480;
@@ -91,6 +92,8 @@ const EARLY_WRAPPED_CONFIRM_STEPS = [
     moving: true,
   },
 ];
+const EARLY_WRAPPED_CHEAT_TOAST_MESSAGE = "Nope. You'll have to click the button the old-fashioned way.";
+const EARLY_WRAPPED_CHEAT_TOAST_MS = 6000;
 const SEASONAL_THEME_RULES = [
   {
     key: 'aprilFools',
@@ -3260,8 +3263,31 @@ function closeEarlyWrappedConfirmation() {
   el.earlyWrappedConfirmOverlay?.classList.add('hidden');
   el.earlyWrappedConfirmOverlay?.setAttribute('aria-hidden', 'true');
   el.earlyWrappedConfirmFloater?.classList.remove('early-wrapped-confirm-moving');
+  hideEarlyWrappedCheatToast();
   if (el.btnEarlyWrappedConfirmLeft) el.btnEarlyWrappedConfirmLeft.dataset.action = '';
   if (el.btnEarlyWrappedConfirmRight) el.btnEarlyWrappedConfirmRight.dataset.action = '';
+}
+
+function hideEarlyWrappedCheatToast() {
+  if (earlyWrappedCheatToastTimeout) {
+    clearTimeout(earlyWrappedCheatToastTimeout);
+    earlyWrappedCheatToastTimeout = null;
+  }
+  if (!el.earlyWrappedCheatToast) return;
+  el.earlyWrappedCheatToast.classList.add('hidden');
+  el.earlyWrappedCheatToast.textContent = '';
+}
+
+function showEarlyWrappedCheatToast() {
+  if (!el.earlyWrappedCheatToast) return;
+  if (earlyWrappedCheatToastTimeout) {
+    clearTimeout(earlyWrappedCheatToastTimeout);
+  }
+  el.earlyWrappedCheatToast.textContent = EARLY_WRAPPED_CHEAT_TOAST_MESSAGE;
+  el.earlyWrappedCheatToast.classList.remove('hidden');
+  earlyWrappedCheatToastTimeout = setTimeout(() => {
+    hideEarlyWrappedCheatToast();
+  }, EARLY_WRAPPED_CHEAT_TOAST_MS);
 }
 
 function renderEarlyWrappedConfirmationStep(stepIndex) {
@@ -3341,6 +3367,7 @@ export function initEarlyWrappedSettingsUi() {
       if (step?.moving && button.dataset.action === 'ok') {
         event.preventDefault();
         playGotEemSound();
+        showEarlyWrappedCheatToast();
       }
     });
   };
