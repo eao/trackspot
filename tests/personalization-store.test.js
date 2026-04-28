@@ -129,6 +129,62 @@ describe('personalization store', () => {
     expect(fs.readdirSync(path.join(dataDir, 'opacity-presets')).filter(fileName => fileName.endsWith('.json'))).toEqual([]);
   });
 
+  it('keeps invalid user opacity preset files deleteable without blocking personalization loads', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'malformed-opacity.json'), '{nope');
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'array-opacity.json'), JSON.stringify([]));
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'missing-name-opacity.json'), JSON.stringify({
+      id: 'missing-name-opacity',
+      opacity: {
+        header: 70,
+      },
+    }));
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'unsafe-id-opacity.json'), JSON.stringify({
+      id: '../unsafe-opacity',
+      name: 'Unsafe Opacity',
+      opacity: {
+        header: 60,
+      },
+    }));
+    fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, 'invalid-opacity-theme.png'), 'preview');
+    fs.writeFileSync(path.join(store.THEMES_DIR, 'invalid-opacity-theme.json'), JSON.stringify({
+      id: 'invalid-opacity-theme',
+      name: 'Invalid Opacity Theme',
+      previewImage: { fileName: 'invalid-opacity-theme.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'missing-name-opacity',
+    }, null, 2));
+
+    const invalidPresets = store.listOpacityPresets()
+      .filter(preset => preset.invalid)
+      .sort((left, right) => left.id.localeCompare(right.id));
+
+    expect(invalidPresets.map(preset => preset.id)).toEqual([
+      'array-opacity',
+      'malformed-opacity',
+      'missing-name-opacity',
+      'unsafe-id-opacity',
+    ]);
+    expect(invalidPresets.every(preset => preset.canEdit === false && preset.canDelete === true)).toBe(true);
+    expect(invalidPresets.find(preset => preset.id === 'malformed-opacity')?.invalidReason)
+      .toContain('Could not parse opacity preset "malformed-opacity.json"');
+    expect(store.findThemeById('invalid-opacity-theme')).toMatchObject({
+      invalid: true,
+      invalidReason: 'Theme "Invalid Opacity Theme" references a missing opacity preset.',
+      opacityPresetId: 'missing-name-opacity',
+    });
+
+    const deleted = store.deleteOpacityPreset('malformed-opacity');
+
+    expect(deleted.preset).toMatchObject({
+      id: 'malformed-opacity',
+      invalid: true,
+    });
+    expect(fs.existsSync(path.join(store.OPACITY_PRESETS_DIR, 'malformed-opacity.json'))).toBe(false);
+    expect(store.listThemes().length).toBeGreaterThan(0);
+  });
+
   it('loads all seed themes with preview URLs as included-with-app records', () => {
     const { store } = loadPersonalizationStoreTestContext();
     const seedThemes = readSeedThemes();
@@ -218,7 +274,7 @@ describe('personalization store', () => {
       name: 'Broken Theme',
       invalid: true,
       invalidReason: 'Theme "Broken Theme" references a missing color scheme.',
-      canEdit: false,
+      canEdit: true,
       canDelete: true,
       colorSchemePresetId: 'missing-scheme',
       opacityPresetId: 'default-opaque',
@@ -420,6 +476,210 @@ describe('personalization store', () => {
     expect(store.deleteTheme('restored-theme').id).toBe('restored-theme');
   });
 
+  it('updates renamed user theme files in place without creating id-named duplicates', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const themePath = path.join(store.THEMES_DIR, 'custom-file.json');
+
+    fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, 'renamed-theme-preview.png'), 'preview');
+    fs.writeFileSync(themePath, JSON.stringify({
+      id: 'real-theme-id',
+      name: 'Renamed Theme',
+      previewImage: { fileName: 'renamed-theme-preview.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'default-opaque',
+    }, null, 2));
+
+    const updated = store.updateTheme('real-theme-id', makeThemeInput({
+      name: 'Updated Renamed Theme',
+      previewImageFile: null,
+      previewThumbnailFile: null,
+    }));
+
+    expect(updated).toMatchObject({
+      id: 'real-theme-id',
+      name: 'Updated Renamed Theme',
+      invalid: false,
+    });
+    expect(readJson(themePath).name).toBe('Updated Renamed Theme');
+    expect(fs.existsSync(path.join(store.THEMES_DIR, 'real-theme-id.json'))).toBe(false);
+  });
+
+  it('deletes renamed opacity preset source files and cascades dependent themes once', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const opacityPath = path.join(store.OPACITY_PRESETS_DIR, 'renamed-opacity.json');
+    const themePath = path.join(store.THEMES_DIR, 'renamed-opacity-dependent-theme.json');
+
+    fs.writeFileSync(opacityPath, JSON.stringify({
+      id: 'opacity-real-id',
+      name: 'Renamed Opacity',
+      opacity: {
+        header: 70,
+      },
+    }, null, 2));
+    fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, 'renamed-opacity-theme.png'), 'preview');
+    fs.writeFileSync(themePath, JSON.stringify({
+      id: 'renamed-opacity-dependent-theme',
+      name: 'Renamed Opacity Dependent Theme',
+      previewImage: { fileName: 'renamed-opacity-theme.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'opacity-real-id',
+    }, null, 2));
+
+    expect(() => store.deleteOpacityPreset('opacity-real-id')).toThrow('Deleting "Renamed Opacity" will also delete 1 theme(s).');
+
+    const result = store.deleteOpacityPreset('opacity-real-id', { cascadeThemes: true });
+
+    expect(result.preset.id).toBe('opacity-real-id');
+    expect(result.deletedThemes.map(theme => theme.id)).toEqual(['renamed-opacity-dependent-theme']);
+    expect(fs.existsSync(opacityPath)).toBe(false);
+    expect(fs.existsSync(path.join(store.OPACITY_PRESETS_DIR, 'opacity-real-id.json'))).toBe(false);
+    expect(fs.existsSync(themePath)).toBe(false);
+  });
+
+  it('keeps shared preview assets when deleting one referenced user theme', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const previewPath = path.join(store.THEME_PREVIEW_IMAGES_DIR, 'shared-preview.png');
+    const thumbnailPath = path.join(store.THEME_PREVIEW_IMAGES_THUMBS_DIR, 'shared-preview.jpg');
+
+    fs.writeFileSync(previewPath, 'preview');
+    fs.writeFileSync(thumbnailPath, 'thumbnail');
+    ['first-shared-theme', 'second-shared-theme'].forEach((themeId, index) => {
+      fs.writeFileSync(path.join(store.THEMES_DIR, `${themeId}.json`), JSON.stringify({
+        id: themeId,
+        name: index === 0 ? 'First Shared Theme' : 'Second Shared Theme',
+        previewImage: { fileName: 'shared-preview.png' },
+        colorSchemePresetId: 'bunan-blue',
+        opacityPresetId: 'default-opaque',
+      }, null, 2));
+    });
+
+    const deleted = store.deleteTheme('first-shared-theme');
+
+    expect(deleted.id).toBe('first-shared-theme');
+    expect(fs.existsSync(previewPath)).toBe(true);
+    expect(fs.existsSync(thumbnailPath)).toBe(true);
+    expect(store.findThemeById('second-shared-theme')).toMatchObject({
+      id: 'second-shared-theme',
+      invalid: false,
+    });
+  });
+
+  it('keeps shared preview assets when updating one referenced user theme preview', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const sharedPreviewPath = path.join(store.THEME_PREVIEW_IMAGES_DIR, 'update-shared-preview.png');
+    const sharedThumbnailPath = path.join(store.THEME_PREVIEW_IMAGES_THUMBS_DIR, 'update-shared-preview.jpg');
+
+    fs.writeFileSync(sharedPreviewPath, 'preview');
+    fs.writeFileSync(sharedThumbnailPath, 'thumbnail');
+    ['first-update-shared-theme', 'second-update-shared-theme'].forEach((themeId, index) => {
+      fs.writeFileSync(path.join(store.THEMES_DIR, `${themeId}.json`), JSON.stringify({
+        id: themeId,
+        name: index === 0 ? 'First Update Shared Theme' : 'Second Update Shared Theme',
+        previewImage: { fileName: 'update-shared-preview.png' },
+        colorSchemePresetId: 'bunan-blue',
+        opacityPresetId: 'default-opaque',
+      }, null, 2));
+    });
+
+    const updated = store.updateTheme('first-update-shared-theme', makeThemeInput({
+      name: 'First Update Shared Theme',
+      previewImageFile: {
+        originalname: 'replacement-preview.png',
+        mimetype: 'image/png',
+        buffer: Buffer.from('replacement-preview'),
+      },
+      previewThumbnailFile: null,
+    }));
+
+    expect(updated.previewImage.fileName).not.toBe('update-shared-preview.png');
+    expect(fs.existsSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, updated.previewImage.fileName))).toBe(true);
+    expect(fs.existsSync(sharedPreviewPath)).toBe(true);
+    expect(fs.existsSync(sharedThumbnailPath)).toBe(true);
+    expect(store.findThemeById('second-update-shared-theme')).toMatchObject({
+      id: 'second-update-shared-theme',
+      invalid: false,
+    });
+  });
+
+  it('repairs invalid user themes when submitted dependencies validate', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const themePath = path.join(store.THEMES_DIR, 'repair-color-theme.json');
+
+    fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, 'repair-color-preview.png'), 'preview');
+    fs.writeFileSync(themePath, JSON.stringify({
+      id: 'repair-color-theme',
+      name: 'Repair Color Theme',
+      previewImage: { fileName: 'repair-color-preview.png' },
+      colorSchemePresetId: 'missing-scheme',
+      opacityPresetId: 'default-opaque',
+    }, null, 2));
+
+    expect(store.findThemeById('repair-color-theme')).toMatchObject({
+      invalid: true,
+      canEdit: true,
+    });
+    expect(() => store.updateTheme('repair-color-theme', makeThemeInput({
+      name: 'Still Broken Color Theme',
+      colorSchemePresetId: 'missing-scheme',
+      previewImageFile: null,
+      previewThumbnailFile: null,
+    }))).toThrow('Selected color scheme does not exist.');
+
+    const repaired = store.updateTheme('repair-color-theme', makeThemeInput({
+      name: 'Repaired Color Theme',
+      colorSchemePresetId: 'bunan-blue',
+      previewImageFile: null,
+      previewThumbnailFile: null,
+    }));
+
+    expect(repaired).toMatchObject({
+      id: 'repair-color-theme',
+      name: 'Repaired Color Theme',
+      invalid: false,
+      canEdit: true,
+    });
+    expect(readJson(themePath).name).toBe('Repaired Color Theme');
+  });
+
+  it('requires a replacement upload when repairing a theme with a missing preview image', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+
+    fs.writeFileSync(path.join(store.THEMES_DIR, 'repair-preview-theme.json'), JSON.stringify({
+      id: 'repair-preview-theme',
+      name: 'Repair Preview Theme',
+      previewImage: { fileName: 'missing-preview.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'default-opaque',
+    }, null, 2));
+
+    expect(store.findThemeById('repair-preview-theme')).toMatchObject({
+      invalid: true,
+      invalidReason: 'Theme "Repair Preview Theme" is missing its preview image.',
+    });
+    expect(() => store.updateTheme('repair-preview-theme', makeThemeInput({
+      name: 'Repair Preview Theme',
+      previewImageFile: null,
+      previewThumbnailFile: null,
+    }))).toThrow('Theme preview image is required.');
+
+    const repaired = store.updateTheme('repair-preview-theme', makeThemeInput({
+      name: 'Repaired Preview Theme',
+      previewImageFile: {
+        originalname: 'replacement-preview.png',
+        mimetype: 'image/png',
+        buffer: Buffer.from('replacement-preview'),
+      },
+      previewThumbnailFile: null,
+    }));
+
+    expect(repaired).toMatchObject({
+      id: 'repair-preview-theme',
+      name: 'Repaired Preview Theme',
+      invalid: false,
+    });
+    expect(fs.existsSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, repaired.previewImage.fileName))).toBe(true);
+  });
+
   it('does not trust unsafe persisted personalization ids for path operations', () => {
     const { store, dataDir } = loadPersonalizationStoreTestContext();
     const unsafeIds = ['../preferences', 'a/b', 'a\\b', 'C:foo'];
@@ -445,8 +705,15 @@ describe('personalization store', () => {
     });
 
     const unsafePresets = store.listOpacityPresets()
-      .filter(preset => preset.name.startsWith('Unsafe Opacity'));
-    expect(unsafePresets).toEqual([]);
+      .filter(preset => preset.name.startsWith('Unsafe Opacity'))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    expect(unsafePresets.map(preset => preset.id)).toEqual([
+      'unsafe-opacity-0',
+      'unsafe-opacity-1',
+      'unsafe-opacity-2',
+      'unsafe-opacity-3',
+    ]);
+    expect(unsafePresets.every(preset => preset.invalid && !preset.canEdit && preset.canDelete)).toBe(true);
 
     const unsafeThemes = store.listThemes()
       .filter(theme => theme.name.startsWith('Unsafe Theme'))
@@ -457,7 +724,7 @@ describe('personalization store', () => {
       'unsafe-theme-2',
       'unsafe-theme-3',
     ]);
-    expect(unsafeThemes.every(theme => theme.invalid && theme.canDelete)).toBe(true);
+    expect(unsafeThemes.every(theme => theme.invalid && theme.canEdit && theme.canDelete)).toBe(true);
 
     unsafeIds.forEach((unsafeId, index) => {
       expect(() => store.updateOpacityPreset(unsafeId, { name: `Nope ${index}` }))

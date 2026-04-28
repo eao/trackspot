@@ -832,13 +832,17 @@ function normalizeOpacityPreset(preset, index = 0) {
   if (!preset || typeof preset !== 'object') return null;
   const name = typeof preset.name === 'string' ? preset.name.trim() : '';
   if (!name) return null;
+  const includedWithApp = !!preset.includedWithApp;
+  const invalid = !!preset.invalid;
 
   return {
     id: typeof preset.id === 'string' && preset.id ? preset.id : `custom-${index}-${Date.now()}`,
     name,
-    includedWithApp: !!preset.includedWithApp,
-    canEdit: preset.canEdit ?? !preset.includedWithApp,
-    canDelete: preset.canDelete ?? !preset.includedWithApp,
+    includedWithApp,
+    canEdit: preset.canEdit ?? (!includedWithApp && !invalid),
+    canDelete: preset.canDelete ?? !includedWithApp,
+    invalid,
+    invalidReason: typeof preset.invalidReason === 'string' ? preset.invalidReason.trim() : '',
     opacity: OPACITY_PRESET_KEYS.reduce((result, key) => {
       result[key] = clampOpacityValueForKey(key, preset.opacity?.[key]);
       return result;
@@ -886,7 +890,7 @@ function compareIncludedFirstByName(left, right) {
 }
 
 function syncActiveOpacityPreset() {
-  const presets = getAllOpacityPresets();
+  const presets = getAllOpacityPresets().filter(preset => !preset.invalid);
   const activePreset = presets.find(preset => preset.id === state.personalization.activeOpacityPresetId) ?? null;
   const match = activePreset && opacityMatches(activePreset.opacity, state.personalization.opacity)
     ? activePreset
@@ -903,6 +907,13 @@ function getSelectedEditableOpacityPreset() {
   if (!presetId || presetId === OPACITY_PRESET_CUSTOM_VALUE) return null;
   const preset = getOpacityPresetById(presetId);
   return preset?.canEdit ? preset : null;
+}
+
+function getSelectedDeletableOpacityPreset() {
+  const presetId = el.personalizationOpacityPresetSelect?.value;
+  if (!presetId || presetId === OPACITY_PRESET_CUSTOM_VALUE) return null;
+  const preset = getOpacityPresetById(presetId);
+  return preset?.canDelete ? preset : null;
 }
 
 function syncAppliedThemeDirtyState() {
@@ -966,7 +977,7 @@ function syncOpacityPresetUi() {
     getAllOpacityPresets().forEach(preset => {
       const option = document.createElement('option');
       option.value = preset.id;
-      option.textContent = preset.name;
+      option.textContent = preset.invalid ? `${preset.name} (unavailable)` : preset.name;
       el.personalizationOpacityPresetSelect.appendChild(option);
     });
 
@@ -1015,7 +1026,7 @@ function normalizeTheme(theme) {
     opacityPresetId: typeof theme.opacityPresetId === 'string' ? theme.opacityPresetId : '',
     opacityPresetName: typeof theme.opacityPresetName === 'string' ? theme.opacityPresetName : '',
     includedWithApp,
-    canEdit: invalid ? false : (theme.canEdit ?? !includedWithApp),
+    canEdit: theme.canEdit ?? (!includedWithApp && !invalid),
     canDelete: theme.canDelete ?? !includedWithApp,
     invalid,
     invalidReason: typeof theme.invalidReason === 'string' ? theme.invalidReason.trim() : '',
@@ -1408,6 +1419,20 @@ function createThemePickerCard(theme) {
   }
   actions.appendChild(useButton);
 
+  if (isInvalid && theme.canEdit) {
+    const repairButton = document.createElement('button');
+    repairButton.className = 'btn btn-ghost btn-small';
+    repairButton.type = 'button';
+    repairButton.textContent = 'Repair';
+    repairButton.addEventListener('click', () => {
+      state.personalization.selectedThemeId = theme.id;
+      populateThemeDraftFromTheme(theme);
+      syncThemeUi();
+      setThemeEditorMessage(theme.invalidReason || 'Theme is unavailable.', true);
+    });
+    actions.appendChild(repairButton);
+  }
+
   if (theme.canDelete) {
     const deleteButton = document.createElement('button');
     deleteButton.className = 'btn btn-ghost btn-small';
@@ -1561,6 +1586,7 @@ async function loadThemes(options = {}) {
     const data = await apiFetch('/api/themes');
     state.personalization.themes = (data.themes ?? []).map(normalizeTheme).filter(Boolean).sort(compareIncludedFirstByName);
     state.personalization.themesLoaded = true;
+    const isKnownThemeId = themeId => state.personalization.themes.some(theme => theme.id === themeId);
     const isAvailableThemeId = themeId => state.personalization.themes.some(theme => theme.id === themeId && !theme.invalid);
 
     if (state.personalization.appliedThemeId
@@ -1569,7 +1595,7 @@ async function loadThemes(options = {}) {
     }
 
     if (state.personalization.selectedThemeId
-      && !isAvailableThemeId(state.personalization.selectedThemeId)) {
+      && !isKnownThemeId(state.personalization.selectedThemeId)) {
       state.personalization.selectedThemeId = null;
     }
 
@@ -2403,6 +2429,15 @@ export function initPersonalizationSettings() {
 
   el.personalizationOpacityPresetSelect?.addEventListener('change', () => {
     const selectedPreset = getOpacityPresetById(el.personalizationOpacityPresetSelect.value);
+    if (selectedPreset?.invalid) {
+      setPersonalizationBackgroundStatus(selectedPreset.invalidReason || 'Opacity preset is unavailable.', true);
+      if (el.personalizationOpacityPresetName) {
+        el.personalizationOpacityPresetName.value = '';
+      }
+      if (el.personalizationOpacityPresetUpdate) el.personalizationOpacityPresetUpdate.disabled = true;
+      if (el.personalizationOpacityPresetDelete) el.personalizationOpacityPresetDelete.disabled = !selectedPreset.canDelete;
+      return;
+    }
     if (selectedPreset) {
       applyPersonalizationOpacity({
         ...state.personalization.opacity,
@@ -2469,7 +2504,7 @@ export function initPersonalizationSettings() {
   });
 
   el.personalizationOpacityPresetDelete?.addEventListener('click', async () => {
-    const selectedPreset = getSelectedEditableOpacityPreset();
+    const selectedPreset = getSelectedDeletableOpacityPreset();
     if (!selectedPreset) return;
     if (!window.confirm(`Delete the "${selectedPreset.name}" opacity preset?`)) return;
 

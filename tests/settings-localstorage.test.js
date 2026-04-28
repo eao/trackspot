@@ -1038,6 +1038,9 @@ describe('theme background application', () => {
     elMock.personalizationSecondaryBackgroundCustomScale = globalThis.document.createElement('input');
     elMock.personalizationOpacityPresetSelect = globalThis.document.createElement('select');
     elMock.personalizationOpacityPresetName = globalThis.document.createElement('input');
+    elMock.personalizationOpacityPresetSave = globalThis.document.createElement('button');
+    elMock.personalizationOpacityPresetUpdate = globalThis.document.createElement('button');
+    elMock.personalizationOpacityPresetDelete = globalThis.document.createElement('button');
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockReset();
@@ -2156,6 +2159,10 @@ describe('theme thumbnail picker', () => {
     elMock.personalizationThemeDescriptionInput = globalThis.document.createElement('input');
     elMock.personalizationThemeSelectionWarning = { textContent: '', style: { color: '' } };
     elMock.personalizationThemeEditorWarning = { textContent: '', style: { color: '' } };
+    elMock.personalizationThemeNew = globalThis.document.createElement('button');
+    elMock.personalizationThemeSave = globalThis.document.createElement('button');
+    elMock.personalizationThemeUpdate = globalThis.document.createElement('button');
+    elMock.personalizationThemeDelete = globalThis.document.createElement('button');
     elMock.personalizationBackgroundTabPrimary = globalThis.document.createElement('button');
     elMock.personalizationBackgroundTabSecondary = globalThis.document.createElement('button');
     elMock.personalizationBackgroundPositionX = globalThis.document.createElement('select');
@@ -2325,7 +2332,7 @@ describe('theme thumbnail picker', () => {
       secondaryBackgroundImageOpacity: 100,
       secondaryBackgroundImageBlur: 0,
       includedWithApp: false,
-      canEdit: false,
+      canEdit: true,
       canDelete: true,
       invalid: true,
       invalidReason: 'Theme "Broken Theme" references a missing color scheme.',
@@ -2375,6 +2382,8 @@ describe('theme thumbnail picker', () => {
       .find(card => card.querySelector('.background-card-name')?.textContent === 'Broken Theme');
     const unavailableButton = [...invalidCard.querySelectorAll('button')]
       .find(button => button.textContent === 'Unavailable');
+    const repairButton = [...invalidCard.querySelectorAll('button')]
+      .find(button => button.textContent === 'Repair');
     const deleteButton = [...invalidCard.querySelectorAll('button')]
       .find(button => button.textContent === 'Delete');
 
@@ -2386,11 +2395,21 @@ describe('theme thumbnail picker', () => {
     expect(invalidCard.querySelector('.background-card-meta')?.textContent)
       .toBe('Theme "Broken Theme" references a missing color scheme.');
     expect(unavailableButton?.disabled).toBe(true);
+    expect(repairButton?.disabled).toBe(false);
 
     unavailableButton.click();
     await flushAsyncWork();
 
     expect(stateMock.personalization.appliedThemeId).toBeNull();
+
+    repairButton.click();
+    await flushAsyncWork();
+
+    expect(stateMock.personalization.selectedThemeId).toBe('broken-theme');
+    expect(stateMock.personalization.appliedThemeId).toBeNull();
+    expect(elMock.personalizationThemeName.disabled).toBe(false);
+    expect(elMock.personalizationThemeDescriptionInput.disabled).toBe(false);
+    expect(elMock.personalizationThemeUpdate.disabled).toBe(false);
 
     deleteButton.click();
     await flushAsyncWork();
@@ -2399,6 +2418,195 @@ describe('theme thumbnail picker', () => {
     expect(stateMock.personalization.themes.some(theme => theme.id === 'broken-theme')).toBe(false);
     expect(elMock.personalizationThemeGalleryUser.querySelector('.background-gallery-empty')?.textContent)
       .toBe('You haven\'t made any themes.');
+  });
+
+  it('renders invalid opacity presets as unavailable but still deleteable', async () => {
+    localStorage.setItem('ts_headerScroll', 'smart');
+    vi.stubGlobal('confirm', vi.fn(() => true));
+
+    const invalidPreset = {
+      id: 'broken-opacity',
+      name: 'Broken Opacity',
+      includedWithApp: false,
+      canEdit: false,
+      canDelete: true,
+      invalid: true,
+      invalidReason: 'Could not parse opacity preset "broken-opacity.json".',
+      opacity: {
+        header: 100,
+      },
+    };
+
+    const { apiFetch } = await import('../public/js/state.js');
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      if (path === '/api/opacity-presets' && !options.method) return { presets: [invalidPreset] };
+      if (path === '/api/themes') return { themes: [] };
+      if (path === '/api/opacity-presets/broken-opacity' && options.method === 'DELETE') {
+        return { ok: true, preset: invalidPreset, deletedThemes: [] };
+      }
+      throw new Error(`Unexpected apiFetch call: ${path}`);
+    });
+
+    const flushAsyncWork = async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+
+    const { initPersonalizationSettings, restorePersonalizationSettings } = await import('../public/js/settings.js');
+    restorePersonalizationSettings();
+    initPersonalizationSettings();
+    await flushAsyncWork();
+
+    const brokenOption = [...elMock.personalizationOpacityPresetSelect.querySelectorAll('option')]
+      .find(option => option.value === 'broken-opacity');
+    expect(brokenOption?.textContent).toBe('Broken Opacity (unavailable)');
+
+    elMock.personalizationOpacityPresetSelect.value = 'broken-opacity';
+    elMock.personalizationOpacityPresetSelect.dispatchEvent(new Event('change'));
+    await flushAsyncWork();
+
+    expect(stateMock.personalization.activeOpacityPresetId).not.toBe('broken-opacity');
+    expect(elMock.personalizationBackgroundStatus.textContent).toBe('Could not parse opacity preset "broken-opacity.json".');
+    expect(elMock.personalizationOpacityPresetName.value).toBe('');
+    expect(elMock.personalizationOpacityPresetUpdate.disabled).toBe(true);
+    expect(elMock.personalizationOpacityPresetDelete.disabled).toBe(false);
+
+    elMock.personalizationOpacityPresetDelete.click();
+    await flushAsyncWork();
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/opacity-presets/broken-opacity', { method: 'DELETE' });
+    expect(stateMock.personalization.opacityPresets.some(preset => preset.id === 'broken-opacity')).toBe(false);
+  });
+
+  it('repairs invalid user themes without allowing them to be applied first', async () => {
+    localStorage.setItem('ts_headerScroll', 'smart');
+
+    const defaultOpacity = {
+      header: 100,
+      quickActionsToolbar: 100,
+      sidebar: 100,
+      rowHeaderBackground: 100,
+      row: 100,
+      rowArt: 100,
+      rowText: 100,
+      card: 100,
+      cardArt: 100,
+      cardText: 100,
+      styleBackgroundGradient: 0,
+    };
+    const defaultPreset = {
+      id: 'default-opaque',
+      name: 'Default Opaque',
+      includedWithApp: true,
+      canEdit: false,
+      canDelete: false,
+      invalid: false,
+      invalidReason: '',
+      opacity: defaultOpacity,
+    };
+    const invalidTheme = {
+      id: 'broken-theme',
+      name: 'Broken Theme',
+      description: 'Missing color scheme.',
+      previewImage: {
+        fileName: 'broken-theme.png',
+        url: '/theme-previews/broken-theme.png',
+        thumbnailUrl: '/theme-previews-thumbs/broken-theme.jpg',
+      },
+      colorSchemePresetId: 'missing-scheme',
+      opacityPresetId: 'default-opaque',
+      primaryBackgroundSelection: null,
+      primaryBackgroundDisplay: {
+        positionX: 'center',
+        positionY: 'center',
+        fill: 'cover',
+        customScale: 1,
+      },
+      secondaryBackgroundSelection: null,
+      secondaryBackgroundDisplay: {
+        positionX: 'right',
+        positionY: 'top',
+        fill: 'original-size',
+        customScale: 1,
+      },
+      backgroundImageOpacity: 45,
+      backgroundImageBlur: 0,
+      secondaryBackgroundImageOpacity: 100,
+      secondaryBackgroundImageBlur: 0,
+      includedWithApp: false,
+      canEdit: true,
+      canDelete: true,
+      invalid: true,
+      invalidReason: 'Theme "Broken Theme" references a missing color scheme.',
+    };
+    const repairedTheme = {
+      ...invalidTheme,
+      name: 'Repaired Theme',
+      description: 'Missing color scheme.',
+      colorSchemePresetId: 'bunan-blue',
+      invalid: false,
+      invalidReason: '',
+    };
+
+    const { apiFetch } = await import('../public/js/state.js');
+    apiFetch.mockImplementation(async path => {
+      if (path === '/api/opacity-presets') return { presets: [defaultPreset] };
+      if (path === '/api/themes') return { themes: [invalidTheme] };
+      throw new Error(`Unexpected apiFetch call: ${path}`);
+    });
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ theme: repairedTheme }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const flushAsyncWork = async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+
+    const { initPersonalizationSettings, restorePersonalizationSettings } = await import('../public/js/settings.js');
+    restorePersonalizationSettings();
+    initPersonalizationSettings();
+    await flushAsyncWork();
+
+    const invalidCard = [...elMock.personalizationThemeGalleryUser.querySelectorAll('.background-card')]
+      .find(card => card.querySelector('.background-card-name')?.textContent === 'Broken Theme');
+    const unavailableButton = [...invalidCard.querySelectorAll('button')]
+      .find(button => button.textContent === 'Unavailable');
+    const repairButton = [...invalidCard.querySelectorAll('button')]
+      .find(button => button.textContent === 'Repair');
+
+    unavailableButton.click();
+    await flushAsyncWork();
+
+    expect(stateMock.personalization.appliedThemeId).toBeNull();
+
+    repairButton.click();
+    await flushAsyncWork();
+
+    stateMock.personalization.activeOpacityPresetId = 'default-opaque';
+    elMock.personalizationThemeName.value = 'Repaired Theme';
+    elMock.personalizationThemeName.dispatchEvent(new Event('input'));
+    elMock.personalizationThemeUpdate.click();
+    await flushAsyncWork();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/themes/broken-theme', {
+      method: 'PATCH',
+      body: expect.any(FormData),
+    });
+    const form = fetchMock.mock.calls[0][1].body;
+    expect(form.get('name')).toBe('Repaired Theme');
+    expect(form.get('colorSchemePresetId')).toBe('bunan-blue');
+    expect(form.get('opacityPresetId')).toBe('default-opaque');
+    expect(stateMock.personalization.themes.find(theme => theme.id === 'broken-theme')).toMatchObject({
+      name: 'Repaired Theme',
+      invalid: false,
+    });
+    expect(stateMock.personalization.appliedThemeId).toBeNull();
   });
 
   it('shows an empty thumbnail in Your themes when no user-created themes exist and opens the lightbox from theme thumbnails', async () => {

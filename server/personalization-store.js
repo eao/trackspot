@@ -268,13 +268,74 @@ function getThemeFilePath(themeId) {
   return resolveInsideDirectory(THEMES_DIR, `${safeId}.json`);
 }
 
+function getOpacityPresetWritePath(preset) {
+  const sourceFileName = ensureSafeJsonFileName(preset?.sourceFileName);
+  if (sourceFileName) return resolveInsideDirectory(OPACITY_PRESETS_DIR, sourceFileName);
+  return getOpacityPresetFilePath(preset?.id);
+}
+
+function removeOpacityPresetFile(preset) {
+  const filePath = getOpacityPresetWritePath(preset);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+}
+
+function attachOpacityPresetSourceFileName(preset, fileName) {
+  Object.defineProperty(preset, 'sourceFileName', {
+    value: fileName,
+    enumerable: false,
+    configurable: true,
+  });
+  return preset;
+}
+
+function buildInvalidUserOpacityPresetRecord(rawPreset, fileName, reason) {
+  const rawObject = rawPreset && typeof rawPreset === 'object' && !Array.isArray(rawPreset)
+    ? rawPreset
+    : {};
+  const fallbackName = path.parse(fileName).name;
+  const rawId = getRawRecordId(rawObject, fileName);
+  const id = isSafePersonalizationId(rawId)
+    ? rawId.trim()
+    : getSafeFallbackIdFromFileName(fileName, 'invalid-opacity');
+  const name = typeof rawObject.name === 'string' && rawObject.name.trim()
+    ? rawObject.name.trim()
+    : fallbackName;
+
+  return attachOpacityPresetSourceFileName({
+    id,
+    name,
+    includedWithApp: false,
+    canEdit: false,
+    canDelete: true,
+    invalid: true,
+    invalidReason: reason,
+    opacity: normalizeOpacityValues(rawObject.opacity),
+  }, fileName);
+}
+
 function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
   return listJsonFileNames(directoryPath)
     .map(fileName => {
       const filePath = path.join(directoryPath, fileName);
-      const raw = readJsonFile(filePath, `opacity preset "${fileName}"`);
+      let raw;
+      try {
+        raw = readJsonFile(filePath, `opacity preset "${fileName}"`);
+      } catch (error) {
+        if (options.forceIncludedWithApp) {
+          throw error;
+        }
+
+        const fallbackId = path.parse(fileName).name;
+        if (options.ignoredIds?.has(fallbackId)) return null;
+        return buildInvalidUserOpacityPresetRecord(null, fileName, error.message);
+      }
+
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        throw createStoreError(500, `Opacity preset file "${fileName}" must contain a JSON object.`);
+        const reason = `Opacity preset file "${fileName}" must contain a JSON object.`;
+        if (options.forceIncludedWithApp) {
+          throw createStoreError(500, reason);
+        }
+        return buildInvalidUserOpacityPresetRecord(raw, fileName, reason);
       }
 
       const rawId = getRawRecordId(raw, fileName);
@@ -282,22 +343,32 @@ function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
         if (options.forceIncludedWithApp) {
           throw createStoreError(500, `Opacity preset file "${fileName}" has an invalid id.`);
         }
-        return null;
+        const fallbackId = getSafeFallbackIdFromFileName(fileName, 'invalid-opacity');
+        if (options.ignoredIds?.has(fallbackId)) return null;
+        return buildInvalidUserOpacityPresetRecord(raw, fileName, `Opacity preset file "${fileName}" has an invalid id.`);
       }
       const id = rawId.trim();
       if (options.ignoredIds?.has(id)) return null;
 
       const name = typeof raw.name === 'string' ? raw.name.trim() : '';
       if (!name) {
-        throw createStoreError(500, `Opacity preset file "${fileName}" is missing a non-empty "name".`);
+        const reason = `Opacity preset file "${fileName}" is missing a non-empty "name".`;
+        if (options.forceIncludedWithApp) {
+          throw createStoreError(500, reason);
+        }
+        return buildInvalidUserOpacityPresetRecord(raw, fileName, reason);
       }
 
-      return {
+      return attachOpacityPresetSourceFileName({
         id,
         name,
         includedWithApp: !!options.forceIncludedWithApp,
+        canEdit: !options.forceIncludedWithApp,
+        canDelete: !options.forceIncludedWithApp,
+        invalid: false,
+        invalidReason: '',
         opacity: normalizeOpacityValues(raw.opacity),
-      };
+      }, fileName);
     })
     .filter(Boolean);
 }
@@ -326,12 +397,16 @@ function ensureUniquePresetName(name, records, currentId = null, label = 'preset
 }
 
 function serializeOpacityPresetForResponse(preset) {
+  const includedWithApp = !!preset.includedWithApp;
+  const invalid = !!preset.invalid;
   return {
     id: preset.id,
     name: preset.name,
-    includedWithApp: !!preset.includedWithApp,
-    canEdit: !preset.includedWithApp,
-    canDelete: !preset.includedWithApp,
+    includedWithApp,
+    canEdit: preset.canEdit ?? (!includedWithApp && !invalid),
+    canDelete: preset.canDelete ?? !includedWithApp,
+    invalid,
+    invalidReason: typeof preset.invalidReason === 'string' ? preset.invalidReason : '',
     opacity: { ...preset.opacity },
   };
 }
@@ -368,6 +443,9 @@ function updateOpacityPreset(presetId, input) {
   if (existing.includedWithApp) {
     throw createStoreError(403, 'Included-with-app opacity presets cannot be edited.');
   }
+  if (existing.invalid) {
+    throw createStoreError(409, 'Invalid opacity presets cannot be edited.');
+  }
 
   const records = loadOpacityPresetRecords();
   const name = typeof input?.name === 'string' ? input.name.trim() : existing.name;
@@ -384,13 +462,43 @@ function updateOpacityPreset(presetId, input) {
     opacity: normalizeOpacityValues(input?.opacity ?? existing.opacity),
   };
 
-  writeJsonFile(getOpacityPresetFilePath(existing.id), updated);
+  writeJsonFile(getOpacityPresetWritePath(existing), updated);
   return serializeOpacityPresetForResponse(updated);
 }
 
-function deleteThemePreviewAssets(theme) {
+function getThemeSourceFileName(theme) {
+  const sourceFileName = ensureSafeJsonFileName(theme?.sourceFileName);
+  if (sourceFileName) return sourceFileName;
+  if (isSafePersonalizationId(theme?.id)) return `${theme.id.trim()}.json`;
+  return null;
+}
+
+function isPreviewReferencedByAnotherUserTheme(previewFileName, excludedSourceFileName = null) {
+  const safePreviewFileName = ensureSafeStoredName(previewFileName);
+  if (!safePreviewFileName) return false;
+
+  return listJsonFileNames(THEMES_DIR).some(fileName => {
+    if (excludedSourceFileName && fileName === excludedSourceFileName) return false;
+
+    try {
+      const rawTheme = readJsonFile(path.join(THEMES_DIR, fileName), `theme "${fileName}"`);
+      if (!rawTheme || typeof rawTheme !== 'object' || Array.isArray(rawTheme)) return false;
+      return ensureSafeStoredName(rawTheme.previewImage?.fileName) === safePreviewFileName;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function deleteThemePreviewAssets(theme, options = {}) {
   const previewFileName = ensureSafeStoredName(theme?.previewImage?.fileName);
   const thumbnailFileName = previewFileName ? buildThumbnailFileName(previewFileName) : null;
+  const excludedSourceFileName = options.excludeSourceFileName
+    ?? getThemeSourceFileName(options.excludeTheme ?? theme);
+
+  if (isPreviewReferencedByAnotherUserTheme(previewFileName, excludedSourceFileName)) {
+    return;
+  }
 
   if (previewFileName) {
     const previewPath = path.join(THEME_PREVIEW_IMAGES_DIR, previewFileName);
@@ -501,7 +609,7 @@ function buildInvalidUserThemeRecord(rawTheme, fileName, reason) {
     opacityPresetId,
     opacityPresetName: '',
     includedWithApp: false,
-    canEdit: false,
+    canEdit: true,
     canDelete: true,
     invalid: true,
     invalidReason: reason,
@@ -510,7 +618,9 @@ function buildInvalidUserThemeRecord(rawTheme, fileName, reason) {
 
 function hydrateThemeRecord(rawTheme, fileName, options = {}) {
   const colorSchemesById = getColorSchemePresetMap();
-  const opacityPresetsById = new Map(loadOpacityPresetRecords().map(preset => [preset.id, preset]));
+  const opacityPresetsById = new Map(loadOpacityPresetRecords()
+    .filter(preset => !preset.invalid)
+    .map(preset => [preset.id, preset]));
 
   if (!rawTheme || typeof rawTheme !== 'object' || Array.isArray(rawTheme)) {
     return { valid: false, reason: `Theme file "${fileName}" must contain a JSON object.` };
@@ -596,6 +706,32 @@ function removeThemeFile(theme) {
     ? resolveInsideDirectory(THEMES_DIR, sourceFileName)
     : getThemeFilePath(typeof theme === 'string' ? theme : theme?.id);
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+}
+
+function getThemeWritePath(theme) {
+  const sourceFileName = ensureSafeJsonFileName(theme?.sourceFileName);
+  if (sourceFileName) return resolveInsideDirectory(THEMES_DIR, sourceFileName);
+
+  const safeId = normalizePersonalizationId(theme?.id, 'theme id');
+  const fallbackFileName = `${safeId}.json`;
+  const conflictingSourceFileName = listJsonFileNames(THEMES_DIR).find(fileName => {
+    if (fileName === fallbackFileName) return false;
+
+    try {
+      const rawTheme = readJsonFile(path.join(THEMES_DIR, fileName), `theme "${fileName}"`);
+      if (!rawTheme || typeof rawTheme !== 'object' || Array.isArray(rawTheme)) return false;
+      const rawId = getRawRecordId(rawTheme, fileName);
+      return isSafePersonalizationId(rawId) && rawId.trim() === safeId;
+    } catch {
+      return false;
+    }
+  });
+
+  if (conflictingSourceFileName) {
+    throw createStoreError(409, `Theme "${safeId}" is already stored in "${conflictingSourceFileName}".`);
+  }
+
+  return getThemeFilePath(safeId);
 }
 
 function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
@@ -687,7 +823,8 @@ function validateThemeInput(input, options = {}) {
     throw createStoreError(400, 'Selected color scheme does not exist.');
   }
 
-  if (!findOpacityPresetById(opacityPresetId)) {
+  const opacityPreset = findOpacityPresetById(opacityPresetId);
+  if (!opacityPreset || opacityPreset.invalid) {
     throw createStoreError(400, 'Selected opacity preset does not exist.');
   }
 
@@ -722,9 +859,9 @@ function validateThemeInput(input, options = {}) {
   };
 }
 
-function writePreviewFiles(previewImageFile, previewThumbnailFile, previousPreview = null) {
+function writePreviewFiles(previewImageFile, previewThumbnailFile) {
   if (!previewImageFile) {
-    return previousPreview ? { ...previousPreview } : null;
+    return null;
   }
 
   const storedName = buildStoredPreviewImageName(previewImageFile.originalname, previewImageFile.mimetype);
@@ -734,10 +871,6 @@ function writePreviewFiles(previewImageFile, previewThumbnailFile, previousPrevi
   if (previewThumbnailFile?.buffer?.length) {
     const thumbPath = path.join(THEME_PREVIEW_IMAGES_THUMBS_DIR, buildThumbnailFileName(storedName));
     fs.writeFileSync(thumbPath, previewThumbnailFile.buffer);
-  }
-
-  if (previousPreview) {
-    deleteThemePreviewAssets({ previewImage: previousPreview });
   }
 
   return {
@@ -769,7 +902,7 @@ function serializeThemeFile(theme) {
 
 function createTheme(input) {
   const normalized = validateThemeInput(input, { requirePreviewImage: true });
-  const previewImage = writePreviewFiles(input.previewImageFile, input.previewThumbnailFile, null);
+  const previewImage = writePreviewFiles(input.previewImageFile, input.previewThumbnailFile);
   const theme = {
     id: createStableId('theme'),
     ...normalized,
@@ -788,20 +921,31 @@ function updateTheme(themeId, input) {
   if (existing.includedWithApp) {
     throw createStoreError(403, 'Included-with-app themes cannot be edited.');
   }
-  if (existing.invalid) {
+  if (existing.invalid && !existing.canDelete) {
     throw createStoreError(409, 'Invalid themes cannot be edited until their missing dependencies are restored.');
   }
 
-  const normalized = validateThemeInput(input, { currentThemeId: themeId });
-  const previewImage = writePreviewFiles(input.previewImageFile, input.previewThumbnailFile, existing.previewImage);
+  const hasUsableExistingPreview = !!existing.previewImage?.url;
+  const normalized = validateThemeInput(input, {
+    currentThemeId: existing.id,
+    requirePreviewImage: existing.invalid && !hasUsableExistingPreview,
+  });
+  const previewImage = writePreviewFiles(input.previewImageFile, input.previewThumbnailFile);
+  const previousPreview = existing.previewImage?.fileName
+    ? { fileName: existing.previewImage.fileName }
+    : null;
+  const finalPreview = previewImage ?? previousPreview;
 
   const theme = {
     id: existing.id,
     ...normalized,
-    previewImage: previewImage ?? { fileName: existing.previewImage.fileName },
+    previewImage: finalPreview,
   };
 
-  writeJsonFile(getThemeFilePath(existing.id), serializeThemeFile(theme));
+  writeJsonFile(getThemeWritePath(existing), serializeThemeFile(theme));
+  if (previewImage && previousPreview?.fileName && previousPreview.fileName !== previewImage.fileName) {
+    deleteThemePreviewAssets({ previewImage: previousPreview }, { excludeTheme: existing });
+  }
   return findThemeById(existing.id);
 }
 
@@ -814,8 +958,8 @@ function deleteTheme(themeId) {
     throw createStoreError(403, 'Included-with-app themes cannot be deleted.');
   }
 
-  deleteThemePreviewAssets(existing);
   removeThemeFile(existing);
+  deleteThemePreviewAssets(existing);
 
   return existing;
 }
@@ -838,8 +982,8 @@ function deleteThemes(themeIds) {
   themeIds.forEach(themeId => {
     const existing = findThemeById(themeId);
     if (!existing || existing.includedWithApp) return;
-    deleteThemePreviewAssets(existing);
     removeThemeFile(existing);
+    deleteThemePreviewAssets(existing);
     deletedThemes.push(existing);
   });
   return deletedThemes;
@@ -866,8 +1010,7 @@ function deleteOpacityPreset(presetId, options = {}) {
   }
 
   const deletedThemes = dependentThemes.length ? deleteThemes(dependentThemes.map(theme => theme.id)) : [];
-  const presetPath = getOpacityPresetFilePath(preset.id);
-  if (fs.existsSync(presetPath)) fs.unlinkSync(presetPath);
+  removeOpacityPresetFile(preset);
 
   return {
     preset: serializeOpacityPresetForResponse(preset),
