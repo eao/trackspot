@@ -202,6 +202,19 @@ function createConstraintDriftDatabase() {
     );
 
     CREATE UNIQUE INDEX albums_spotify_album_id_unique ON albums(spotify_album_id);
+
+    CREATE TABLE import_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      default_status TEXT NOT NULL
+    );
+
+    CREATE TABLE import_job_rows (
+      id INTEGER,
+      job_id INTEGER NOT NULL,
+      row_index INTEGER NOT NULL,
+      spotify_url TEXT,
+      status TEXT NOT NULL DEFAULT 'queued'
+    );
   `);
 
   driftedDb.prepare(`
@@ -222,6 +235,28 @@ function createConstraintDriftDatabase() {
     '',
     '',
   );
+
+  driftedDb.prepare(`
+    INSERT INTO albums (
+      spotify_album_id, album_name, artists, status, source
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(
+    'drifted-album-null-id',
+    'Null ID Album',
+    '[]',
+    'completed',
+    'manual',
+  );
+
+  driftedDb.prepare(`
+    INSERT INTO import_jobs (id, default_status)
+    VALUES (?, ?)
+  `).run(42, 'planned');
+
+  driftedDb.prepare(`
+    INSERT INTO import_job_rows (job_id, row_index, spotify_url, status)
+    VALUES (?, ?, ?, ?)
+  `).run(42, 1, 'https://open.spotify.com/album/NULLIDIMPORTROW', 'queued');
 }
 
 function tableColumns(db, tableName) {
@@ -470,12 +505,13 @@ describe('legacy schema migration', () => {
     expect(columnInfo(db, 'albums', 'source')).toMatchObject({ notnull: 1 });
 
     const migratedAlbum = db.prepare(`
-      SELECT id, album_name, artists, status, source, rating, repeats, priority, created_at, updated_at
+      SELECT id, spotify_album_id, album_name, artists, status, source, rating, repeats, priority, created_at, updated_at
       FROM albums
       WHERE id = 7
     `).get();
     expect(migratedAlbum).toMatchObject({
       id: 7,
+      spotify_album_id: 'drifted-album-1',
       album_name: '',
       artists: '[]',
       status: 'completed',
@@ -486,6 +522,30 @@ describe('legacy schema migration', () => {
     });
     expectTimestampValue(migratedAlbum.created_at);
     expectTimestampValue(migratedAlbum.updated_at);
+
+    const nullIdAlbum = db.prepare(`
+      SELECT id, spotify_album_id, album_name, artists
+      FROM albums
+      WHERE spotify_album_id = ?
+    `).get('drifted-album-null-id');
+    expect(nullIdAlbum).toMatchObject({
+      id: 8,
+      spotify_album_id: 'drifted-album-null-id',
+      album_name: 'Null ID Album',
+      artists: '[]',
+    });
+
+    expect(db.prepare(`
+      SELECT id, job_id, row_index, spotify_url, status
+      FROM import_job_rows
+      WHERE job_id = ? AND row_index = ?
+    `).get(42, 1)).toMatchObject({
+      id: 1,
+      job_id: 42,
+      row_index: 1,
+      spotify_url: 'https://open.spotify.com/album/NULLIDIMPORTROW',
+      status: 'queued',
+    });
 
     expect(() => db.prepare(`
       INSERT INTO albums (album_name, artists, rating)
@@ -506,6 +566,6 @@ describe('legacy schema migration', () => {
       INSERT INTO albums (album_name, artists)
       VALUES (?, ?)
     `).run('Next Album', '[]');
-    expect(insertedAlbum.lastInsertRowid).toBe(8);
+    expect(insertedAlbum.lastInsertRowid).toBe(9);
   });
 });

@@ -478,8 +478,8 @@ function copyExpression(tableName, legacyTableName, columnName, existingColumnNa
     return `
       CASE
         WHEN ${legacyColumn} IS NULL OR ${legacyColumn} = '' THEN NULL
-        WHEN legacy.${quoteIdentifier('id')} = (
-          SELECT MIN(dedupe.${quoteIdentifier('id')})
+        WHEN legacy.rowid = (
+          SELECT MIN(dedupe.rowid)
           FROM ${quoteIdentifier(legacyTableName)} AS dedupe
           WHERE dedupe.${quoteIdentifier('spotify_album_id')} = ${legacyColumn}
         ) THEN ${legacyColumn}
@@ -537,8 +537,8 @@ function copyWhereClause(tableName, legacyTableName, existingColumnNames) {
 
   if (existingColumnNames.has('id')) {
     clauses.push(`
-      legacy.${quoteIdentifier('id')} = (
-        SELECT MIN(dedupe.${quoteIdentifier('id')})
+      legacy.rowid = (
+        SELECT MIN(dedupe.rowid)
         FROM ${quoteIdentifier(legacyTableName)} AS dedupe
         WHERE dedupe.${quoteIdentifier('job_id')} = legacy.${quoteIdentifier('job_id')}
           AND dedupe.${quoteIdentifier('row_index')} = legacy.${quoteIdentifier('row_index')}
