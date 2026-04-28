@@ -1089,6 +1089,62 @@ describe('backup and restore', () => {
     expect(fs.existsSync(path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME))).toBe(false);
   });
 
+  it('blocks new merges when interrupted merge cleanup cannot finish', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const orphanImagePath = 'images/orphan-merge.jpg';
+    const orphanFullPath = path.join(dataDir, orphanImagePath);
+    writeFileEnsured(orphanFullPath, Buffer.from('orphan-image'));
+    backupRouter.__private.writeMergeJournal({
+      operation: 'merge',
+      imagePaths: [orphanImagePath],
+    });
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        album_name: 'Blocked Merge Album',
+        artists: JSON.stringify([{ name: 'Blocked Artist' }]),
+      },
+    ]);
+
+    const originalRmSync = fs.rmSync;
+    const originalWarn = console.warn;
+    fs.rmSync = function rmSyncWithInterruptedMergeCleanupFailure(targetPath, options) {
+      if (path.resolve(String(targetPath)) === path.resolve(orphanFullPath)) {
+        throw new Error('simulated interrupted merge cleanup failure');
+      }
+      return originalRmSync.call(this, targetPath, options);
+    };
+    console.warn = () => {};
+
+    try {
+      await expect(backupRouter.__private.importFromZip(zip, false))
+        .rejects.toThrow(/Could not finish cleanup for a previous interrupted merge/);
+    } finally {
+      fs.rmSync = originalRmSync;
+      console.warn = originalWarn;
+    }
+
+    expect(db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+    expect(fs.existsSync(orphanFullPath)).toBe(true);
+    expect(backupRouter.__private.readMergeJournal()?.imagePaths).toEqual([orphanImagePath]);
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare('SELECT album_name FROM albums').get();
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+    });
+    expect(restored.album_name).toBe('Blocked Merge Album');
+    expect(fs.existsSync(orphanFullPath)).toBe(false);
+    expect(backupRouter.__private.readMergeJournal()).toBeNull();
+  }, 15000);
+
   it('does not fail a committed merge when staging cleanup fails', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;

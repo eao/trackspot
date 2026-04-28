@@ -1170,6 +1170,19 @@ function recoverInterruptedMerge() {
   return !cleanupFailed;
 }
 
+function requireInterruptedMergeRecovered() {
+  const journal = readMergeJournal();
+  if (!journal) return false;
+
+  if (!recoverInterruptedMerge()) {
+    throw new Error(
+      'Could not finish cleanup for a previous interrupted merge. Please retry after the existing merge cleanup can complete.'
+    );
+  }
+
+  return true;
+}
+
 function commitMergeImportRows(
   preparedRows,
   insertColumns,
@@ -1429,7 +1442,7 @@ async function importFromZip(zip) {
   if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
 
   recoverInterruptedRestore();
-  recoverInterruptedMerge();
+  requireInterruptedMergeRecovered();
 
   const BetterSqlite = require('better-sqlite3');
   const tmpPath = createMergeTempPath();
