@@ -1089,6 +1089,39 @@ describe('backup and restore', () => {
     expect(fs.existsSync(path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME))).toBe(false);
   });
 
+  it('blocks new merges when an interrupted merge journal is corrupt', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const journalPath = path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME);
+    fs.writeFileSync(journalPath, JSON.stringify({ operation: 'merge', imagePaths: 'images/orphan.jpg' }));
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        album_name: 'Corrupt Journal Merge Album',
+        artists: JSON.stringify([{ name: 'Corrupt Journal Artist' }]),
+      },
+    ]);
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() => backupRouter.__private.readMergeJournal())
+        .toThrow(/Could not read merge journal: Merge journal image paths are invalid/);
+
+      fs.writeFileSync(journalPath, '{not-json');
+      await expect(backupRouter.__private.importFromZip(zip, false))
+        .rejects.toThrow(/Could not read merge journal/);
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    expect(db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+    expect(fs.existsSync(journalPath)).toBe(true);
+  }, 15000);
+
   it('blocks new merges when interrupted merge cleanup cannot finish', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;

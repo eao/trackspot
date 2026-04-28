@@ -226,13 +226,21 @@ function readMergeJournal() {
     if (!journal || typeof journal !== 'object' || Array.isArray(journal) || journal.operation !== 'merge') {
       throw new Error('Merge journal is invalid.');
     }
+    if (!Array.isArray(journal.imagePaths)) {
+      throw new Error('Merge journal image paths are invalid.');
+    }
+    const imagePaths = journal.imagePaths.map(imagePath => {
+      const normalized = normalizeAlbumImagePath(imagePath);
+      if (!normalized) throw new Error('Merge journal image paths are invalid.');
+      return normalized;
+    });
     return {
       ...journal,
-      imagePaths: Array.isArray(journal.imagePaths) ? journal.imagePaths : [],
+      imagePaths,
     };
   } catch (error) {
     console.error('Could not read merge journal:', error);
-    return null;
+    throw new Error(`Could not read merge journal: ${error.message}`);
   }
 }
 
