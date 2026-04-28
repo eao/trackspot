@@ -392,7 +392,7 @@ function restoreImagesRollback(rollback) {
   if (rollback?.hadImagesDir) {
     if (fs.existsSync(rollback.path)) {
       fs.rmSync(IMAGES_DIR, { recursive: true, force: true });
-      fs.renameSync(rollback.path, IMAGES_DIR);
+      fs.cpSync(rollback.path, IMAGES_DIR, { recursive: true });
     } else if (!fs.existsSync(IMAGES_DIR)) {
       fs.mkdirSync(IMAGES_DIR, { recursive: true });
     }
@@ -501,71 +501,112 @@ function throwRestoreRollbackErrors(errors) {
   throw aggregate;
 }
 
+function requireRestoreArtifact(artifactPath, label) {
+  const resolved = resolveRestoreArtifact(artifactPath);
+  if (!resolved) {
+    throw new Error(`${label} is not a valid restore artifact.`);
+  }
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`${label} is missing.`);
+  }
+  return resolved;
+}
+
+function recordRestoreRollbackProgress(journal, updates, errors, label) {
+  const nextJournal = { ...journal, ...updates };
+  try {
+    writeRestoreJournal(nextJournal);
+  } catch (error) {
+    recordRestoreRollbackError(errors, label, error);
+  }
+  return nextJournal;
+}
+
+function finishInterruptedRestoreRecovery(journal, errors, cleanupLabel = 'Restore artifact cleanup') {
+  throwRestoreRollbackErrors(errors);
+
+  try {
+    cleanupRestoreArtifacts(journal);
+  } catch (error) {
+    recordRestoreRollbackError(errors, cleanupLabel, error);
+  }
+  throwRestoreRollbackErrors(errors);
+
+  try {
+    removeRestoreJournal();
+  } catch (error) {
+    recordRestoreRollbackError(errors, 'Restore journal removal', error);
+  }
+  throwRestoreRollbackErrors(errors);
+}
+
 function rollbackInterruptedRestore(journal) {
   if (!journal) return;
   const rollbackErrors = [];
+  let activeJournal = journal;
 
   if (journal.phase === 'committed') {
-    try {
-      cleanupRestoreArtifacts(journal);
-    } catch (error) {
-      recordRestoreRollbackError(rollbackErrors, 'Committed restore artifact cleanup', error);
-    }
-    try {
-      removeRestoreJournal();
-    } catch (error) {
-      recordRestoreRollbackError(rollbackErrors, 'Committed restore journal removal', error);
-    }
-    throwRestoreRollbackErrors(rollbackErrors);
+    finishInterruptedRestoreRecovery(journal, rollbackErrors, 'Committed restore artifact cleanup');
     return;
   }
 
-  if (restorePhaseReached(journal, 'app-state-swapping') && journal.appStateRollbackDir) {
+  if (restorePhaseReached(activeJournal, 'app-state-swapping') && !activeJournal.appStateRolledBack) {
     try {
-      const appStateRollbackDir = resolveRestoreArtifact(journal.appStateRollbackDir);
-      if (appStateRollbackDir && fs.existsSync(appStateRollbackDir)) {
-        restoreAppStateRollback(appStateRollbackDir);
-      }
+      const appStateRollbackDir = requireRestoreArtifact(
+        activeJournal.appStateRollbackDir,
+        'App-state restore rollback directory',
+      );
+      restoreAppStateRollback(appStateRollbackDir);
+      activeJournal = recordRestoreRollbackProgress(
+        activeJournal,
+        { appStateRolledBack: true },
+        rollbackErrors,
+        'App-state rollback progress journal update',
+      );
     } catch (error) {
       recordRestoreRollbackError(rollbackErrors, 'App-state restore rollback', error);
     }
   }
 
-  if (restorePhaseReached(journal, 'images-swapping') && journal.imageRollback) {
+  if (restorePhaseReached(activeJournal, 'images-swapping') && !activeJournal.imagesRolledBack) {
     try {
-      const imageRollbackPath = resolveRestoreArtifact(journal.imageRollback.path);
+      if (!activeJournal.imageRollback) {
+        throw new Error('Image restore rollback metadata is missing.');
+      }
+      const imageRollbackPath = activeJournal.imageRollback.hadImagesDir
+        ? requireRestoreArtifact(activeJournal.imageRollback.path, 'Image restore rollback directory')
+        : resolveRestoreArtifact(activeJournal.imageRollback.path);
       restoreImagesRollback({
-        ...journal.imageRollback,
+        ...activeJournal.imageRollback,
         path: imageRollbackPath || '',
       });
+      activeJournal = recordRestoreRollbackProgress(
+        activeJournal,
+        { imagesRolledBack: true },
+        rollbackErrors,
+        'Image rollback progress journal update',
+      );
     } catch (error) {
       recordRestoreRollbackError(rollbackErrors, 'Image restore rollback', error);
     }
   }
 
-  if (restorePhaseReached(journal, 'db-swapping')) {
+  if (restorePhaseReached(activeJournal, 'db-swapping') && !activeJournal.dbRolledBack) {
     try {
-      const rollbackDbPath = resolveRestoreArtifact(journal.rollbackDbPath);
-      if (rollbackDbPath && fs.existsSync(rollbackDbPath)) {
-        replaceDatabaseFile(rollbackDbPath);
-      }
+      const rollbackDbPath = requireRestoreArtifact(activeJournal.rollbackDbPath, 'Database restore rollback file');
+      replaceDatabaseFile(rollbackDbPath);
+      activeJournal = recordRestoreRollbackProgress(
+        activeJournal,
+        { dbRolledBack: true },
+        rollbackErrors,
+        'Database rollback progress journal update',
+      );
     } catch (error) {
       recordRestoreRollbackError(rollbackErrors, 'Database restore rollback', error);
     }
   }
 
-  try {
-    cleanupRestoreArtifacts(journal);
-  } catch (error) {
-    recordRestoreRollbackError(rollbackErrors, 'Restore artifact cleanup', error);
-  }
-  try {
-    removeRestoreJournal();
-  } catch (error) {
-    recordRestoreRollbackError(rollbackErrors, 'Restore journal removal', error);
-  }
-
-  throwRestoreRollbackErrors(rollbackErrors);
+  finishInterruptedRestoreRecovery(activeJournal, rollbackErrors);
 }
 
 function recoverInterruptedRestore() {

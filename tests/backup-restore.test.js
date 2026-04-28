@@ -526,23 +526,28 @@ describe('backup and restore', () => {
       appStateRollbackDir: null,
     });
 
-    const originalRenameSync = fs.renameSync;
-    fs.renameSync = function renameSyncWithImageRollbackFailure(oldPath, newPath) {
+    const originalCpSync = fs.cpSync;
+    fs.cpSync = function cpSyncWithImageRollbackFailure(oldPath, newPath, options) {
       if (
         path.resolve(String(oldPath)) === path.resolve(imageRollbackDir)
         && path.resolve(String(newPath)) === path.resolve(path.join(dataDir, 'images'))
       ) {
         throw new Error('simulated interrupted image rollback failure');
       }
-      return originalRenameSync.call(this, oldPath, newPath);
+      return originalCpSync.call(this, oldPath, newPath, options);
     };
 
     try {
       expect(() => backupRouter.__private.recoverInterruptedRestore())
         .toThrow(/Image restore rollback: simulated interrupted image rollback failure/);
     } finally {
-      fs.renameSync = originalRenameSync;
+      fs.cpSync = originalCpSync;
     }
+
+    const journalPath = path.join(dataDir, backupRouter.__private.RESTORE_JOURNAL_NAME);
+    expect(fs.existsSync(journalPath)).toBe(true);
+    expect(fs.existsSync(rollbackDbPath)).toBe(true);
+    expect(fs.existsSync(imageRollbackDir)).toBe(true);
 
     const currentAlbum = db.prepare('SELECT id, album_name, image_path FROM albums').get();
     expect(currentAlbum).toEqual({
@@ -550,6 +555,11 @@ describe('backup and restore', () => {
       album_name: 'Current Album',
       image_path: 'images/current-art.jpg',
     });
+
+    expect(backupRouter.__private.recoverInterruptedRestore()).toBe(true);
+    expect(fs.existsSync(journalPath)).toBe(false);
+    expect(fs.existsSync(rollbackDbPath)).toBe(false);
+    expect(fs.readFileSync(path.join(dataDir, 'images', 'current-art.jpg')).toString()).toBe('current-image');
   }, 15000);
 
   it('restores images and DB even when interrupted app-state rollback fails', async () => {
@@ -625,6 +635,11 @@ describe('backup and restore', () => {
       fs.copyFileSync = originalCopyFileSync;
     }
 
+    const journalPath = path.join(dataDir, backupRouter.__private.RESTORE_JOURNAL_NAME);
+    expect(fs.existsSync(journalPath)).toBe(true);
+    expect(fs.existsSync(rollbackDbPath)).toBe(true);
+    expect(fs.existsSync(appStateRollbackDir)).toBe(true);
+
     const currentAlbum = db.prepare('SELECT id, album_name, image_path FROM albums').get();
     expect(currentAlbum).toEqual({
       id: 7,
@@ -632,6 +647,12 @@ describe('backup and restore', () => {
       image_path: 'images/current-art.jpg',
     });
     expect(fs.readFileSync(path.join(dataDir, 'images', 'current-art.jpg')).toString()).toBe('current-image');
+
+    expect(backupRouter.__private.recoverInterruptedRestore()).toBe(true);
+    expect(fs.existsSync(journalPath)).toBe(false);
+    expect(fs.existsSync(rollbackDbPath)).toBe(false);
+    expect(fs.existsSync(appStateRollbackDir)).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).wrappedName).toBe('Current Name');
   }, 15000);
 
   it('restores app-state files from new full backups', async () => {
