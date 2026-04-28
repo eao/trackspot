@@ -3868,7 +3868,7 @@ export async function mergeBackup() {
 }
 
 export async function restoreBackup() {
-  if (!confirm('This will delete all current albums and replace them with the backup. This cannot be undone. Continue?')) return;
+  if (!confirm('This will replace current albums and images with the backup. New full backups also replace settings, themes, opacity presets, and user backgrounds. This cannot be undone. Continue?')) return;
   pickBackupFile(async file => {
     setSettingsStatus('Restoring…');
     el.btnRestoreBackup.disabled = true;
@@ -3883,7 +3883,13 @@ export async function restoreBackup() {
       if (data.imagesRefetched) imgParts2.push(`${data.imagesRefetched} image${data.imagesRefetched!==1?'s':''} re-fetched`);
       if (data.appStateRestored) imgParts2.push('settings and personalization restored');
       const imgMsg2 = imgParts2.length ? `, ${imgParts2.join(', ')}` : '';
-      setSettingsStatus(`Done. Restored ${data.added} album${data.added!==1?'s':''}${imgMsg2}.`);
+      const doneMessage = `Done. Restored ${data.added} album${data.added!==1?'s':''}${imgMsg2}.`;
+      if (data.appStateRestored) {
+        setSettingsStatus(`${doneMessage} Reloading restored settings…`);
+        window.setTimeout(() => window.location.reload(), 500);
+        return;
+      }
+      setSettingsStatus(doneMessage);
       await loadAlbums();
     } catch (e) {
       setSettingsStatus(e.message, true);

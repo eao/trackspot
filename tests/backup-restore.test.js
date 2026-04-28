@@ -269,6 +269,41 @@ describe('backup and restore', () => {
     expect(fs.existsSync(path.join(dataDir, 'backgrounds-user-thumbs', 'current-only.jpg'))).toBe(false);
   }, 15000);
 
+  it('preserves current app-state files when staging a full restore fails', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Backup Name' }));
+    writeFileEnsured(path.join(dataDir, 'themes', 'backup-theme.json'), JSON.stringify({ id: 'backup-theme' }));
+
+    const zip = new AdmZip();
+    addFullBackupManifest(zip, backupRouter);
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addLocalFile(path.join(dataDir, 'preferences.json'), '', 'preferences.json');
+    zip.addLocalFolder(path.join(dataDir, 'themes'), 'themes');
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Current Name' }));
+    writeFileEnsured(path.join(dataDir, 'themes', 'current-theme.json'), JSON.stringify({ id: 'current-theme' }));
+
+    const originalWriteFileSync = fs.writeFileSync;
+    fs.writeFileSync = function writeFileSyncWithRestoreFailure(filePath, contents, options) {
+      if (String(filePath).includes('_restore_app_state_') && String(filePath).endsWith('backup-theme.json')) {
+        throw new Error('simulated app-state staging failure');
+      }
+      return originalWriteFileSync.call(this, filePath, contents, options);
+    };
+
+    try {
+      await expect(backupRouter.__private.restoreFromZip(zip)).rejects.toThrow(/simulated app-state staging failure/);
+    } finally {
+      fs.writeFileSync = originalWriteFileSync;
+    }
+
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).wrappedName).toBe('Current Name');
+    expect(fs.readFileSync(path.join(dataDir, 'themes', 'current-theme.json'), 'utf8')).toContain('current-theme');
+  }, 15000);
+
   it('preserves app-state files when restoring legacy backups without a manifest', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;

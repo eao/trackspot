@@ -205,6 +205,36 @@ function clearAppStateBackupTargets() {
   }
 }
 
+function createAppStateTempDir(prefix) {
+  return fs.mkdtempSync(path.join(DATA_DIR, prefix));
+}
+
+function copyAppStateItems(sourceRoot, targetRoot, options = {}) {
+  const { createMissingDirectories = false } = options;
+  for (const item of APP_STATE_BACKUP_ITEMS) {
+    const sourcePath = resolveInside(sourceRoot, item.zipPath);
+    const targetPath = resolveInside(targetRoot, item.zipPath);
+    if (!fs.existsSync(sourcePath)) {
+      if (createMissingDirectories && item.type === 'directory') {
+        fs.mkdirSync(targetPath, { recursive: true });
+      }
+      continue;
+    }
+
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    if (item.type === 'file') {
+      fs.copyFileSync(sourcePath, targetPath);
+    } else {
+      fs.cpSync(sourcePath, targetPath, { recursive: true });
+    }
+  }
+}
+
+function restoreAppStateRollback(rollbackDir) {
+  clearAppStateBackupTargets();
+  copyAppStateItems(rollbackDir, DATA_DIR);
+}
+
 function restoreAppStateFromZip(zip) {
   const entriesToRestore = [];
   for (const entry of zip.getEntries()) {
@@ -225,16 +255,38 @@ function restoreAppStateFromZip(zip) {
       throw new Error(`Unsafe backup path: ${entry.entryName}`);
     }
 
-    entriesToRestore.push({ entry, targetPath });
+    entriesToRestore.push({ entry, normalized });
   }
 
-  clearAppStateBackupTargets();
-
+  const stagingDir = createAppStateTempDir('_restore_app_state_');
+  let rollbackDir = null;
   let filesRestored = 0;
-  for (const { entry, targetPath } of entriesToRestore) {
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, entry.getData());
-    filesRestored++;
+
+  try {
+    for (const { entry, normalized } of entriesToRestore) {
+      const targetPath = resolveInside(stagingDir, normalized);
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.writeFileSync(targetPath, entry.getData());
+      filesRestored++;
+    }
+
+    rollbackDir = createAppStateTempDir('_restore_app_state_rollback_');
+    copyAppStateItems(DATA_DIR, rollbackDir);
+
+    try {
+      clearAppStateBackupTargets();
+      copyAppStateItems(stagingDir, DATA_DIR, { createMissingDirectories: true });
+    } catch (error) {
+      try {
+        restoreAppStateRollback(rollbackDir);
+      } catch (rollbackError) {
+        console.error('App-state restore rollback failed:', rollbackError);
+      }
+      throw error;
+    }
+  } finally {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    if (rollbackDir) fs.rmSync(rollbackDir, { recursive: true, force: true });
   }
 
   return filesRestored;
