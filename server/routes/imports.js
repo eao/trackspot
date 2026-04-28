@@ -3,19 +3,21 @@ const multer = require('multer');
 const {
   cancelImportJob,
   claimNextImportRow,
+  completeImportJobRowWithAlbum,
   createCsvImportJob,
   getActiveImportJob,
   getClaimedImportRow,
   getImportJob,
   getImportJobReport,
   markImportJobRowFailed,
-  markImportJobRowImported,
   markImportJobRowSkipped,
 } = require('../import-jobs');
 const {
   DuplicateAlbumError,
   InvalidImportPayloadError,
-  importSpotifyGraphqlAlbum,
+  cleanupPreparedSpotifyGraphqlAlbumImport,
+  insertPreparedSpotifyGraphqlAlbum,
+  prepareSpotifyGraphqlAlbumImport,
 } = require('../import-service');
 const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
@@ -98,10 +100,11 @@ router.post('/rows/:id/complete', async (req, res) => {
   const rowId = Number(req.params.id);
   const workerId = req.body?.workerId;
   const graphqlData = req.body?.graphqlData;
+  let preparedImport = null;
 
   try {
     const row = getClaimedImportRow(rowId, workerId);
-    const album = await importSpotifyGraphqlAlbum(
+    preparedImport = await prepareSpotifyGraphqlAlbumImport(
       {
         spotifyUrl: row.spotify_url,
         spotifyId: row.spotify_album_id,
@@ -115,9 +118,13 @@ router.post('/rows/:id/complete', async (req, res) => {
       }
     );
 
-    const job = markImportJobRowImported(rowId, workerId, album.id);
+    const { album, job } = completeImportJobRowWithAlbum(rowId, workerId, () => (
+      insertPreparedSpotifyGraphqlAlbum(preparedImport)
+    ));
     res.json({ job, row_status: 'imported', album_id: album.id });
   } catch (error) {
+    cleanupPreparedSpotifyGraphqlAlbumImport(preparedImport);
+
     if (error instanceof DuplicateAlbumError) {
       const job = markImportJobRowSkipped(
         rowId,

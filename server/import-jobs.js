@@ -589,6 +589,40 @@ function markImportJobRowImported(rowId, workerId, albumId) {
   });
 }
 
+function completeImportJobRowWithAlbum(rowId, workerId, insertAlbum) {
+  if (typeof insertAlbum !== 'function') {
+    throw new TypeError('insertAlbum callback is required.');
+  }
+
+  let result = null;
+
+  db.transaction(() => {
+    const row = getClaimedImportRow(rowId, workerId);
+    const album = insertAlbum(row);
+
+    db.prepare(`
+      UPDATE import_job_rows
+      SET
+        status = 'imported',
+        error = NULL,
+        created_album_id = :created_album_id,
+        lease_owner = NULL,
+        lease_expires_at = NULL
+      WHERE id = :id
+    `).run({
+      id: row.id,
+      created_album_id: album.id,
+    });
+
+    result = { album, jobId: row.job_id };
+  })();
+
+  return {
+    album: result.album,
+    job: refreshImportJob(result.jobId),
+  };
+}
+
 function markImportJobRowSkipped(rowId, workerId, error) {
   return finishImportJobRow(rowId, workerId, 'skipped', { error });
 }
@@ -601,6 +635,7 @@ module.exports = {
   ROW_LEASE_MS,
   cancelImportJob,
   claimNextImportRow,
+  completeImportJobRowWithAlbum,
   createCsvImportJob,
   getActiveImportJob,
   getClaimedImportRow,

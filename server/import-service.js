@@ -1,10 +1,12 @@
-const { db } = require('./db');
-const { downloadImage } = require('./spotify-helpers');
+const fs = require('fs');
+const path = require('path');
+const { db, IMAGES_DIR } = require('./db');
 const {
   deriveReleaseYear,
   getReleaseDateFromSpotifyReleaseDate,
   localDateISO,
   parseAlbum,
+  parseJsonField,
   extractSpotifyReleaseDateFromGraphqlPayload,
   extractSpotifyFirstTrackFromGraphqlPayload,
   validateNonNegativeInt,
@@ -32,7 +34,102 @@ function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-async function importSpotifyGraphqlAlbum(raw, overrides = {}) {
+function getExistingSpotifyAlbum(spotifyId) {
+  if (!spotifyId) return null;
+
+  const existing = db.prepare(
+    `SELECT id, album_name, artists FROM albums WHERE spotify_album_id = ?`
+  ).get(spotifyId);
+
+  return existing
+    ? {
+      ...existing,
+      artists: parseJsonField(existing.artists, []),
+    }
+    : null;
+}
+
+function assertSpotifyAlbumNotImported(spotifyId) {
+  const existing = getExistingSpotifyAlbum(spotifyId);
+  if (existing) {
+    throw new DuplicateAlbumError(existing);
+  }
+}
+
+function getImageFullPath(imagePath) {
+  return path.join(IMAGES_DIR, '..', imagePath);
+}
+
+async function downloadImportImage(imageUrl, albumId) {
+  const finalImagePath = `images/${albumId}.jpg`;
+  const finalFullPath = path.join(IMAGES_DIR, `${albumId}.jpg`);
+  if (fs.existsSync(finalFullPath)) {
+    return { imagePath: finalImagePath, createdImagePath: null };
+  }
+
+  const response = await fetch(imageUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download album art: ${response.status}`);
+  }
+
+  const tempFilename = `${albumId}.import-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+  const tempImagePath = `images/${tempFilename}`;
+  const tempFullPath = path.join(IMAGES_DIR, tempFilename);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs.writeFileSync(tempFullPath, buffer);
+
+  return {
+    imagePath: finalImagePath,
+    createdImagePath: tempImagePath,
+  };
+}
+
+function commitPreparedSpotifyGraphqlAlbumImport(preparedImport) {
+  const tempImagePath = preparedImport?.createdImagePath;
+  const finalImagePath = preparedImport?.values?.image_path;
+  if (!tempImagePath || !finalImagePath || tempImagePath === finalImagePath) return;
+
+  const tempFullPath = getImageFullPath(tempImagePath);
+  const finalFullPath = getImageFullPath(finalImagePath);
+
+  if (!fs.existsSync(tempFullPath)) {
+    preparedImport.createdImagePath = null;
+    return;
+  }
+
+  if (fs.existsSync(finalFullPath)) {
+    fs.unlinkSync(tempFullPath);
+    preparedImport.createdImagePath = null;
+    return;
+  }
+
+  fs.renameSync(tempFullPath, finalFullPath);
+  preparedImport.createdImagePath = finalImagePath;
+}
+
+function cleanupPreparedSpotifyGraphqlAlbumImport(preparedImport) {
+  const imagePath = preparedImport?.createdImagePath;
+  if (!imagePath) return;
+
+  if (imagePath === preparedImport?.values?.image_path) {
+    const inUse = db.prepare(`
+      SELECT 1
+      FROM albums
+      WHERE image_path = ?
+      LIMIT 1
+    `).get(imagePath);
+    if (inUse) return;
+  }
+
+  const fullPath = getImageFullPath(imagePath);
+  try {
+    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+  } catch (error) {
+    console.warn('Prepared import art cleanup failed:', error);
+  }
+}
+
+async function prepareSpotifyGraphqlAlbumImport(raw, overrides = {}) {
   if (!raw || !raw.data || !raw.data.albumUnion) {
     throw new InvalidImportPayloadError('Invalid payload. Expected Spotify GraphQL album data.');
   }
@@ -40,18 +137,19 @@ async function importSpotifyGraphqlAlbum(raw, overrides = {}) {
   const album = raw.data.albumUnion;
   const spotifyUrl = raw.spotifyUrl ?? null;
   const spotifyId = raw.spotifyId ?? null;
-
-  if (spotifyId) {
-    const existing = db.prepare(
-      `SELECT id, album_name, artists FROM albums WHERE spotify_album_id = ?`
-    ).get(spotifyId);
-    if (existing) {
-      throw new DuplicateAlbumError({
-        ...existing,
-        artists: JSON.parse(existing.artists ?? '[]'),
-      });
-    }
-  }
+  const rating = hasOwn(overrides, 'rating') ? validateRating(overrides.rating) : null;
+  const status = hasOwn(overrides, 'status') ? validateStatus(overrides.status) : 'completed';
+  const rawNotes = hasOwn(overrides, 'notes') ? (overrides.notes ?? null) : null;
+  const notes = rawNotes === null ? null : await normalizeSpotifyNoteLinks(rawNotes);
+  const plannedAt = hasOwn(overrides, 'planned_at')
+    ? (overrides.planned_at || null)
+    : (status === 'planned' ? localDateISO() : null);
+  const listenedAt = hasOwn(overrides, 'listened_at')
+    ? (overrides.listened_at || null)
+    : (status === 'planned' ? null : localDateISO());
+  const repeats = hasOwn(overrides, 'repeats')
+    ? validateNonNegativeInt(overrides.repeats, 'Repeat listens')
+    : 0;
 
   const albumName = album.name ?? 'Unknown Album';
   const albumType = album.type ?? null;
@@ -90,6 +188,7 @@ async function importSpotifyGraphqlAlbum(raw, overrides = {}) {
   const dominantColorRaw = album.coverArt?.extractedColors?.colorRaw?.hex ?? null;
 
   let imagePath = null;
+  let createdImagePath = null;
   let imageUrlSmall = null;
   let imageUrlMedium = null;
   let imageUrlLarge = null;
@@ -105,82 +204,109 @@ async function importSpotifyGraphqlAlbum(raw, overrides = {}) {
     const largest = sources.reduce((best, s) =>
       (s.width ?? 0) > (best.width ?? 0) ? s : best, sources[0]);
     if (largest.url && spotifyId) {
-      imagePath = await downloadImage(largest.url, spotifyId);
+      const downloadedImage = await downloadImportImage(largest.url, spotifyId);
+      imagePath = downloadedImage.imagePath;
+      createdImagePath = downloadedImage.createdImagePath;
     }
   }
 
-  const rating = hasOwn(overrides, 'rating') ? validateRating(overrides.rating) : null;
-  const status = hasOwn(overrides, 'status') ? validateStatus(overrides.status) : 'completed';
-  const rawNotes = hasOwn(overrides, 'notes') ? (overrides.notes ?? null) : null;
-  const notes = rawNotes === null ? null : await normalizeSpotifyNoteLinks(rawNotes);
-  const plannedAt = hasOwn(overrides, 'planned_at')
-    ? (overrides.planned_at || null)
-    : (status === 'planned' ? localDateISO() : null);
-  const listenedAt = hasOwn(overrides, 'listened_at')
-    ? (overrides.listened_at || null)
-    : (status === 'planned' ? null : localDateISO());
-  const repeats = hasOwn(overrides, 'repeats')
-    ? validateNonNegativeInt(overrides.repeats, 'Repeat listens')
-    : 0;
+  return {
+    createdImagePath,
+    values: {
+      spotify_url: spotifyUrl,
+      spotify_album_id: spotifyId,
+      share_url: shareUrl,
+      album_name: albumName,
+      album_type: albumType,
+      artists: JSON.stringify(artists),
+      release_date: releaseDate,
+      release_year: releaseYear,
+      label,
+      genres: JSON.stringify(genres),
+      track_count: trackCount,
+      duration_ms: durationMs,
+      copyright: JSON.stringify(copyright),
+      is_pre_release: isPreRelease,
+      dominant_color_dark: dominantColorDark,
+      dominant_color_light: dominantColorLight,
+      dominant_color_raw: dominantColorRaw,
+      image_path: imagePath,
+      status,
+      rating,
+      notes,
+      planned_at: plannedAt,
+      listened_at: listenedAt,
+      repeats,
+      priority: 0,
+      image_url_small: imageUrlSmall,
+      image_url_medium: imageUrlMedium,
+      image_url_large: imageUrlLarge,
+      source: 'spotify',
+      spotify_release_date: spotifyReleaseDate ? JSON.stringify(spotifyReleaseDate) : null,
+      spotify_first_track: spotifyFirstTrack ? JSON.stringify(spotifyFirstTrack) : null,
+      spotify_graphql_json: JSON.stringify(raw),
+    },
+  };
+}
 
-  const result = db.prepare(`
-    INSERT INTO albums (
-      spotify_url, spotify_album_id, share_url, album_name, album_type,
-      artists, release_date, release_year, label, genres, track_count, duration_ms,
-      copyright, is_pre_release, dominant_color_dark, dominant_color_light,
-      dominant_color_raw, image_path, status, rating, notes, planned_at, listened_at,
-      repeats, priority, image_url_small, image_url_medium, image_url_large,
-      source, spotify_release_date, spotify_first_track, spotify_graphql_json
-    ) VALUES (
-      :spotify_url, :spotify_album_id, :share_url, :album_name, :album_type,
-      :artists, :release_date, :release_year, :label, :genres, :track_count, :duration_ms,
-      :copyright, :is_pre_release, :dominant_color_dark, :dominant_color_light,
-      :dominant_color_raw, :image_path, :status, :rating, :notes, :planned_at, :listened_at,
-      :repeats, :priority, :image_url_small, :image_url_medium, :image_url_large,
-      :source, :spotify_release_date, :spotify_first_track, :spotify_graphql_json
-    )
-  `).run({
-    spotify_url: spotifyUrl,
-    spotify_album_id: spotifyId,
-    share_url: shareUrl,
-    album_name: albumName,
-    album_type: albumType,
-    artists: JSON.stringify(artists),
-    release_date: releaseDate,
-    release_year: releaseYear,
-    label,
-    genres: JSON.stringify(genres),
-    track_count: trackCount,
-    duration_ms: durationMs,
-    copyright: JSON.stringify(copyright),
-    is_pre_release: isPreRelease,
-    dominant_color_dark: dominantColorDark,
-    dominant_color_light: dominantColorLight,
-    dominant_color_raw: dominantColorRaw,
-    image_path: imagePath,
-    status,
-    rating,
-    notes,
-    planned_at: plannedAt,
-    listened_at: listenedAt,
-    repeats,
-    priority: 0,
-    image_url_small: imageUrlSmall,
-    image_url_medium: imageUrlMedium,
-    image_url_large: imageUrlLarge,
-    source: 'spotify',
-    spotify_release_date: spotifyReleaseDate ? JSON.stringify(spotifyReleaseDate) : null,
-    spotify_first_track: spotifyFirstTrack ? JSON.stringify(spotifyFirstTrack) : null,
-    spotify_graphql_json: JSON.stringify(raw),
-  });
+function insertPreparedSpotifyGraphqlAlbum(preparedImport) {
+  const values = preparedImport?.values;
+  if (!values) {
+    throw new InvalidImportPayloadError('Prepared Spotify album import is missing values.');
+  }
+
+  assertSpotifyAlbumNotImported(values.spotify_album_id);
+  commitPreparedSpotifyGraphqlAlbumImport(preparedImport);
+
+  let result;
+  try {
+    result = db.prepare(`
+      INSERT INTO albums (
+        spotify_url, spotify_album_id, share_url, album_name, album_type,
+        artists, release_date, release_year, label, genres, track_count, duration_ms,
+        copyright, is_pre_release, dominant_color_dark, dominant_color_light,
+        dominant_color_raw, image_path, status, rating, notes, planned_at, listened_at,
+        repeats, priority, image_url_small, image_url_medium, image_url_large,
+        source, spotify_release_date, spotify_first_track, spotify_graphql_json
+      ) VALUES (
+        :spotify_url, :spotify_album_id, :share_url, :album_name, :album_type,
+        :artists, :release_date, :release_year, :label, :genres, :track_count, :duration_ms,
+        :copyright, :is_pre_release, :dominant_color_dark, :dominant_color_light,
+        :dominant_color_raw, :image_path, :status, :rating, :notes, :planned_at, :listened_at,
+        :repeats, :priority, :image_url_small, :image_url_medium, :image_url_large,
+        :source, :spotify_release_date, :spotify_first_track, :spotify_graphql_json
+      )
+    `).run(values);
+  } catch (error) {
+    if (values.spotify_album_id && String(error.code || '').startsWith('SQLITE_CONSTRAINT')) {
+      const existing = getExistingSpotifyAlbum(values.spotify_album_id);
+      if (existing) throw new DuplicateAlbumError(existing);
+    }
+    throw error;
+  }
 
   return parseAlbum(
     db.prepare(`SELECT * FROM albums WHERE id = ?`).get(result.lastInsertRowid)
   );
 }
 
+async function importSpotifyGraphqlAlbum(raw, overrides = {}) {
+  let preparedImport = null;
+
+  try {
+    preparedImport = await prepareSpotifyGraphqlAlbumImport(raw, overrides);
+    return insertPreparedSpotifyGraphqlAlbum(preparedImport);
+  } catch (error) {
+    cleanupPreparedSpotifyGraphqlAlbumImport(preparedImport);
+    throw error;
+  }
+}
+
 module.exports = {
   DuplicateAlbumError,
   InvalidImportPayloadError,
+  cleanupPreparedSpotifyGraphqlAlbumImport,
   importSpotifyGraphqlAlbum,
+  insertPreparedSpotifyGraphqlAlbum,
+  prepareSpotifyGraphqlAlbumImport,
 };

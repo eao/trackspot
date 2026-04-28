@@ -30,7 +30,51 @@ function loadServerModules() {
 
   return {
     importJobs: require('../server/import-jobs.js'),
+    importService: require('../server/import-service.js'),
     dbModule: require('../server/db.js'),
+  };
+}
+
+function makeSpotifyPayload(spotifyId, albumName = 'Import Race Album', coverArtUrl = null) {
+  return {
+    spotifyUrl: `https://open.spotify.com/album/${spotifyId}`,
+    spotifyId,
+    data: {
+      albumUnion: {
+        name: albumName,
+        type: 'album',
+        isPreRelease: false,
+        sharingInfo: {
+          shareUrl: `https://open.spotify.com/album/${spotifyId}`,
+        },
+        artists: {
+          items: [
+            {
+              id: 'artist-1',
+              profile: { name: 'Import Race Artist' },
+              sharingInfo: { shareUrl: 'https://open.spotify.com/artist/artist-1' },
+            },
+          ],
+        },
+        tracksV2: { totalCount: 0, items: [] },
+        copyright: { items: [] },
+        genres: { items: [] },
+        coverArt: {
+          sources: coverArtUrl
+            ? [{ url: coverArtUrl, width: 640, height: 640 }]
+            : [],
+        },
+      },
+    },
+  };
+}
+
+function makeRowOverrides(row) {
+  return {
+    status: row.desired_status,
+    rating: row.rating,
+    notes: row.notes,
+    listened_at: row.listened_at,
   };
 }
 
@@ -186,6 +230,155 @@ describe('CSV import jobs', () => {
     expect(job.imported_rows).toBe(1);
     expect(job.failed_rows).toBe(1);
     expect(job.remaining_rows).toBe(0);
+  });
+
+  it('does not insert a prepared album after another worker reclaims the row', async () => {
+    const { importJobs, importService, dbModule } = loadServerModules();
+    const { db, DATA_DIR } = dbModule;
+    openDbs.push(db);
+    const spotifyId = 'RACEIMPORTALBUM0000001';
+    const originalFetch = globalThis.fetch;
+    let fetchCount = 0;
+
+    globalThis.fetch = async () => {
+      fetchCount += 1;
+      return {
+        ok: true,
+        arrayBuffer: async () => Uint8Array.from([1, 2, 3, fetchCount]).buffer,
+      };
+    };
+
+    try {
+      const createdJob = importJobs.createCsvImportJob({
+        filename: 'race.csv',
+        defaultStatus: 'completed',
+        csvBuffer: Buffer.from(`https://open.spotify.com/album/${spotifyId}`, 'utf8'),
+      });
+
+      const firstClaim = importJobs.claimNextImportRow('worker-1');
+      const firstRow = importJobs.getClaimedImportRow(firstClaim.row.id, 'worker-1');
+      const preparedByFirstWorker = await importService.prepareSpotifyGraphqlAlbumImport(
+        makeSpotifyPayload(spotifyId, 'Import Race Album', 'https://example.test/art.jpg'),
+        makeRowOverrides(firstRow),
+      );
+
+      db.prepare(`
+        UPDATE import_job_rows
+        SET lease_expires_at = datetime('now', '-10 minutes')
+        WHERE id = ?
+      `).run(firstClaim.row.id);
+
+      const reclaimed = importJobs.claimNextImportRow('worker-2');
+      expect(reclaimed.row.id).toBe(firstClaim.row.id);
+
+      const secondRow = importJobs.getClaimedImportRow(reclaimed.row.id, 'worker-2');
+      const preparedBySecondWorker = await importService.prepareSpotifyGraphqlAlbumImport(
+        makeSpotifyPayload(spotifyId, 'Import Race Album', 'https://example.test/art.jpg'),
+        makeRowOverrides(secondRow),
+      );
+
+      let insertCalled = false;
+      let staleWorkerError = null;
+      try {
+        importJobs.completeImportJobRowWithAlbum(firstClaim.row.id, 'worker-1', () => {
+          insertCalled = true;
+          return importService.insertPreparedSpotifyGraphqlAlbum(preparedByFirstWorker);
+        });
+      } catch (error) {
+        staleWorkerError = error;
+      }
+
+      importService.cleanupPreparedSpotifyGraphqlAlbumImport(preparedByFirstWorker);
+
+      expect(insertCalled).toBe(false);
+      expect(staleWorkerError?.status).toBe(409);
+      expect(fs.existsSync(path.join(DATA_DIR, preparedByFirstWorker.createdImagePath))).toBe(false);
+      expect(fs.existsSync(path.join(DATA_DIR, preparedBySecondWorker.createdImagePath))).toBe(true);
+      expect(db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM albums
+        WHERE spotify_album_id = ?
+      `).get(spotifyId).count).toBe(0);
+
+      const { album, job } = importJobs.completeImportJobRowWithAlbum(
+        reclaimed.row.id,
+        'worker-2',
+        () => importService.insertPreparedSpotifyGraphqlAlbum(preparedBySecondWorker),
+      );
+
+      expect(job.id).toBe(createdJob.id);
+      expect(job.status).toBe('completed');
+      expect(job.imported_rows).toBe(1);
+      expect(job.skipped_rows).toBe(0);
+      expect(fs.existsSync(path.join(DATA_DIR, album.image_path))).toBe(true);
+      expect(fetchCount).toBe(2);
+
+      const finalRow = db.prepare(`
+        SELECT status, created_album_id, error
+        FROM import_job_rows
+        WHERE id = ?
+      `).get(firstClaim.row.id);
+      expect(finalRow).toEqual({
+        status: 'imported',
+        created_album_id: album.id,
+        error: null,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('marks a row skipped when a duplicate appears during atomic completion', async () => {
+    const { importJobs, importService, dbModule } = loadServerModules();
+    const { db } = dbModule;
+    openDbs.push(db);
+    const spotifyId = 'DUPLICATEIMPORT0000001';
+
+    importJobs.createCsvImportJob({
+      filename: 'duplicate.csv',
+      defaultStatus: 'completed',
+      csvBuffer: Buffer.from(`https://open.spotify.com/album/${spotifyId}`, 'utf8'),
+    });
+
+    const claim = importJobs.claimNextImportRow('worker-1');
+    const row = importJobs.getClaimedImportRow(claim.row.id, 'worker-1');
+    const preparedImport = await importService.prepareSpotifyGraphqlAlbumImport(
+      makeSpotifyPayload(spotifyId, 'Duplicate Race Album'),
+      makeRowOverrides(row),
+    );
+
+    const existing = importService.insertPreparedSpotifyGraphqlAlbum(preparedImport);
+
+    let duplicateError = null;
+    try {
+      importJobs.completeImportJobRowWithAlbum(claim.row.id, 'worker-1', () => (
+        importService.insertPreparedSpotifyGraphqlAlbum(preparedImport)
+      ));
+    } catch (error) {
+      duplicateError = error;
+    }
+
+    expect(duplicateError).toBeInstanceOf(importService.DuplicateAlbumError);
+
+    const job = importJobs.markImportJobRowSkipped(
+      claim.row.id,
+      'worker-1',
+      `Album already exists in Trackspot and was skipped (album ${duplicateError.existing.id}).`,
+    );
+    expect(job.status).toBe('completed');
+    expect(job.imported_rows).toBe(0);
+    expect(job.skipped_rows).toBe(1);
+
+    const finalRow = db.prepare(`
+      SELECT status, created_album_id, error
+      FROM import_job_rows
+      WHERE id = ?
+    `).get(claim.row.id);
+    expect(finalRow).toEqual({
+      status: 'skipped',
+      created_album_id: null,
+      error: `Album already exists in Trackspot and was skipped (album ${existing.id}).`,
+    });
   });
 
   it('cancels queued and in-progress rows without rolling back imported rows', () => {
