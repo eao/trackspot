@@ -150,6 +150,80 @@ function createSparseLegacyDatabase() {
   `).run(1, 1, 1, 'queued');
 }
 
+function createConstraintDriftDatabase() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackspot-schema-drift-test-'));
+  tempDirs.push(dataDir);
+  process.env.DATA_DIR = dataDir;
+
+  const dbPath = path.join(dataDir, 'albums.db');
+  const driftedDb = new BetterSqlite(dbPath);
+  openDbs.push(driftedDb);
+
+  driftedDb.exec(`
+    CREATE TABLE albums (
+      id INTEGER,
+      spotify_url TEXT,
+      spotify_album_id TEXT,
+      share_url TEXT,
+      album_name TEXT,
+      album_type TEXT,
+      artists TEXT,
+      release_date TEXT,
+      release_year INTEGER,
+      label TEXT,
+      genres TEXT,
+      track_count INTEGER,
+      duration_ms INTEGER,
+      copyright TEXT,
+      is_pre_release INTEGER,
+      dominant_color_dark TEXT,
+      dominant_color_light TEXT,
+      dominant_color_raw TEXT,
+      image_path TEXT,
+      image_url_small TEXT,
+      image_url_medium TEXT,
+      image_url_large TEXT,
+      spotify_release_date TEXT,
+      spotify_first_track TEXT,
+      spotify_graphql_json TEXT,
+      status TEXT DEFAULT 'completed',
+      rating INTEGER,
+      notes TEXT,
+      planned_at TEXT,
+      listened_at TEXT,
+      repeats INTEGER DEFAULT 0,
+      priority INTEGER DEFAULT 0,
+      source TEXT DEFAULT 'manual',
+      album_link TEXT,
+      artist_link TEXT,
+      welcome_sample_key TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE UNIQUE INDEX albums_spotify_album_id_unique ON albums(spotify_album_id);
+  `);
+
+  driftedDb.prepare(`
+    INSERT INTO albums (
+      id, spotify_album_id, album_name, artists, status, rating, repeats, priority, source,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    7,
+    'drifted-album-1',
+    null,
+    null,
+    null,
+    150,
+    -3,
+    -5,
+    null,
+    '',
+    '',
+  );
+}
+
 function tableColumns(db, tableName) {
   return db.prepare(`PRAGMA table_info(${tableName})`).all().map(column => column.name);
 }
@@ -379,5 +453,59 @@ describe('legacy schema migration', () => {
     db.prepare('DELETE FROM import_jobs WHERE id = ?').run(insertedJob.lastInsertRowid);
     expect(db.prepare('SELECT COUNT(*) AS count FROM import_job_rows WHERE job_id = ?')
       .get(insertedJob.lastInsertRowid).count).toBe(0);
+  });
+
+  it('rebuilds tables whose columns exist but constraints drifted', () => {
+    createConstraintDriftDatabase();
+    resetServerModules();
+
+    const dbModule = require('../server/db.js');
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    expect(columnInfo(db, 'albums', 'id')).toMatchObject({ pk: 1 });
+    expect(columnInfo(db, 'albums', 'album_name')).toMatchObject({ notnull: 1 });
+    expect(columnInfo(db, 'albums', 'artists')).toMatchObject({ notnull: 1 });
+    expect(columnInfo(db, 'albums', 'status')).toMatchObject({ notnull: 1 });
+    expect(columnInfo(db, 'albums', 'source')).toMatchObject({ notnull: 1 });
+
+    const migratedAlbum = db.prepare(`
+      SELECT id, album_name, artists, status, source, rating, repeats, priority, created_at, updated_at
+      FROM albums
+      WHERE id = 7
+    `).get();
+    expect(migratedAlbum).toMatchObject({
+      id: 7,
+      album_name: '',
+      artists: '[]',
+      status: 'completed',
+      source: 'manual',
+      rating: null,
+      repeats: 0,
+      priority: 0,
+    });
+    expectTimestampValue(migratedAlbum.created_at);
+    expectTimestampValue(migratedAlbum.updated_at);
+
+    expect(() => db.prepare(`
+      INSERT INTO albums (album_name, artists, rating)
+      VALUES (?, ?, ?)
+    `).run('Invalid Rating', '[]', 101)).toThrow(/CHECK/i);
+
+    expect(() => db.prepare(`
+      INSERT INTO albums (album_name, artists, repeats)
+      VALUES (?, ?, ?)
+    `).run('Invalid Repeats', '[]', -1)).toThrow(/CHECK/i);
+
+    expect(() => db.prepare(`
+      INSERT INTO albums (album_name, artists, priority)
+      VALUES (?, ?, ?)
+    `).run('Invalid Priority', '[]', -1)).toThrow(/CHECK/i);
+
+    const insertedAlbum = db.prepare(`
+      INSERT INTO albums (album_name, artists)
+      VALUES (?, ?)
+    `).run('Next Album', '[]');
+    expect(insertedAlbum.lastInsertRowid).toBe(8);
   });
 });

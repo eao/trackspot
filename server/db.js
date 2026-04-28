@@ -112,6 +112,21 @@ const CURRENT_TABLE_COLUMNS = Object.freeze({
 
 const CURRENT_TABLE_ORDER = Object.freeze(['albums', 'import_jobs', 'import_job_rows']);
 
+const REQUIRED_TABLE_SQL_PATTERNS = Object.freeze({
+  albums: Object.freeze([
+    /\bid\s+integer\s+primary\s+key\s+autoincrement\b/,
+    /check\s*\(\s*rating\s+is\s+null\s+or\s*\(\s*rating\s*>=\s*0\s+and\s+rating\s*<=\s*100\s*\)\s*\)/,
+    /check\s*\(\s*repeats\s*>=\s*0\s*\)/,
+    /check\s*\(\s*priority\s*>=\s*0\s*\)/,
+  ]),
+  import_jobs: Object.freeze([
+    /\bid\s+integer\s+primary\s+key\s+autoincrement\b/,
+  ]),
+  import_job_rows: Object.freeze([
+    /\bid\s+integer\s+primary\s+key\s+autoincrement\b/,
+  ]),
+});
+
 const DEFAULT_COPY_EXPRESSIONS = Object.freeze({
   albums: Object.freeze({
     spotify_url: 'NULL',
@@ -191,6 +206,8 @@ const DEFAULT_COPY_EXPRESSIONS = Object.freeze({
     updated_at: "datetime('now')",
   }),
 });
+
+let expectedSchemaMetadata = null;
 
 function openDatabase() {
   const connection = new Database(DB_PATH);
@@ -327,8 +344,78 @@ function tableExists(connection, tableName) {
   `).get(tableName));
 }
 
-function hasDatetimeNowDefault(column) {
-  return /datetime\s*\(\s*'now'\s*\)/i.test(String(column?.dflt_value ?? ''));
+function tableSql(connection, tableName) {
+  return connection.prepare(`
+    SELECT sql
+    FROM sqlite_master
+    WHERE type = 'table' AND name = ?
+  `).get(tableName)?.sql ?? '';
+}
+
+function normalizeDefaultValue(value) {
+  if (value == null) return null;
+  return String(value).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function normalizeSql(sql) {
+  return String(sql)
+    .replace(/--[^\n\r]*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function readColumnMetadata(connection, tableName) {
+  return new Map(tableInfo(connection, tableName).map(column => [column.name, {
+    type: String(column.type ?? '').trim().toUpperCase(),
+    notnull: Number(column.notnull ?? 0),
+    dflt_value: normalizeDefaultValue(column.dflt_value),
+    pk: Number(column.pk ?? 0),
+  }]));
+}
+
+function getExpectedSchemaMetadata() {
+  if (expectedSchemaMetadata) return expectedSchemaMetadata;
+
+  const schemaDb = new Database(':memory:');
+  try {
+    for (const tableName of CURRENT_TABLE_ORDER) {
+      schemaDb.exec(createTableSql(tableName));
+    }
+
+    expectedSchemaMetadata = Object.freeze(Object.fromEntries(
+      CURRENT_TABLE_ORDER.map(tableName => [tableName, Object.freeze({
+        columns: readColumnMetadata(schemaDb, tableName),
+      })]),
+    ));
+  } finally {
+    schemaDb.close();
+  }
+
+  return expectedSchemaMetadata;
+}
+
+function columnMetadataMatches(currentColumn, expectedColumn) {
+  return currentColumn.type === expectedColumn.type
+    && currentColumn.notnull === expectedColumn.notnull
+    && currentColumn.dflt_value === expectedColumn.dflt_value
+    && currentColumn.pk === expectedColumn.pk;
+}
+
+function tableColumnMetadataMatches(connection, tableName) {
+  const currentColumns = readColumnMetadata(connection, tableName);
+  const expectedColumns = getExpectedSchemaMetadata()[tableName].columns;
+
+  return CURRENT_TABLE_COLUMNS[tableName].every(columnName => {
+    const currentColumn = currentColumns.get(columnName);
+    const expectedColumn = expectedColumns.get(columnName);
+    return currentColumn && expectedColumn && columnMetadataMatches(currentColumn, expectedColumn);
+  });
+}
+
+function tableHasRequiredSqlClauses(connection, tableName) {
+  const sql = normalizeSql(tableSql(connection, tableName));
+  return REQUIRED_TABLE_SQL_PATTERNS[tableName].every(pattern => pattern.test(sql));
 }
 
 function indexColumnNames(connection, indexName) {
@@ -356,17 +443,16 @@ function hasImportRowsForeignKey(connection) {
       && String(foreignKey.on_delete).toUpperCase() === 'CASCADE');
 }
 
-function currentColumnMap(connection, tableName) {
-  return new Map(tableInfo(connection, tableName).map(column => [column.name, column]));
-}
-
 function tableNeedsRebuild(connection, tableName) {
-  const columnMap = currentColumnMap(connection, tableName);
+  const currentColumns = tableInfo(connection, tableName).map(column => column.name);
   const expectedColumns = CURRENT_TABLE_COLUMNS[tableName];
-  if (!expectedColumns.every(columnName => columnMap.has(columnName))) return true;
+  if (currentColumns.length !== expectedColumns.length
+    || !expectedColumns.every((columnName, index) => currentColumns[index] === columnName)) {
+    return true;
+  }
 
-  if (!hasDatetimeNowDefault(columnMap.get('created_at'))
-    || !hasDatetimeNowDefault(columnMap.get('updated_at'))) {
+  if (!tableColumnMetadataMatches(connection, tableName)
+    || !tableHasRequiredSqlClauses(connection, tableName)) {
     return true;
   }
 
