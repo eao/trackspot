@@ -326,6 +326,100 @@ describe('backup and restore', () => {
     expect(fs.existsSync(path.join(dataDir, 'images', 'current-only.jpg'))).toBe(false);
   }, 15000);
 
+  it('updates restored rows to the actual refetched image path', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => Buffer.from('refetched-restore-image'),
+    });
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, spotify_album_id, album_name, artists, status, image_path, image_url_large, source,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      42,
+      'restore123',
+      'Restore Refetch Album',
+      JSON.stringify([{ name: 'Restore Artist' }]),
+      'completed',
+      'images/old-spotify-art.jpg',
+      'https://example.test/restore-art.jpg',
+      'spotify',
+      '2026-04-01 12:00:00',
+      '2026-04-01 12:00:00',
+    );
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+
+    db.prepare('DELETE FROM albums').run();
+    writeFileEnsured(path.join(dataDir, 'images', 'old-spotify-art.jpg'), Buffer.from('old-image'));
+
+    const restoreResult = await backupRouter.__private.restoreFromZip(zip);
+    const restored = db.prepare(`
+      SELECT album_name, image_path
+      FROM albums
+      WHERE album_name = ?
+    `).get('Restore Refetch Album');
+
+    expect(restoreResult).toMatchObject({
+      added: 1,
+      imagesCopied: 0,
+      imagesRefetched: 1,
+    });
+    expect(restored).toEqual({
+      album_name: 'Restore Refetch Album',
+      image_path: 'images/restore123.jpg',
+    });
+    expect(fs.readFileSync(path.join(dataDir, restored.image_path)).toString()).toBe('refetched-restore-image');
+    expect(fs.existsSync(path.join(dataDir, 'images', 'old-spotify-art.jpg'))).toBe(false);
+  }, 15000);
+
+  it('stores refetched image paths when restoring legacy backups without an image_path column', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => Buffer.from('legacy-restore-image'),
+    });
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabaseWithoutImagePath(zip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: 'legacyrestore123',
+        album_name: 'Legacy Restore Art Album',
+        artists: JSON.stringify([{ name: 'Legacy Restore Artist' }]),
+        image_url_large: 'https://example.test/legacy-restore-art.jpg',
+      },
+    ]);
+
+    const restoreResult = await backupRouter.__private.restoreFromZip(zip);
+    const restored = db.prepare(`
+      SELECT album_name, image_path
+      FROM albums
+      WHERE album_name = ?
+    `).get('Legacy Restore Art Album');
+
+    expect(restoreResult).toMatchObject({
+      added: 1,
+      imagesCopied: 0,
+      imagesRefetched: 1,
+    });
+    expect(restored).toEqual({
+      album_name: 'Legacy Restore Art Album',
+      image_path: 'images/legacyrestore123.jpg',
+    });
+    expect(fs.readFileSync(path.join(dataDir, restored.image_path)).toString()).toBe('legacy-restore-image');
+  }, 15000);
+
   it('preserves current DB and images when album image staging fails', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
@@ -544,6 +638,25 @@ describe('backup and restore', () => {
 
     expect(() => backupRouter.__private.recoverInterruptedRestore()).toThrow(/Could not read restore journal/);
     expect(fs.readFileSync(journalPath, 'utf8')).toBe('{"operation":"restore",');
+  });
+
+  it('fails closed and preserves a restore journal with an unknown phase', () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const journalPath = path.join(dataDir, backupRouter.__private.RESTORE_JOURNAL_NAME);
+    const journal = {
+      operation: 'restore',
+      phase: 'db-swapped-but-not-really',
+      rollbackDbPath: path.join(dataDir, '_restore_rollback_unknown_phase.db'),
+    };
+    fs.writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
+
+    expect(() => backupRouter.__private.readRestoreJournal())
+      .toThrow(/Could not read restore journal: Restore journal phase is invalid/);
+    expect(() => backupRouter.__private.recoverInterruptedRestore())
+      .toThrow(/Could not read restore journal: Restore journal phase is invalid/);
+    expect(JSON.parse(fs.readFileSync(journalPath, 'utf8')).phase).toBe(journal.phase);
   });
 
   it('keeps the previous restore journal when an atomic journal write fails', () => {
@@ -1299,6 +1412,39 @@ describe('backup and restore', () => {
     expect(fs.existsSync(path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME))).toBe(false);
   });
 
+  it('recovers interrupted merge cleanup before restoring backup albums', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const orphanImagePath = 'images/orphan-before-restore.jpg';
+    writeFileEnsured(path.join(dataDir, orphanImagePath), Buffer.from('orphan-image'));
+    backupRouter.__private.writeMergeJournal({
+      operation: 'merge',
+      imagePaths: [orphanImagePath],
+    });
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        album_name: 'Restored After Merge Journal Album',
+        artists: JSON.stringify([{ name: 'Restored Artist' }]),
+      },
+    ]);
+
+    const result = await backupRouter.__private.restoreFromZip(zip);
+    const restored = db.prepare('SELECT album_name FROM albums').get();
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+    });
+    expect(restored.album_name).toBe('Restored After Merge Journal Album');
+    expect(fs.existsSync(path.join(dataDir, orphanImagePath))).toBe(false);
+    expect(fs.existsSync(path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME))).toBe(false);
+  }, 15000);
+
   it('recovers interrupted merge temp artifacts from the merge journal', () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     openDbs.push(dbModule.db);
@@ -1371,6 +1517,53 @@ describe('backup and restore', () => {
     }
 
     expect(db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+    expect(fs.existsSync(journalPath)).toBe(true);
+  }, 15000);
+
+  it('blocks restores when an interrupted merge journal is corrupt', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'completed',
+      'manual',
+      '2026-04-02 12:00:00',
+      '2026-04-02 12:00:00',
+    );
+
+    const journalPath = path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME);
+    fs.writeFileSync(journalPath, '{not-json');
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        album_name: 'Blocked Restore Album',
+        artists: JSON.stringify([{ name: 'Blocked Restore Artist' }]),
+      },
+    ]);
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(backupRouter.__private.restoreFromZip(zip))
+        .rejects.toThrow(/Could not read merge journal/);
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    const current = db.prepare('SELECT id, album_name FROM albums').get();
+    expect(current).toEqual({
+      id: 1,
+      album_name: 'Current Album',
+    });
     expect(fs.existsSync(journalPath)).toBe(true);
   }, 15000);
 

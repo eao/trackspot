@@ -23,6 +23,16 @@ const MERGE_JOURNAL_NAME = '_merge_journal.json';
 const MERGE_JOURNAL_PATH = path.join(DATA_DIR, MERGE_JOURNAL_NAME);
 const MERGE_TEMP_DB_PREFIX = '_import_tmp_';
 const MERGE_STAGING_IMAGES_PREFIX = '_import_images_';
+const RESTORE_PHASES = [
+  'prepared',
+  'db-swapping',
+  'db-swapped',
+  'images-swapping',
+  'images-swapped',
+  'app-state-swapping',
+  'app-state-swapped',
+  'committed',
+];
 const APP_STATE_BACKUP_ITEMS = [
   { zipPath: 'preferences.json', type: 'file' },
   { zipPath: 'opacity-presets', type: 'directory' },
@@ -185,6 +195,9 @@ function readRestoreJournal() {
     const journal = JSON.parse(fs.readFileSync(RESTORE_JOURNAL_PATH, 'utf8'));
     if (!journal || typeof journal !== 'object' || Array.isArray(journal) || journal.operation !== 'restore') {
       throw new Error('Restore journal is invalid.');
+    }
+    if (!RESTORE_PHASES.includes(journal.phase)) {
+      throw new Error('Restore journal phase is invalid.');
     }
     return journal;
   } catch (error) {
@@ -563,17 +576,6 @@ async function downloadImageToDir(imageUrl, albumId, targetImagesDir) {
   return imagePath;
 }
 
-const RESTORE_PHASES = [
-  'prepared',
-  'db-swapping',
-  'db-swapped',
-  'images-swapping',
-  'images-swapped',
-  'app-state-swapping',
-  'app-state-swapped',
-  'committed',
-];
-
 function restorePhaseIndex(phase) {
   const index = RESTORE_PHASES.indexOf(phase);
   return index === -1 ? 0 : index;
@@ -820,6 +822,27 @@ function sanitizeBackupAlbumImagePaths(connection) {
   run(rows);
 
   return sanitizedImagePaths;
+}
+
+function ensureBackupAlbumImagePathColumn(connection) {
+  if (tableHasColumn(connection, 'albums', 'image_path')) return false;
+  connection.exec('ALTER TABLE albums ADD COLUMN image_path TEXT');
+  return true;
+}
+
+function applyRestoreImagePathUpdates(connection, imagePathUpdates) {
+  if (!imagePathUpdates.length) return 0;
+
+  const update = connection.prepare('UPDATE albums SET image_path = ? WHERE rowid = ?');
+  let updated = 0;
+  connection.transaction(updates => {
+    for (const { rowid, imagePath } of updates) {
+      if (rowid === null || rowid === undefined) continue;
+      updated += update.run(imagePath, rowid).changes;
+    }
+  })(imagePathUpdates);
+
+  return updated;
 }
 
 function buildAlbumInsertStatement(srcDb, options = {}) {
@@ -1373,6 +1396,7 @@ async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
   const targetImagesDir = options.targetImagesDir || IMAGES_DIR;
   let imagesCopied = 0;
   let imagesRefetched = 0;
+  const imagePathUpdates = [];
 
   const zipImageEntries = getZipAlbumImageEntries(zip);
 
@@ -1382,6 +1406,9 @@ async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
     : { downloadImage: (imageUrl, albumId) => downloadImageToDir(imageUrl, albumId, targetImagesDir) };
 
   for (const row of rows) {
+    const originalImagePath = row.image_path ?? null;
+    let restoredImagePath = null;
+
     if (row.image_path) {
       let entryKey = null;
       try {
@@ -1396,26 +1423,38 @@ async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
           fs.writeFileSync(destPath, entry.getData());
           imagesCopied++;
         }
+        restoredImagePath = entryKey;
+        if (isRestore && restoredImagePath !== originalImagePath) {
+          imagePathUpdates.push({ rowid: row.__restore_rowid, imagePath: restoredImagePath });
+        }
         continue;
       }
     }
 
-    if (!row.spotify_album_id) continue;
-    const imageUrl = row.image_url_large || row.image_url_medium || row.image_url_small;
-    if (!imageUrl) continue;
-    const refetchedImagePath = buildManagedAlbumImagePath(row.spotify_album_id, '.jpg');
-    const destPath = resolveAlbumImagePath(refetchedImagePath, targetImagesDir).fullPath;
-    if (!isRestore && fs.existsSync(destPath)) continue;
+    if (row.spotify_album_id) {
+      const imageUrl = row.image_url_large || row.image_url_medium || row.image_url_small;
+      if (imageUrl) {
+        const refetchedImagePath = buildManagedAlbumImagePath(row.spotify_album_id, '.jpg');
+        const destPath = resolveAlbumImagePath(refetchedImagePath, targetImagesDir).fullPath;
+        if (!isRestore && fs.existsSync(destPath)) {
+          restoredImagePath = refetchedImagePath;
+        } else {
+          try {
+            restoredImagePath = await downloadImage(imageUrl, row.spotify_album_id);
+            imagesRefetched++;
+          } catch (err) {
+            console.warn(`Could not re-fetch image for ${row.album_name}:`, err.message);
+          }
+        }
+      }
+    }
 
-    try {
-      await downloadImage(imageUrl, row.spotify_album_id);
-      imagesRefetched++;
-    } catch (err) {
-      console.warn(`Could not re-fetch image for ${row.album_name}:`, err.message);
+    if (isRestore && restoredImagePath !== originalImagePath) {
+      imagePathUpdates.push({ rowid: row.__restore_rowid, imagePath: restoredImagePath });
     }
   }
 
-  return { imagesCopied, imagesRefetched };
+  return { imagesCopied, imagesRefetched, imagePathUpdates };
 }
 
 function resolveBackupAlbumImageForArchive(imagePath) {
@@ -1730,6 +1769,10 @@ async function restoreFromZip(zip) {
 
   try {
     recoverInterruptedRestore();
+    requireInterruptedMergeRecovered();
+    if (!cleanupOrphanedMergeImportArtifacts()) {
+      throw new Error('Could not finish cleanup for previous merge temporary files. Please retry after cleanup can complete.');
+    }
     validateZipEntryNames(zip);
     fs.writeFileSync(tmpPath, dbEntry.getData());
     const BetterSqlite = require('better-sqlite3');
@@ -1739,15 +1782,17 @@ async function restoreFromZip(zip) {
     ).get();
     if (!tableCheck) throw new Error('Backup database does not contain an albums table.');
 
+    ensureBackupAlbumImagePathColumn(backupDb);
     sanitizedImagePaths = sanitizeBackupAlbumImagePaths(backupDb);
-    const restoredAlbums = backupDb.prepare('SELECT * FROM albums ORDER BY created_at ASC').all();
+    const restoredAlbums = backupDb.prepare('SELECT rowid AS __restore_rowid, * FROM albums ORDER BY created_at ASC').all();
     stagingImagesDir = createRestoreTempDir('_restore_images_');
-    const { imagesCopied, imagesRefetched } = await restoreAlbumImages(
+    const { imagesCopied, imagesRefetched, imagePathUpdates } = await restoreAlbumImages(
       restoredAlbums,
       zip,
       true,
       { targetImagesDir: stagingImagesDir },
     );
+    applyRestoreImagePathUpdates(backupDb, imagePathUpdates);
 
     let appStateFilesRestored = 0;
     if (shouldRestoreAppState) {
