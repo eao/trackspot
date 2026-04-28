@@ -9,6 +9,19 @@ const { db, IMAGES_DIR, replaceDatabaseFile } = require('../db');
 const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
 const DATA_DIR = path.join(IMAGES_DIR, '..');
+const BACKUP_MANIFEST_NAME = 'trackspot-backup.json';
+const BACKUP_MANIFEST_VERSION = 1;
+const APP_STATE_BACKUP_ITEMS = [
+  { zipPath: 'preferences.json', type: 'file' },
+  { zipPath: 'opacity-presets', type: 'directory' },
+  { zipPath: 'themes', type: 'directory' },
+  { zipPath: 'theme-preview-images', type: 'directory' },
+  { zipPath: 'theme-preview-images-thumbs', type: 'directory' },
+  { zipPath: 'backgrounds-user', type: 'directory' },
+  { zipPath: 'backgrounds-user-thumbs', type: 'directory' },
+  { zipPath: 'backgrounds-user-secondary', type: 'directory' },
+  { zipPath: 'backgrounds-user-secondary-thumbs', type: 'directory' },
+];
 
 router.use((req, res, next) => {
   if (req.method === 'GET' || req.method === 'HEAD') return next();
@@ -98,6 +111,133 @@ function clearImagesDir() {
   for (const fileName of fs.readdirSync(IMAGES_DIR)) {
     fs.rmSync(path.join(IMAGES_DIR, fileName), { recursive: true, force: true });
   }
+}
+
+function buildBackupManifest(kind, includesAppState) {
+  return {
+    app: 'trackspot',
+    version: BACKUP_MANIFEST_VERSION,
+    kind,
+    includesAppState: !!includesAppState,
+    appStatePaths: includesAppState
+      ? APP_STATE_BACKUP_ITEMS.map(item => item.zipPath)
+      : [],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function appendBackupManifest(archive, kind, includesAppState) {
+  const manifest = buildBackupManifest(kind, includesAppState);
+  archive.append(`${JSON.stringify(manifest, null, 2)}\n`, { name: BACKUP_MANIFEST_NAME });
+}
+
+function appendAppStateToArchive(archive) {
+  for (const item of APP_STATE_BACKUP_ITEMS) {
+    const sourcePath = path.join(DATA_DIR, item.zipPath);
+    if (!fs.existsSync(sourcePath)) continue;
+    if (item.type === 'file') {
+      archive.file(sourcePath, { name: item.zipPath });
+    } else {
+      archive.directory(sourcePath, item.zipPath);
+    }
+  }
+}
+
+function normalizeZipEntryName(entryName) {
+  return String(entryName || '').replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+function isSafeZipEntryName(entryName) {
+  const normalized = normalizeZipEntryName(entryName).replace(/\/+$/, '');
+  if (!normalized) return false;
+  if (path.isAbsolute(entryName) || /^[A-Za-z]:/.test(entryName)) return false;
+  return !normalized.split('/').some(part => part === '..' || part === '');
+}
+
+function validateZipEntryNames(zip) {
+  for (const entry of zip.getEntries()) {
+    if (!isSafeZipEntryName(entry.entryName)) {
+      throw new Error(`Unsafe backup path: ${entry.entryName}`);
+    }
+  }
+}
+
+function resolveInside(basePath, relativePath) {
+  const targetPath = path.resolve(basePath, relativePath);
+  const resolvedBase = path.resolve(basePath);
+  if (targetPath !== resolvedBase && !targetPath.startsWith(`${resolvedBase}${path.sep}`)) {
+    throw new Error(`Unsafe backup path: ${relativePath}`);
+  }
+  return targetPath;
+}
+
+function readBackupManifest(zip) {
+  const entry = zip.getEntry(BACKUP_MANIFEST_NAME);
+  if (!entry || entry.isDirectory) return null;
+
+  try {
+    const manifest = JSON.parse(entry.getData().toString('utf8'));
+    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null;
+    return manifest;
+  } catch {
+    throw new Error('Backup manifest could not be parsed.');
+  }
+}
+
+function getAppStateItemForEntry(entryName) {
+  const normalized = normalizeZipEntryName(entryName);
+  return APP_STATE_BACKUP_ITEMS.find(item => {
+    if (item.type === 'file') return normalized === item.zipPath;
+    return normalized.startsWith(`${item.zipPath}/`);
+  }) || null;
+}
+
+function clearAppStateBackupTargets() {
+  for (const item of APP_STATE_BACKUP_ITEMS) {
+    const targetPath = resolveInside(DATA_DIR, item.zipPath);
+    if (item.type === 'file') {
+      if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath);
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    } else {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+      fs.mkdirSync(targetPath, { recursive: true });
+    }
+  }
+}
+
+function restoreAppStateFromZip(zip) {
+  const entriesToRestore = [];
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) continue;
+    const normalized = normalizeZipEntryName(entry.entryName);
+    const item = getAppStateItemForEntry(normalized);
+    if (!item) continue;
+    if (!isSafeZipEntryName(entry.entryName)) {
+      throw new Error(`Unsafe backup path: ${entry.entryName}`);
+    }
+
+    const targetPath = resolveInside(DATA_DIR, normalized);
+    const itemRoot = resolveInside(DATA_DIR, item.zipPath);
+    if (item.type === 'file' && targetPath !== itemRoot) {
+      throw new Error(`Unsafe backup path: ${entry.entryName}`);
+    }
+    if (item.type === 'directory' && !targetPath.startsWith(`${itemRoot}${path.sep}`)) {
+      throw new Error(`Unsafe backup path: ${entry.entryName}`);
+    }
+
+    entriesToRestore.push({ entry, targetPath });
+  }
+
+  clearAppStateBackupTargets();
+
+  let filesRestored = 0;
+  for (const { entry, targetPath } of entriesToRestore) {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, entry.getData());
+    filesRestored++;
+  }
+
+  return filesRestored;
 }
 
 function getAlbumTableColumns(connection) {
@@ -195,9 +335,11 @@ router.get('/download', async (req, res) => {
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.on('error', err => { throw err; });
     archive.pipe(res);
+    appendBackupManifest(archive, 'full', true);
     archive.append(Buffer.from(csv, 'utf-8'), { name: 'albums.csv' });
     archive.file(tmpPath, { name: 'albums.db' });
     if (fs.existsSync(IMAGES_DIR)) archive.directory(IMAGES_DIR, 'images');
+    appendAppStateToArchive(archive);
     await archive.finalize();
   } finally {
     if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
@@ -222,6 +364,7 @@ router.get('/download-essential', async (_req, res) => {
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.on('error', err => { throw err; });
     archive.pipe(res);
+    appendBackupManifest(archive, 'essential', false);
     archive.append(Buffer.from(csv, 'utf-8'), { name: 'albums.csv' });
     archive.file(tmpPath, { name: 'albums.db' });
     for (const row of manualRows) {
@@ -254,6 +397,7 @@ router.get('/download-db', async (req, res) => {
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.on('error', err => { throw err; });
     archive.pipe(res);
+    appendBackupManifest(archive, 'database', false);
     archive.append(Buffer.from(csv, 'utf-8'), { name: 'albums.csv' });
     archive.file(tmpPath, { name: 'albums.db' });
     await archive.finalize();
@@ -376,8 +520,11 @@ async function restoreFromZip(zip) {
 
   const tmpPath = path.join(DATA_DIR, `_restore_tmp_${Date.now()}.db`);
   let backupDb = null;
+  const manifest = readBackupManifest(zip);
+  const shouldRestoreAppState = manifest?.includesAppState === true;
 
   try {
+    validateZipEntryNames(zip);
     fs.writeFileSync(tmpPath, dbEntry.getData());
     const BetterSqlite = require('better-sqlite3');
     backupDb = new BetterSqlite(tmpPath, { readonly: true });
@@ -390,11 +537,14 @@ async function restoreFromZip(zip) {
     clearImagesDir();
     const restoredAlbums = db.prepare('SELECT * FROM albums ORDER BY created_at ASC').all();
     const { imagesCopied, imagesRefetched } = await restoreAlbumImages(restoredAlbums, zip, true);
+    const appStateFilesRestored = shouldRestoreAppState ? restoreAppStateFromZip(zip) : 0;
     return {
       added: restoredAlbums.length,
       skipped: 0,
       imagesCopied,
       imagesRefetched,
+      appStateRestored: shouldRestoreAppState,
+      appStateFilesRestored,
     };
   } finally {
     backupDb?.close();
@@ -403,7 +553,12 @@ async function restoreFromZip(zip) {
 }
 
 router.__private = {
+  APP_STATE_BACKUP_ITEMS,
+  BACKUP_MANIFEST_NAME,
+  buildBackupManifest,
   importFromZip,
+  readBackupManifest,
+  restoreAppStateFromZip,
   restoreFromZip,
 };
 

@@ -3881,6 +3881,7 @@ export async function restoreBackup() {
       const imgParts2 = [];
       if (data.imagesCopied)    imgParts2.push(`${data.imagesCopied} image${data.imagesCopied!==1?'s':''} copied from backup`);
       if (data.imagesRefetched) imgParts2.push(`${data.imagesRefetched} image${data.imagesRefetched!==1?'s':''} re-fetched`);
+      if (data.appStateRestored) imgParts2.push('settings and personalization restored');
       const imgMsg2 = imgParts2.length ? `, ${imgParts2.join(', ')}` : '';
       setSettingsStatus(`Done. Restored ${data.added} album${data.added!==1?'s':''}${imgMsg2}.`);
       await loadAlbums();

@@ -36,6 +36,25 @@ function loadBackupTestContext() {
   return { dataDir, dbModule, backupRouter };
 }
 
+function writeFileEnsured(filePath, contents) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, contents);
+}
+
+async function addDatabaseSnapshot(zip, db, dataDir) {
+  const snapshotPath = path.join(dataDir, `albums-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+  await db.backup(snapshotPath);
+  zip.addLocalFile(snapshotPath, '', 'albums.db');
+  fs.unlinkSync(snapshotPath);
+}
+
+function addFullBackupManifest(zip, backupRouter) {
+  zip.addFile(
+    backupRouter.__private.BACKUP_MANIFEST_NAME,
+    Buffer.from(`${JSON.stringify(backupRouter.__private.buildBackupManifest('full', true), null, 2)}\n`),
+  );
+}
+
 afterEach(async () => {
   while (openDbs.length) {
     openDbs.pop()?.close();
@@ -159,6 +178,7 @@ describe('backup and restore', () => {
       added: 1,
       skipped: 0,
       imagesCopied: 1,
+      appStateRestored: false,
     });
 
     const restoredAlbum = db.prepare(`
@@ -196,6 +216,98 @@ describe('backup and restore', () => {
 
     expect(fs.readFileSync(path.join(dataDir, 'images', 'manual-42.jpg')).toString()).toBe('fake-image-data');
     expect(fs.existsSync(path.join(dataDir, 'images', 'current-only.jpg'))).toBe(false);
+  }, 15000);
+
+  it('restores app-state files from new full backups', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Backup Name' }));
+    writeFileEnsured(path.join(dataDir, 'opacity-presets', 'custom-opacity.json'), JSON.stringify({ id: 'custom-opacity' }));
+    writeFileEnsured(path.join(dataDir, 'themes', 'custom-theme.json'), JSON.stringify({ id: 'custom-theme' }));
+    writeFileEnsured(path.join(dataDir, 'theme-preview-images', 'theme.png'), Buffer.from('preview'));
+    writeFileEnsured(path.join(dataDir, 'theme-preview-images-thumbs', 'theme.jpg'), Buffer.from('preview-thumb'));
+    writeFileEnsured(path.join(dataDir, 'backgrounds-user', 'primary.png'), Buffer.from('primary'));
+    writeFileEnsured(path.join(dataDir, 'backgrounds-user-thumbs', 'primary.jpg'), Buffer.from('primary-thumb'));
+    writeFileEnsured(path.join(dataDir, 'backgrounds-user-secondary', 'secondary.png'), Buffer.from('secondary'));
+    writeFileEnsured(path.join(dataDir, 'backgrounds-user-secondary-thumbs', 'secondary.jpg'), Buffer.from('secondary-thumb'));
+
+    const zip = new AdmZip();
+    addFullBackupManifest(zip, backupRouter);
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addLocalFile(path.join(dataDir, 'preferences.json'), '', 'preferences.json');
+    zip.addLocalFolder(path.join(dataDir, 'opacity-presets'), 'opacity-presets');
+    zip.addLocalFolder(path.join(dataDir, 'themes'), 'themes');
+    zip.addLocalFolder(path.join(dataDir, 'theme-preview-images'), 'theme-preview-images');
+    zip.addLocalFolder(path.join(dataDir, 'theme-preview-images-thumbs'), 'theme-preview-images-thumbs');
+    zip.addLocalFolder(path.join(dataDir, 'backgrounds-user'), 'backgrounds-user');
+    zip.addLocalFolder(path.join(dataDir, 'backgrounds-user-thumbs'), 'backgrounds-user-thumbs');
+    zip.addLocalFolder(path.join(dataDir, 'backgrounds-user-secondary'), 'backgrounds-user-secondary');
+    zip.addLocalFolder(path.join(dataDir, 'backgrounds-user-secondary-thumbs'), 'backgrounds-user-secondary-thumbs');
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Current Name' }));
+    writeFileEnsured(path.join(dataDir, 'opacity-presets', 'current-only.json'), JSON.stringify({ id: 'current-only' }));
+    writeFileEnsured(path.join(dataDir, 'backgrounds-user-thumbs', 'current-only.jpg'), Buffer.from('current-thumb'));
+
+    const restoreResult = await backupRouter.__private.restoreFromZip(zip);
+
+    expect(restoreResult).toMatchObject({
+      appStateRestored: true,
+      appStateFilesRestored: 9,
+    });
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).wrappedName).toBe('Backup Name');
+    expect(fs.readFileSync(path.join(dataDir, 'opacity-presets', 'custom-opacity.json'), 'utf8')).toContain('custom-opacity');
+    expect(fs.readFileSync(path.join(dataDir, 'themes', 'custom-theme.json'), 'utf8')).toContain('custom-theme');
+    expect(fs.readFileSync(path.join(dataDir, 'theme-preview-images', 'theme.png')).toString()).toBe('preview');
+    expect(fs.readFileSync(path.join(dataDir, 'theme-preview-images-thumbs', 'theme.jpg')).toString()).toBe('preview-thumb');
+    expect(fs.readFileSync(path.join(dataDir, 'backgrounds-user', 'primary.png')).toString()).toBe('primary');
+    expect(fs.readFileSync(path.join(dataDir, 'backgrounds-user-thumbs', 'primary.jpg')).toString()).toBe('primary-thumb');
+    expect(fs.readFileSync(path.join(dataDir, 'backgrounds-user-secondary', 'secondary.png')).toString()).toBe('secondary');
+    expect(fs.readFileSync(path.join(dataDir, 'backgrounds-user-secondary-thumbs', 'secondary.jpg')).toString()).toBe('secondary-thumb');
+    expect(fs.existsSync(path.join(dataDir, 'opacity-presets', 'current-only.json'))).toBe(false);
+    expect(fs.existsSync(path.join(dataDir, 'backgrounds-user-thumbs', 'current-only.jpg'))).toBe(false);
+  }, 15000);
+
+  it('preserves app-state files when restoring legacy backups without a manifest', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Keep Me' }));
+    writeFileEnsured(path.join(dataDir, 'themes', 'current-theme.json'), JSON.stringify({ id: 'current-theme' }));
+    writeFileEnsured(path.join(dataDir, 'backgrounds-user', 'current.png'), Buffer.from('current-background'));
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+
+    const restoreResult = await backupRouter.__private.restoreFromZip(zip);
+
+    expect(restoreResult.appStateRestored).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).wrappedName).toBe('Keep Me');
+    expect(fs.readFileSync(path.join(dataDir, 'themes', 'current-theme.json'), 'utf8')).toContain('current-theme');
+    expect(fs.readFileSync(path.join(dataDir, 'backgrounds-user', 'current.png')).toString()).toBe('current-background');
+  }, 15000);
+
+  it('rejects unsafe app-state paths without writing outside DATA_DIR', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Current Name' }));
+    const outsidePath = path.join(path.dirname(dataDir), 'preferences.json');
+    writeFileEnsured(outsidePath, 'outside-original');
+
+    const zip = new AdmZip();
+    addFullBackupManifest(zip, backupRouter);
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addFile('C:/preferences.json', Buffer.from('evil'));
+
+    await expect(backupRouter.__private.restoreFromZip(zip)).rejects.toThrow(/Unsafe backup path/);
+    expect(fs.readFileSync(outsidePath, 'utf8')).toBe('outside-original');
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).wrappedName).toBe('Current Name');
+
+    fs.rmSync(outsidePath, { force: true });
   }, 15000);
 
   it('creates album_link and artist_link columns on a fresh database', () => {
