@@ -59,6 +59,7 @@ let backgroundLoadedBySlot = {
 let earlyWrappedConfirmStepIndex = -1;
 let earlyWrappedUiInitialized = false;
 let earlyWrappedCheatToastTimeout = null;
+let earlyWrappedCheatToastFadeTimeout = null;
 let isSyncingThemeSelectUi = false;
 const OPACITY_PRESET_CUSTOM_VALUE = '__custom__';
 const THUMBNAIL_MAX_DIMENSION = 480;
@@ -94,6 +95,7 @@ const EARLY_WRAPPED_CONFIRM_STEPS = [
 ];
 const EARLY_WRAPPED_CHEAT_TOAST_MESSAGE = "Nope. You'll have to click the button the old-fashioned way.";
 const EARLY_WRAPPED_CHEAT_TOAST_MS = 6000;
+const EARLY_WRAPPED_CHEAT_TOAST_FADE_MS = 100;
 const SEASONAL_THEME_RULES = [
   {
     key: 'aprilFools',
@@ -3274,8 +3276,15 @@ function hideEarlyWrappedCheatToast() {
     earlyWrappedCheatToastTimeout = null;
   }
   if (!el.earlyWrappedCheatToast) return;
-  el.earlyWrappedCheatToast.classList.add('hidden');
-  el.earlyWrappedCheatToast.textContent = '';
+  if (earlyWrappedCheatToastFadeTimeout) {
+    clearTimeout(earlyWrappedCheatToastFadeTimeout);
+  }
+  el.earlyWrappedCheatToast.classList.remove('early-wrapped-cheat-toast-visible');
+  earlyWrappedCheatToastFadeTimeout = setTimeout(() => {
+    el.earlyWrappedCheatToast.classList.add('hidden');
+    el.earlyWrappedCheatToast.textContent = '';
+    earlyWrappedCheatToastFadeTimeout = null;
+  }, EARLY_WRAPPED_CHEAT_TOAST_FADE_MS);
 }
 
 function showEarlyWrappedCheatToast() {
@@ -3283,8 +3292,15 @@ function showEarlyWrappedCheatToast() {
   if (earlyWrappedCheatToastTimeout) {
     clearTimeout(earlyWrappedCheatToastTimeout);
   }
+  if (earlyWrappedCheatToastFadeTimeout) {
+    clearTimeout(earlyWrappedCheatToastFadeTimeout);
+    earlyWrappedCheatToastFadeTimeout = null;
+  }
   el.earlyWrappedCheatToast.textContent = EARLY_WRAPPED_CHEAT_TOAST_MESSAGE;
   el.earlyWrappedCheatToast.classList.remove('hidden');
+  el.earlyWrappedCheatToast.classList.remove('early-wrapped-cheat-toast-visible');
+  void el.earlyWrappedCheatToast.offsetWidth;
+  el.earlyWrappedCheatToast.classList.add('early-wrapped-cheat-toast-visible');
   earlyWrappedCheatToastTimeout = setTimeout(() => {
     hideEarlyWrappedCheatToast();
   }, EARLY_WRAPPED_CHEAT_TOAST_MS);

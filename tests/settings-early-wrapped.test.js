@@ -295,7 +295,11 @@ describe('early wrapped settings flow', () => {
     expect(audioInstance.play).toHaveBeenCalledTimes(2);
     expect(elMock.earlyWrappedCheatToast.textContent).toBe("Nope. You'll have to click the button the old-fashioned way.");
     expect(elMock.earlyWrappedCheatToast.classList.contains('hidden')).toBe(false);
+    expect(elMock.earlyWrappedCheatToast.classList.contains('early-wrapped-cheat-toast-visible')).toBe(true);
     vi.advanceTimersByTime(6000);
+    expect(elMock.earlyWrappedCheatToast.classList.contains('early-wrapped-cheat-toast-visible')).toBe(false);
+    expect(elMock.earlyWrappedCheatToast.classList.contains('hidden')).toBe(false);
+    vi.advanceTimersByTime(100);
     expect(elMock.earlyWrappedCheatToast.classList.contains('hidden')).toBe(true);
     expect(elMock.earlyWrappedCheatToast.textContent).toBe('');
     vi.useRealTimers();

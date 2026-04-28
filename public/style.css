@@ -2469,12 +2469,19 @@ select.input {
   padding: 12px 16px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
   color: var(--text-primary);
   font-size: 0.88rem;
   line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
   text-align: center;
+  transition: opacity 100ms ease;
+}
+
+.early-wrapped-cheat-toast-visible {
+  opacity: 1;
 }
 
 @keyframes early-wrapped-lemniscate {
