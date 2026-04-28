@@ -39,7 +39,13 @@ DATA_DIR=./data
 
 Relative paths in `.env`, including `DATA_DIR=./data`, are resolved from the Trackspot app directory. This keeps server startup and helper scripts pointed at the same data folder even when the process is launched by a service manager from another working directory.
 
-Use `HOST=127.0.0.1` for local-only use. Use `HOST=0.0.0.0` only when you intentionally want Trackspot reachable from your LAN.
+Use `HOST=127.0.0.1` for local-only use. Use `HOST=0.0.0.0` when you intentionally want Trackspot reachable from your LAN or Tailscale network; after that, open it from another device with the server's LAN IP, Tailscale IP, or Tailscale DNS name:
+
+```text
+http://192.168.1.50:1060
+http://100.x.y.z:1060
+http://your-machine.your-tailnet.ts.net:1060
+```
 
 ## Home Server Notes
 
@@ -52,6 +58,8 @@ HOST=0.0.0.0
 PORT=1060
 DATA_DIR=/var/lib/trackspot
 ```
+
+With `HOST=0.0.0.0`, same-origin access through LAN and Tailscale hostnames works without listing each address in `CORS_ALLOWED_ORIGINS`. Use `CORS_ALLOWED_ORIGINS` only for separate browser origins that need to call Trackspot APIs, such as nonstandard integrations.
 
 If Spotify Desktop is on Windows and Trackspot runs on a Linux server, open the Trackspot settings menu in the Spicetify extension, set the server URL to `http://<server-hostname-or-ip>:1060`, then import one album and open Trackspot from the extension to confirm the path.
 

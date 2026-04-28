@@ -37,6 +37,7 @@ let consoleErrorSpy;
 
 const originalEnv = {
   CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
+  HOST: process.env.HOST,
   TRUSTED_HOSTS: process.env.TRUSTED_HOSTS,
 };
 
@@ -163,6 +164,7 @@ describe('Express app integration', () => {
   });
 
   it('rejects mutation requests with untrusted Host headers', async () => {
+    delete process.env.HOST;
     testServer = await startTestServer(loadAppContext());
 
     const rejected = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
@@ -173,6 +175,34 @@ describe('Express app integration', () => {
 
     expect(rejected.status).toBe(403);
     expect(rejected.body).toEqual({ error: 'Request host is not trusted.' });
+  });
+
+  it('allows same-origin LAN mutations when bound to a wildcard host', async () => {
+    process.env.HOST = '0.0.0.0';
+    testServer = await startTestServer(loadAppContext());
+
+    const response = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
+      host: '192.168.1.50:1060',
+      origin: 'http://192.168.1.50:1060',
+      body: JSON.stringify({ contentWidthPx: 1275 }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.preferences.contentWidthPx).toBe(1275);
+  });
+
+  it('still rejects cross-origin LAN mutations when bound to a wildcard host', async () => {
+    process.env.HOST = '0.0.0.0';
+    testServer = await startTestServer(loadAppContext());
+
+    const response = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
+      host: '192.168.1.50:1060',
+      origin: 'https://evil.example',
+      body: JSON.stringify({ contentWidthPx: 1280 }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: 'Cross-origin mutation rejected.' });
   });
 
   it('rejects unsafe referer-only browser mutations but allows direct local tools', async () => {

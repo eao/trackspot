@@ -1,6 +1,12 @@
 const express = require('express');
 const path = require('path');
-const { getConfiguredPath, getCorsAllowedOrigins, getTrustedHosts, normalizeHostName } = require('./config');
+const {
+  getConfiguredPath,
+  getCorsAllowedOrigins,
+  getTrustedHosts,
+  normalizeHostName,
+  shouldTrustAnyRequestHost,
+} = require('./config');
 
 function getOriginFromReferer(referer) {
   try {
@@ -29,7 +35,12 @@ function isAllowedBrowserOrigin(browserOrigin, allowedOrigins) {
   return allowedOrigins.has(browserOrigin);
 }
 
-function isTrustedRequestHost(req, trustedHosts) {
+function isSameOriginRequest(req, browserOrigin) {
+  return Boolean(browserOrigin) && browserOrigin === getRequestOrigin(req);
+}
+
+function isTrustedRequestHost(req, trustedHosts, trustAnyRequestHost = false) {
+  if (trustAnyRequestHost) return true;
   const hostName = getRequestHostName(req);
   if (!hostName) return true;
   return trustedHosts.has(hostName);
@@ -40,13 +51,14 @@ function createApp() {
 
   const allowedOrigins = new Set(getCorsAllowedOrigins());
   const trustedHosts = new Set(getTrustedHosts());
+  const trustAnyRequestHost = shouldTrustAnyRequestHost();
   app.use((req, res, next) => {
-    if (!isTrustedRequestHost(req, trustedHosts)) {
+    if (!isTrustedRequestHost(req, trustedHosts, trustAnyRequestHost)) {
       return res.status(403).json({ error: 'Request host is not trusted.' });
     }
 
     const origin = req.headers.origin;
-    if (origin && allowedOrigins.has(origin)) {
+    if (origin && (allowedOrigins.has(origin) || isSameOriginRequest(req, origin))) {
       res.setHeader('Access-Control-Allow-Origin', origin);
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -57,7 +69,7 @@ function createApp() {
     }
     if (!isReadOnlyRequest(req)) {
       const browserOrigin = origin || getOriginFromReferer(req.headers.referer);
-      if (!isAllowedBrowserOrigin(browserOrigin, allowedOrigins)) {
+      if (!isSameOriginRequest(req, browserOrigin) && !isAllowedBrowserOrigin(browserOrigin, allowedOrigins)) {
         return res.status(403).json({ error: 'Cross-origin mutation rejected.' });
       }
     }
@@ -148,5 +160,6 @@ module.exports = {
   getRequestOrigin,
   isAllowedBrowserOrigin,
   isReadOnlyRequest,
+  isSameOriginRequest,
   isTrustedRequestHost,
 };

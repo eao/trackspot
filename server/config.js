@@ -84,9 +84,13 @@ function formatHostForOrigin(host) {
   return normalized.includes(':') ? `[${normalized}]` : normalized;
 }
 
+function isWildcardHost(value = getHost()) {
+  return WILDCARD_HOSTS.has(normalizeHostName(value));
+}
+
 function getConfiguredHostOrigin() {
   const host = normalizeHostName(getHost());
-  if (!host || WILDCARD_HOSTS.has(host)) return null;
+  if (!host || isWildcardHost(host)) return null;
   return `http://${formatHostForOrigin(host)}:${getPort()}`;
 }
 
@@ -117,11 +121,15 @@ function getTrustedHosts() {
     'localhost',
     '127.0.0.1',
     '::1',
-    WILDCARD_HOSTS.has(configuredHost) ? '' : configuredHost,
+    isWildcardHost(configuredHost) ? '' : configuredHost,
     ...configuredOrigins.map(getHostNameFromOrigin),
     ...parseList(process.env.TRUSTED_HOSTS).map(normalizeHostName),
   ];
   return [...new Set(hosts.filter(Boolean))];
+}
+
+function shouldTrustAnyRequestHost() {
+  return isWildcardHost(getHost());
 }
 
 module.exports = {
@@ -137,7 +145,9 @@ module.exports = {
   getHost,
   getPort,
   getTrustedHosts,
+  isWildcardHost,
   normalizeHostName,
   parsePositiveInteger,
   resolveConfigPath,
+  shouldTrustAnyRequestHost,
 };
