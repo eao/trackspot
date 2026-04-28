@@ -220,6 +220,29 @@ function appendAppStateToArchive(archive) {
   }
 }
 
+function finalizeArchiveResponse(archive, res) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      archive.off('error', onError);
+      res.off('error', onError);
+      res.off('finish', onFinish);
+    };
+    const onError = error => {
+      cleanup();
+      reject(error);
+    };
+    const onFinish = () => {
+      cleanup();
+      resolve();
+    };
+
+    archive.once('error', onError);
+    res.once('error', onError);
+    res.once('finish', onFinish);
+    archive.finalize().catch(onError);
+  });
+}
+
 function normalizeZipEntryName(entryName) {
   return String(entryName || '').replace(/\\/g, '/').replace(/^\/+/, '');
 }
@@ -791,14 +814,13 @@ router.get('/download', async (req, res) => {
     res.setHeader('Content-Disposition',
       `attachment; filename="trackspot-backup-${stamp}.zip"`);
     const archive = archiver('zip', { zlib: { level: 6 } });
-    archive.on('error', err => { throw err; });
     archive.pipe(res);
     appendBackupManifest(archive, 'full', true);
     archive.append(Buffer.from(csv, 'utf-8'), { name: 'albums.csv' });
     archive.file(tmpPath, { name: 'albums.db' });
     if (fs.existsSync(IMAGES_DIR)) archive.directory(IMAGES_DIR, 'images');
     appendAppStateToArchive(archive);
-    await archive.finalize();
+    await finalizeArchiveResponse(archive, res);
   } finally {
     if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
   }
@@ -820,7 +842,6 @@ router.get('/download-essential', async (_req, res) => {
     res.setHeader('Content-Disposition',
       `attachment; filename="trackspot-backup-essential-${stamp}.zip"`);
     const archive = archiver('zip', { zlib: { level: 6 } });
-    archive.on('error', err => { throw err; });
     archive.pipe(res);
     appendBackupManifest(archive, 'essential', false);
     archive.append(Buffer.from(csv, 'utf-8'), { name: 'albums.csv' });
@@ -832,7 +853,7 @@ router.get('/download-essential', async (_req, res) => {
         archive.file(image.fullPath, { name: image.imagePath });
       }
     }
-    await archive.finalize();
+    await finalizeArchiveResponse(archive, res);
   } finally {
     if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
   }
@@ -853,12 +874,11 @@ router.get('/download-db', async (req, res) => {
     res.setHeader('Content-Disposition',
       `attachment; filename="trackspot-backup-db-${stamp}.zip"`);
     const archive = archiver('zip', { zlib: { level: 6 } });
-    archive.on('error', err => { throw err; });
     archive.pipe(res);
     appendBackupManifest(archive, 'database', false);
     archive.append(Buffer.from(csv, 'utf-8'), { name: 'albums.csv' });
     archive.file(tmpPath, { name: 'albums.db' });
-    await archive.finalize();
+    await finalizeArchiveResponse(archive, res);
   } finally {
     if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
   }

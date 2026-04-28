@@ -40,6 +40,13 @@ router.delete('/:id', (req, res, next) => {
       deletedThemes: result.deletedThemes,
     });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({
+        error: error.message,
+        ...(error.code ? { code: error.code } : {}),
+        ...(error.dependentThemes ? { dependentThemes: error.dependentThemes } : {}),
+      });
+    }
     next(error);
   }
 });

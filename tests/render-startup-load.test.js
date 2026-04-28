@@ -88,6 +88,7 @@ describe('loadAlbums startup gating', () => {
     stateMock.albums = [];
     stateMock.albumsLoaded = false;
     stateMock.albumDetailsCache = {};
+    stateMock.complexStatuses = [];
     stateMock.albumListMeta = {
       totalCount: 0,
       filteredCount: 0,
@@ -101,6 +102,8 @@ describe('loadAlbums startup gating', () => {
       trackedListenedMs: 0,
     };
     stateMock.pagination.currentPage = 9;
+    stateMock.pagination.perPage = { list: 2, grid: null };
+    stateMock.pagination.mode = { list: 'unlimited', grid: 'unlimited' };
     stateMock.filters = {
       search: '',
       artist: '',
@@ -119,6 +122,38 @@ describe('loadAlbums startup gating', () => {
     };
     apiFetchMock.mockReset();
   });
+
+  function mockEmptyAlbumResponse(meta = {}) {
+    apiFetchMock.mockResolvedValue({
+      albums: [],
+      meta: {
+        totalCount: 0,
+        filteredCount: 0,
+        currentPage: stateMock.pagination.currentPage,
+        totalPages: 1,
+        startIndex: 0,
+        endIndex: 0,
+        isPaged: false,
+        perPage: stateMock.pagination.perPage.list,
+        pageCount: 0,
+        trackedListenedMs: 0,
+        ...meta,
+      },
+    });
+  }
+
+  async function loadAlbumsAndReadParams() {
+    const { loadAlbums } = await import('../public/js/render.js');
+    mockEmptyAlbumResponse();
+
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums: vi.fn(),
+    });
+
+    const path = apiFetchMock.mock.calls.at(-1)?.[0];
+    return new URL(path, 'http://trackspot.test').searchParams;
+  }
 
   it('waits for startup art gating before rendering on initial load', async () => {
     const { loadAlbums } = await import('../public/js/render.js');
@@ -264,5 +299,69 @@ describe('loadAlbums startup gating', () => {
       left: 0,
       behavior: 'auto',
     });
+  });
+
+  it('builds the server query from complex status, exact artist, filters, sort, and pagination state', async () => {
+    stateMock.complexStatuses = [
+      { id: 'cs_listened_or_dropped', statuses: ['completed', 'dropped'] },
+    ];
+    stateMock.filters = {
+      search: 'dream pop',
+      artist: 'Cocteau Twins',
+      artistMatchExact: true,
+      year: '1988',
+      ratingMin: '70',
+      ratingMax: '95',
+      statusFilter: 'cs_listened_or_dropped',
+      importTypeFilter: 'spotify',
+      ratedFilter: 'rated',
+      typeAlbum: true,
+      typeEP: true,
+      typeSingle: false,
+      typeCompilation: true,
+      typeOther: false,
+    };
+    stateMock.sort = { field: 'artist', order: 'asc' };
+    stateMock.pagination.currentPage = 4;
+    stateMock.pagination.perPage.list = 25;
+
+    const params = await loadAlbumsAndReadParams();
+
+    expect(params.get('sort')).toBe('artist');
+    expect(params.get('order')).toBe('asc');
+    expect(params.get('page')).toBe('4');
+    expect(params.get('per_page')).toBe('25');
+    expect(params.get('search')).toBe('dream pop');
+    expect(params.get('artist')).toBe('Cocteau Twins');
+    expect(params.get('artist_exact')).toBe('1');
+    expect(params.get('year')).toBe('1988');
+    expect(params.get('rating_min')).toBe('70');
+    expect(params.get('rating_max')).toBe('95');
+    expect(params.get('statuses')).toBe('completed,dropped');
+    expect(params.get('import_type')).toBe('spotify');
+    expect(params.get('rated')).toBe('rated');
+    expect(params.get('types')).toBe('ALBUM,EP,COMPILATION');
+    expect(params.get('include_other')).toBe('0');
+  });
+
+  it('still sends include_other when only the Other album type is enabled', async () => {
+    stateMock.filters.typeAlbum = false;
+    stateMock.filters.typeEP = false;
+    stateMock.filters.typeSingle = false;
+    stateMock.filters.typeCompilation = false;
+    stateMock.filters.typeOther = true;
+
+    const params = await loadAlbumsAndReadParams();
+
+    expect(params.has('types')).toBe(false);
+    expect(params.get('include_other')).toBe('1');
+  });
+
+  it('omits per_page when pagination is unlimited', async () => {
+    stateMock.pagination.perPage.list = null;
+
+    const params = await loadAlbumsAndReadParams();
+
+    expect(params.has('per_page')).toBe(false);
   });
 });

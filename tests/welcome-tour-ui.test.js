@@ -288,6 +288,133 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.querySelector('.welcome-tour-error')?.textContent).toBe('Another welcome tour is already active.');
   });
 
+  it('wraps focus inside tour actions when tabbing forward and backward', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    const buttons = Array.from(globalThis.document.querySelectorAll('#welcome-tour-overlay button'))
+      .filter(button => !button.disabled);
+    const first = buttons[0];
+    const last = buttons.at(-1);
+
+    last.focus();
+    const tabForward = new window.KeyboardEvent('keydown', {
+      key: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    });
+    last.dispatchEvent(tabForward);
+
+    expect(tabForward.defaultPrevented).toBe(true);
+    expect(globalThis.document.activeElement).toBe(first);
+
+    const tabBackward = new window.KeyboardEvent('keydown', {
+      key: 'Tab',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    first.dispatchEvent(tabBackward);
+
+    expect(tabBackward.defaultPrevented).toBe(true);
+    expect(globalThis.document.activeElement).toBe(last);
+  });
+
+  it('suppresses Escape inside the tour without closing underlying panels', async () => {
+    const settings = await import('../public/js/settings.js');
+    const modal = await import('../public/js/modal.js');
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+    settings.closeSettings.mockClear();
+    modal.closeModal.mockClear();
+    const propagated = vi.fn();
+    globalThis.document.addEventListener('keydown', propagated);
+
+    const next = globalThis.document.querySelector('[data-action="next"]');
+    const escape = new window.KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    next.dispatchEvent(escape);
+
+    expect(escape.defaultPrevented).toBe(true);
+    expect(propagated).not.toHaveBeenCalled();
+    expect(settings.closeSettings).not.toHaveBeenCalled();
+    expect(modal.closeModal).not.toHaveBeenCalled();
+    globalThis.document.removeEventListener('keydown', propagated);
+  });
+
+  it('captures keys from outside the overlay and refocuses a tour control', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+    const propagated = vi.fn();
+    globalThis.document.addEventListener('keydown', propagated);
+
+    const outsideButton = globalThis.document.querySelector('#btn-settings');
+    outsideButton.focus();
+    const keydown = new window.KeyboardEvent('keydown', {
+      key: 'a',
+      bubbles: true,
+      cancelable: true,
+    });
+    outsideButton.dispatchEvent(keydown);
+
+    expect(keydown.defaultPrevented).toBe(true);
+    expect(propagated).not.toHaveBeenCalled();
+    expect(globalThis.document.activeElement?.closest('#welcome-tour-overlay')).not.toBeNull();
+    globalThis.document.removeEventListener('keydown', propagated);
+  });
+
+  it('restores inert state after a normal finish', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    globalThis.document.querySelector('[data-action="skip"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="empty"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="finish"]')?.click();
+    await flushTourStep();
+
+    expect(stateMock.welcomeTour.active).toBe(false);
+    expect(globalThis.document.body.classList.contains('welcome-tour-active')).toBe(false);
+    expect(globalThis.document.querySelector('header')?.inert).toBe(false);
+    expect(globalThis.document.querySelector('header')?.getAttribute('aria-hidden')).toBeNull();
+    expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
+  });
+
+  it('defers the mobile warning tour to next visit without marking it complete or skipped', async () => {
+    window.innerWidth = 500;
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: false });
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent)
+      .toBe('Trackspot is built for a desktop-sized window.');
+    apiFetchMock.mockClear();
+
+    globalThis.document.querySelector('[data-action="later"]')?.click();
+    await flushTourStep();
+
+    expect(stateMock.welcomeTour.active).toBe(false);
+    expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/finish', expect.anything());
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/lock', expect.objectContaining({
+      method: 'DELETE',
+      body: JSON.stringify({ sessionId: 'tour-session' }),
+    }));
+  });
+
   it('applies tour theme previews without persisting them', async () => {
     const settings = await import('../public/js/settings.js');
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
