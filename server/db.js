@@ -27,6 +27,86 @@ const ALBUMS_UPDATED_AT_TRIGGER_SQL = `
   END;
 `;
 
+const MIGRATED_COLUMNS = Object.freeze({
+  albums: Object.freeze([
+    ['spotify_url', 'TEXT'],
+    ['spotify_album_id', 'TEXT'],
+    ['share_url', 'TEXT'],
+    ['album_name', "TEXT NOT NULL DEFAULT ''"],
+    ['album_type', 'TEXT'],
+    ['artists', "TEXT NOT NULL DEFAULT '[]'"],
+    ['release_date', 'TEXT'],
+    ['release_year', 'INTEGER'],
+    ['label', 'TEXT'],
+    ['genres', 'TEXT'],
+    ['track_count', 'INTEGER'],
+    ['duration_ms', 'INTEGER'],
+    ['copyright', 'TEXT'],
+    ['is_pre_release', 'INTEGER'],
+    ['dominant_color_dark', 'TEXT'],
+    ['dominant_color_light', 'TEXT'],
+    ['dominant_color_raw', 'TEXT'],
+    ['image_path', 'TEXT'],
+    ['image_url_small', 'TEXT'],
+    ['image_url_medium', 'TEXT'],
+    ['image_url_large', 'TEXT'],
+    ['spotify_release_date', 'TEXT'],
+    ['spotify_first_track', 'TEXT'],
+    ['spotify_graphql_json', 'TEXT'],
+    ['status', "TEXT NOT NULL DEFAULT 'completed'"],
+    ['rating', 'INTEGER CHECK(rating IS NULL OR (rating >= 0 AND rating <= 100))'],
+    ['notes', 'TEXT'],
+    ['planned_at', 'TEXT'],
+    ['listened_at', 'TEXT'],
+    ['repeats', 'INTEGER NOT NULL DEFAULT 0 CHECK(repeats >= 0)'],
+    ['priority', 'INTEGER NOT NULL DEFAULT 0 CHECK(priority >= 0)'],
+    ['source', "TEXT NOT NULL DEFAULT 'manual'"],
+    ['album_link', 'TEXT'],
+    ['artist_link', 'TEXT'],
+    ['welcome_sample_key', 'TEXT'],
+    ['created_at', "TEXT NOT NULL DEFAULT ''"],
+    ['updated_at', "TEXT NOT NULL DEFAULT ''"],
+  ]),
+  import_jobs: Object.freeze([
+    ['source_type', "TEXT NOT NULL DEFAULT 'csv'"],
+    ['filename', 'TEXT'],
+    ['default_status', "TEXT NOT NULL DEFAULT 'completed'"],
+    ['status', "TEXT NOT NULL DEFAULT 'queued'"],
+    ['total_rows', 'INTEGER NOT NULL DEFAULT 0'],
+    ['queued_rows', 'INTEGER NOT NULL DEFAULT 0'],
+    ['processing_rows', 'INTEGER NOT NULL DEFAULT 0'],
+    ['imported_rows', 'INTEGER NOT NULL DEFAULT 0'],
+    ['skipped_rows', 'INTEGER NOT NULL DEFAULT 0'],
+    ['failed_rows', 'INTEGER NOT NULL DEFAULT 0'],
+    ['canceled_rows', 'INTEGER NOT NULL DEFAULT 0'],
+    ['warning_rows', 'INTEGER NOT NULL DEFAULT 0'],
+    ['last_error', 'TEXT'],
+    ['created_at', "TEXT NOT NULL DEFAULT ''"],
+    ['updated_at', "TEXT NOT NULL DEFAULT ''"],
+    ['completed_at', 'TEXT'],
+  ]),
+  import_job_rows: Object.freeze([
+    ['job_id', 'INTEGER NOT NULL DEFAULT 0'],
+    ['row_index', 'INTEGER NOT NULL DEFAULT 0'],
+    ['spotify_url', 'TEXT'],
+    ['spotify_album_id', 'TEXT'],
+    ['desired_status', 'TEXT'],
+    ['rating', 'INTEGER'],
+    ['notes', 'TEXT'],
+    ['listened_at', 'TEXT'],
+    ['default_status_applied', 'INTEGER NOT NULL DEFAULT 0'],
+    ['warnings_json', 'TEXT'],
+    ['status', "TEXT NOT NULL DEFAULT 'queued'"],
+    ['error', 'TEXT'],
+    ['created_album_id', 'INTEGER'],
+    ['lease_owner', 'TEXT'],
+    ['lease_expires_at', 'TEXT'],
+    ['raw_row_json', 'TEXT'],
+    ['created_at', "TEXT NOT NULL DEFAULT ''"],
+    ['updated_at', "TEXT NOT NULL DEFAULT ''"],
+  ]),
+});
+
 function openDatabase() {
   const connection = new Database(DB_PATH);
   connection.pragma('journal_mode = WAL');
@@ -39,6 +119,19 @@ function ensureColumn(connection, tableName, columnName, alterSql) {
   const columns = connection.prepare(`PRAGMA table_info(${tableName})`).all();
   if (!columns.some(column => column.name === columnName)) {
     connection.exec(alterSql);
+  }
+}
+
+function ensureMigratedColumns(connection) {
+  for (const [tableName, columns] of Object.entries(MIGRATED_COLUMNS)) {
+    for (const [columnName, columnDefinition] of columns) {
+      ensureColumn(
+        connection,
+        tableName,
+        columnName,
+        `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition};`,
+      );
+    }
   }
 }
 
@@ -235,10 +328,7 @@ function ensureAppSchema(connection) {
       updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE INDEX IF NOT EXISTS idx_spotify_album_id ON albums(spotify_album_id);
   `);
-
-  ensureAlbumsUpdatedAtTrigger(connection);
 
   connection.exec(`
     CREATE TABLE IF NOT EXISTS import_jobs (
@@ -283,11 +373,18 @@ function ensureAppSchema(connection) {
       updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(job_id, row_index)
     );
+  `);
 
+  ensureMigratedColumns(connection);
+
+  connection.exec(`
+    CREATE INDEX IF NOT EXISTS idx_spotify_album_id ON albums(spotify_album_id);
     CREATE INDEX IF NOT EXISTS idx_import_jobs_status ON import_jobs(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_import_job_rows_job_status ON import_job_rows(job_id, status, row_index);
     CREATE INDEX IF NOT EXISTS idx_import_job_rows_lease ON import_job_rows(status, lease_expires_at);
   `);
+
+  ensureAlbumsUpdatedAtTrigger(connection);
 
   connection.exec(`
     CREATE TRIGGER IF NOT EXISTS import_jobs_updated_at
@@ -295,9 +392,7 @@ function ensureAppSchema(connection) {
     BEGIN
       UPDATE import_jobs SET updated_at = datetime('now') WHERE id = OLD.id;
     END;
-  `);
 
-  connection.exec(`
     CREATE TRIGGER IF NOT EXISTS import_job_rows_updated_at
     AFTER UPDATE ON import_job_rows
     BEGIN
@@ -305,18 +400,6 @@ function ensureAppSchema(connection) {
     END;
   `);
 
-  ensureColumn(connection, 'import_jobs', 'canceled_rows',
-    `ALTER TABLE import_jobs ADD COLUMN canceled_rows INTEGER NOT NULL DEFAULT 0;`);
-  ensureColumn(connection, 'albums', 'planned_at',
-    `ALTER TABLE albums ADD COLUMN planned_at TEXT;`);
-  ensureColumn(connection, 'albums', 'spotify_release_date',
-    `ALTER TABLE albums ADD COLUMN spotify_release_date TEXT;`);
-  ensureColumn(connection, 'albums', 'release_date',
-    `ALTER TABLE albums ADD COLUMN release_date TEXT;`);
-  ensureColumn(connection, 'albums', 'spotify_first_track',
-    `ALTER TABLE albums ADD COLUMN spotify_first_track TEXT;`);
-  ensureColumn(connection, 'albums', 'welcome_sample_key',
-    `ALTER TABLE albums ADD COLUMN welcome_sample_key TEXT;`);
   backfillSpotifyReleaseDates(connection);
   backfillAlbumReleaseDates(connection);
   backfillSpotifyFirstTracks(connection);
