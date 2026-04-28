@@ -19,6 +19,8 @@ const BACKUP_MANIFEST_NAME = 'trackspot-backup.json';
 const BACKUP_MANIFEST_VERSION = 1;
 const RESTORE_JOURNAL_NAME = '_restore_journal.json';
 const RESTORE_JOURNAL_PATH = path.join(DATA_DIR, RESTORE_JOURNAL_NAME);
+const MERGE_JOURNAL_NAME = '_merge_journal.json';
+const MERGE_JOURNAL_PATH = path.join(DATA_DIR, MERGE_JOURNAL_NAME);
 const APP_STATE_BACKUP_ITEMS = [
   { zipPath: 'preferences.json', type: 'file' },
   { zipPath: 'opacity-presets', type: 'directory' },
@@ -189,6 +191,53 @@ function readRestoreJournal() {
 
 function removeRestoreJournal() {
   fs.rmSync(RESTORE_JOURNAL_PATH, { force: true });
+}
+
+function writeMergeJournal(journal) {
+  const tempPath = createRestoreTempPath('_merge_journal_');
+  const contents = `${JSON.stringify({ ...journal, updatedAt: new Date().toISOString() }, null, 2)}\n`;
+  let fileFd = null;
+
+  try {
+    fileFd = fs.openSync(tempPath, 'w');
+    fs.writeFileSync(fileFd, contents);
+    fs.fsyncSync(fileFd);
+    fs.closeSync(fileFd);
+    fileFd = null;
+    fs.renameSync(tempPath, MERGE_JOURNAL_PATH);
+    fsyncDirectoryBestEffort(DATA_DIR);
+  } catch (error) {
+    if (fileFd !== null) {
+      try {
+        fs.closeSync(fileFd);
+      } catch {
+        // Preserve the original write/rename error.
+      }
+    }
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
+}
+
+function readMergeJournal() {
+  if (!fs.existsSync(MERGE_JOURNAL_PATH)) return null;
+  try {
+    const journal = JSON.parse(fs.readFileSync(MERGE_JOURNAL_PATH, 'utf8'));
+    if (!journal || typeof journal !== 'object' || Array.isArray(journal) || journal.operation !== 'merge') {
+      throw new Error('Merge journal is invalid.');
+    }
+    return {
+      ...journal,
+      imagePaths: Array.isArray(journal.imagePaths) ? journal.imagePaths : [],
+    };
+  } catch (error) {
+    console.error('Could not read merge journal:', error);
+    return null;
+  }
+}
+
+function removeMergeJournal() {
+  fs.rmSync(MERGE_JOURNAL_PATH, { force: true });
 }
 
 function buildBackupManifest(kind, includesAppState) {
@@ -864,25 +913,34 @@ function reserveMergeImagePath(preferredImagePath, reservedFinalImagePaths) {
   throw new Error('Could not allocate a unique backup image path.');
 }
 
-function createMergeImageAsset(preferredImagePath, stagingImagesDir, reservedFinalImagePaths, source) {
-  const finalImage = reserveMergeImagePath(preferredImagePath, reservedFinalImagePaths);
-  if (!finalImage) return null;
+function createStagedMergeImageAsset(preferredImagePath, stagingImagesDir, source) {
+  let preferred = null;
+  try {
+    preferred = resolveAlbumImagePath(preferredImagePath, IMAGES_DIR);
+  } catch {
+    return null;
+  }
+  if (!preferred) return null;
 
-  const stagedImage = resolveAlbumImagePath(finalImage.imagePath, stagingImagesDir);
+  const ext = path.extname(preferred.filename) || '.jpg';
+  const prefix = `stage_${path.basename(preferred.filename, ext)}`;
+  const stagedImage = buildUniqueAlbumImagePath({ imagesDir: stagingImagesDir, prefix, ext });
   fs.mkdirSync(path.dirname(stagedImage.fullPath), { recursive: true });
   return {
     source,
-    finalImagePath: finalImage.imagePath,
-    finalFullPath: finalImage.fullPath,
+    preferredImagePath: preferred.imagePath,
+    stagedImagePath: stagedImage.imagePath,
     stagedFullPath: stagedImage.fullPath,
+    finalImagePath: null,
+    finalFullPath: null,
+    reservationKey: null,
   };
 }
 
-function stageMergeZipImage(entry, preferredImagePath, stagingImagesDir, reservedFinalImagePaths) {
-  const asset = createMergeImageAsset(
+function stageMergeZipImage(entry, preferredImagePath, stagingImagesDir) {
+  const asset = createStagedMergeImageAsset(
     preferredImagePath,
     stagingImagesDir,
-    reservedFinalImagePaths,
     'zip',
   );
   if (!asset) return null;
@@ -906,22 +964,21 @@ async function downloadImageToPath(imageUrl, imagePath, targetImagesDir) {
   return normalizedImagePath;
 }
 
-async function stageMergeRefetchedImage(row, stagingImagesDir, reservedFinalImagePaths) {
+async function stageMergeRefetchedImage(row, stagingImagesDir) {
   if (!row.spotify_album_id) return null;
   const imageUrl = row.image_url_large || row.image_url_medium || row.image_url_small;
   if (!imageUrl) return null;
 
   const preferredImagePath = buildManagedAlbumImagePath(row.spotify_album_id, '.jpg');
-  const asset = createMergeImageAsset(
+  const asset = createStagedMergeImageAsset(
     preferredImagePath,
     stagingImagesDir,
-    reservedFinalImagePaths,
     'refetched',
   );
   if (!asset) return null;
 
   try {
-    await downloadImageToPath(imageUrl, asset.finalImagePath, stagingImagesDir);
+    await downloadImageToPath(imageUrl, asset.stagedImagePath, stagingImagesDir);
     return asset;
   } catch (err) {
     fs.rmSync(asset.stagedFullPath, { force: true });
@@ -950,8 +1007,7 @@ function getCurrentAlbumImagePathReservations() {
 
 async function prepareMergeAlbumRows(rows, zip, stagingImagesDir) {
   const zipImageEntries = getZipAlbumImageEntries(zip);
-  const reservedFinalImagePaths = getCurrentAlbumImagePathReservations();
-  const stagedAssetsByBackupImagePath = new Map();
+  const stagedAssetsBySourceKey = new Map();
   const preparedRows = [];
 
   for (const row of rows) {
@@ -971,29 +1027,36 @@ async function prepareMergeAlbumRows(rows, zip, stagingImagesDir) {
       : legacyEntry;
 
     if (zipImage) {
-      imageAsset = stagedAssetsByBackupImagePath.get(zipImage.entryKey) || null;
-      if (!imageAsset) {
+      const sourceKey = `zip:${zipImage.entryKey}`;
+      if (stagedAssetsBySourceKey.has(sourceKey)) {
+        imageAsset = stagedAssetsBySourceKey.get(sourceKey);
+      } else {
         imageAsset = stageMergeZipImage(
           zipImage.entry,
           zipImage.entryKey,
           stagingImagesDir,
-          reservedFinalImagePaths,
         );
-        stagedAssetsByBackupImagePath.set(zipImage.entryKey, imageAsset);
+        stagedAssetsBySourceKey.set(sourceKey, imageAsset);
       }
-      preparedRow.image_path = imageAsset?.finalImagePath ?? null;
     } else {
-      imageAsset = await stageMergeRefetchedImage(preparedRow, stagingImagesDir, reservedFinalImagePaths);
-      preparedRow.image_path = imageAsset?.finalImagePath ?? null;
+      const sourceKey = preparedRow.spotify_album_id ? `refetch:${preparedRow.spotify_album_id}` : null;
+      if (sourceKey && stagedAssetsBySourceKey.has(sourceKey)) {
+        imageAsset = stagedAssetsBySourceKey.get(sourceKey);
+      } else {
+        imageAsset = await stageMergeRefetchedImage(preparedRow, stagingImagesDir);
+        if (sourceKey && imageAsset) stagedAssetsBySourceKey.set(sourceKey, imageAsset);
+      }
     }
 
+    preparedRow.image_path = null;
     preparedRows.push({ row: preparedRow, imageAsset });
   }
 
   return preparedRows;
 }
 
-function commitMergeImageAsset(asset, committedImagePaths) {
+function commitMergeImageAsset(asset, committedImagePaths, mergeJournal) {
+  recordMergeJournalImagePath(mergeJournal, asset.finalImagePath);
   fs.mkdirSync(path.dirname(asset.finalFullPath), { recursive: true });
   const hadFinalBeforeCopy = fs.existsSync(asset.finalFullPath);
   try {
@@ -1041,13 +1104,88 @@ function cleanupMergeImportArtifacts({ srcDb, tmpPath, stagingImagesDir }) {
   }
 }
 
-function commitMergeImportRows(preparedRows, insertColumns, insertStmt, manualDupCheck, initialSkipped, committedImagePaths) {
+function ensureMergeAssetFinalPath(asset, reservedFinalImagePaths) {
+  if (!asset) return null;
+  if (asset.finalImagePath) return asset;
+
+  const finalImage = reserveMergeImagePath(asset.preferredImagePath, reservedFinalImagePaths);
+  if (!finalImage) return null;
+
+  asset.finalImagePath = finalImage.imagePath;
+  asset.finalFullPath = finalImage.fullPath;
+  asset.reservationKey = getAlbumImageReservationKey(finalImage.imagePath);
+  return asset;
+}
+
+function releaseMergeAssetFinalPath(asset, reservedFinalImagePaths) {
+  if (!asset?.reservationKey) return;
+  reservedFinalImagePaths.delete(asset.reservationKey);
+  asset.finalImagePath = null;
+  asset.finalFullPath = null;
+  asset.reservationKey = null;
+}
+
+function recordMergeJournalImagePath(mergeJournal, imagePath) {
+  if (!mergeJournal) return;
+
+  const normalized = normalizeAlbumImagePath(imagePath);
+  if (!normalized || mergeJournal.imagePaths.includes(normalized)) return;
+
+  const nextImagePaths = [...mergeJournal.imagePaths, normalized];
+  writeMergeJournal({ ...mergeJournal, imagePaths: nextImagePaths });
+  mergeJournal.imagePaths = nextImagePaths;
+}
+
+function recoverInterruptedMerge() {
+  const journal = readMergeJournal();
+  if (!journal) return false;
+
+  const referencedImagePaths = getCurrentAlbumImagePathReservations();
+  let cleanupFailed = false;
+
+  for (const imagePath of journal.imagePaths) {
+    let resolved = null;
+    let reservationKey = null;
+    try {
+      resolved = resolveAlbumImagePath(imagePath, IMAGES_DIR);
+      reservationKey = getAlbumImageReservationKey(imagePath);
+    } catch {
+      continue;
+    }
+
+    if (!resolved || referencedImagePaths.has(reservationKey)) continue;
+
+    try {
+      fs.rmSync(resolved.fullPath, { force: true });
+    } catch (error) {
+      cleanupFailed = true;
+      console.warn('Interrupted merge image cleanup failed:', error);
+    }
+  }
+
+  if (!cleanupFailed) {
+    runMergeCleanup('merge journal', removeMergeJournal);
+  }
+
+  return !cleanupFailed;
+}
+
+function commitMergeImportRows(
+  preparedRows,
+  insertColumns,
+  insertStmt,
+  manualDupCheck,
+  initialSkipped,
+  committedImagePaths,
+  mergeJournal,
+) {
   return db.transaction(() => {
     let added = 0;
     let skipped = initialSkipped;
     let imagesCopied = 0;
     let imagesRefetched = 0;
     const assetsToCommit = new Map();
+    const reservedFinalImagePaths = getCurrentAlbumImagePathReservations();
 
     for (const { row, imageAsset } of preparedRows) {
       if (!row.spotify_album_id) {
@@ -1058,20 +1196,27 @@ function commitMergeImportRows(preparedRows, insertColumns, insertStmt, manualDu
         }
       }
 
+      const allocatedAsset = ensureMergeAssetFinalPath(imageAsset, reservedFinalImagePaths);
+      const rowToInsert = allocatedAsset
+        ? { ...row, image_path: allocatedAsset.finalImagePath }
+        : row;
       const params = Object.fromEntries(
-        insertColumns.map(column => [column, getBackupAlbumValue(column, row)])
+        insertColumns.map(column => [column, getBackupAlbumValue(column, rowToInsert)])
       );
       const result = insertStmt.run(params);
       if (result.changes > 0) {
         added++;
-        if (imageAsset) assetsToCommit.set(imageAsset.finalImagePath, imageAsset);
+        if (allocatedAsset) assetsToCommit.set(allocatedAsset.finalImagePath, allocatedAsset);
       } else {
         skipped++;
+        if (allocatedAsset && !assetsToCommit.has(allocatedAsset.finalImagePath)) {
+          releaseMergeAssetFinalPath(allocatedAsset, reservedFinalImagePaths);
+        }
       }
     }
 
     for (const asset of assetsToCommit.values()) {
-      commitMergeImageAsset(asset, committedImagePaths);
+      commitMergeImageAsset(asset, committedImagePaths, mergeJournal);
       if (asset.source === 'zip') imagesCopied++;
       else if (asset.source === 'refetched') imagesRefetched++;
     }
@@ -1284,12 +1429,14 @@ async function importFromZip(zip) {
   if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
 
   recoverInterruptedRestore();
+  recoverInterruptedMerge();
 
   const BetterSqlite = require('better-sqlite3');
   const tmpPath = createMergeTempPath();
   let stagingImagesDir = null;
   let srcDb = null;
   const committedMergeImagePaths = [];
+  const mergeJournal = { operation: 'merge', imagePaths: [] };
 
   let added = 0, skipped = 0, imagesCopied = 0, imagesRefetched = 0;
   let sanitizedImagePaths = 0;
@@ -1328,10 +1475,13 @@ async function importFromZip(zip) {
       manualDupCheck,
       skipped,
       committedMergeImagePaths,
+      mergeJournal,
     ));
+    runMergeCleanup('merge journal', removeMergeJournal);
 
   } catch (error) {
     cleanupCommittedMergeImages(committedMergeImagePaths);
+    recoverInterruptedMerge();
     throw error;
   } finally {
     cleanupMergeImportArtifacts({ srcDb, tmpPath, stagingImagesDir });
@@ -1466,17 +1616,21 @@ async function restoreFromZip(zip) {
 }
 
 recoverInterruptedRestore();
+recoverInterruptedMerge();
 
 router.__private = {
   APP_STATE_BACKUP_ITEMS,
   BACKUP_MANIFEST_NAME,
+  MERGE_JOURNAL_NAME,
   RESTORE_JOURNAL_NAME,
   buildBackupManifest,
   createMergeTempPath,
   createRestoreTempPath,
   importFromZip,
   readBackupManifest,
+  readMergeJournal,
   readRestoreJournal,
+  recoverInterruptedMerge,
   recoverInterruptedRestore,
   resolveBackupAlbumImageForArchive,
   restoreAppStateFromZip,
@@ -1484,6 +1638,7 @@ router.__private = {
   restoreFromZip,
   sanitizeBackupAlbumImagePathValue,
   sanitizeBackupAlbumImagePaths,
+  writeMergeJournal,
   writeRestoreJournal,
 };
 

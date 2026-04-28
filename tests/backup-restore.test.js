@@ -62,6 +62,7 @@ function addLegacyAlbumsDatabase(zip, dataDir, rows) {
         status TEXT NOT NULL,
         rating INTEGER,
         image_path TEXT,
+        image_url_large TEXT,
         source TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -69,9 +70,11 @@ function addLegacyAlbumsDatabase(zip, dataDir, rows) {
     `);
     const insert = legacyDb.prepare(`
       INSERT INTO albums (
-        id, spotify_album_id, album_name, artists, status, rating, image_path, source, created_at, updated_at
+        id, spotify_album_id, album_name, artists, status, rating, image_path, image_url_large, source,
+        created_at, updated_at
       ) VALUES (
-        :id, :spotify_album_id, :album_name, :artists, :status, :rating, :image_path, :source, :created_at, :updated_at
+        :id, :spotify_album_id, :album_name, :artists, :status, :rating, :image_path, :image_url_large,
+        :source, :created_at, :updated_at
       )
     `);
     rows.forEach((row, index) => {
@@ -83,6 +86,7 @@ function addLegacyAlbumsDatabase(zip, dataDir, rows) {
         status: row.status ?? 'completed',
         rating: row.rating ?? null,
         image_path: row.image_path ?? null,
+        image_url_large: row.image_url_large ?? null,
         source: row.source ?? 'manual',
         created_at: row.created_at ?? '2026-04-01 12:00:00',
         updated_at: row.updated_at ?? '2026-04-01 12:00:00',
@@ -1050,6 +1054,41 @@ describe('backup and restore', () => {
     expect(fs.existsSync(rollbackDbPath)).toBe(false);
   }, 15000);
 
+  it('recovers interrupted merge images without deleting DB-referenced art', () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const orphanImagePath = 'images/orphan-merge.jpg';
+    const referencedImagePath = 'images/referenced-merge.jpg';
+    writeFileEnsured(path.join(dataDir, orphanImagePath), Buffer.from('orphan-image'));
+    writeFileEnsured(path.join(dataDir, referencedImagePath), Buffer.from('referenced-image'));
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Referenced Merge Album',
+      JSON.stringify([{ name: 'Referenced Artist' }]),
+      'completed',
+      referencedImagePath,
+      'manual',
+      '2026-04-02 12:00:00',
+      '2026-04-02 12:00:00',
+    );
+
+    backupRouter.__private.writeMergeJournal({
+      operation: 'merge',
+      imagePaths: [orphanImagePath, referencedImagePath],
+    });
+
+    expect(backupRouter.__private.recoverInterruptedMerge()).toBe(true);
+    expect(fs.existsSync(path.join(dataDir, orphanImagePath))).toBe(false);
+    expect(fs.readFileSync(path.join(dataDir, referencedImagePath)).toString()).toBe('referenced-image');
+    expect(fs.existsSync(path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME))).toBe(false);
+  });
+
   it('does not fail a committed merge when staging cleanup fails', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
@@ -1380,6 +1419,58 @@ describe('backup and restore', () => {
       image_path: 'images/legacy123.jpg',
     });
     expect(fs.readFileSync(path.join(dataDir, restored.image_path)).toString()).toBe('refetched-image');
+  }, 15000);
+
+  it('does not let skipped merge rows reserve preferred image paths for later rows', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => Buffer.from('unused-refetched-image'),
+    });
+
+    const preferredImagePath = 'images/shared-preferred.jpg';
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: 'shared-preferred',
+        album_name: 'Ignored Refetch Album',
+        artists: JSON.stringify([{ name: 'Ignored Artist' }]),
+        rating: 101,
+        image_url_large: 'https://example.test/shared-preferred.jpg',
+        source: 'spotify',
+      },
+      {
+        id: 102,
+        album_name: 'Kept Preferred Art Album',
+        artists: JSON.stringify([{ name: 'Kept Artist' }]),
+        rating: 88,
+        image_path: preferredImagePath,
+      },
+    ]);
+    zip.addFile(preferredImagePath, Buffer.from('preferred-zip-image'));
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare(`
+      SELECT album_name, image_path
+      FROM albums
+      WHERE album_name = ?
+    `).get('Kept Preferred Art Album');
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 1,
+      imagesCopied: 1,
+      imagesRefetched: 0,
+    });
+    expect(restored).toEqual({
+      album_name: 'Kept Preferred Art Album',
+      image_path: preferredImagePath,
+    });
+    expect(fs.readFileSync(path.join(dataDir, preferredImagePath)).toString()).toBe('preferred-zip-image');
   }, 15000);
 
   it('uses bundled legacy managed art before refetching when merging backups without image_path', async () => {
