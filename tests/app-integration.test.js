@@ -177,23 +177,22 @@ describe('Express app integration', () => {
     expect(rejected.body).toEqual({ error: 'Request host is not trusted.' });
   });
 
-  it('rejects arbitrary Host headers even when bound to a wildcard host', async () => {
+  it('allows arbitrary same-origin Host headers when bound to a wildcard host', async () => {
     process.env.HOST = '0.0.0.0';
     testServer = await startTestServer(loadAppContext());
 
-    const rejected = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
-      host: 'evil.example:1060',
-      origin: 'http://evil.example:1060',
+    const response = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
+      host: 'trackspot.tailnet.ts.net:1060',
+      origin: 'http://trackspot.tailnet.ts.net:1060',
       body: JSON.stringify({ contentWidthPx: 1275 }),
     });
 
-    expect(rejected.status).toBe(403);
-    expect(rejected.body).toEqual({ error: 'Request host is not trusted.' });
+    expect(response.status).toBe(200);
+    expect(response.body.preferences.contentWidthPx).toBe(1275);
   });
 
-  it('allows same-origin LAN mutations for trusted hosts when bound to a wildcard host', async () => {
+  it('allows same-origin LAN mutations when bound to a wildcard host', async () => {
     process.env.HOST = '0.0.0.0';
-    process.env.TRUSTED_HOSTS = '192.168.1.50';
     testServer = await startTestServer(loadAppContext());
 
     const response = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
@@ -208,7 +207,6 @@ describe('Express app integration', () => {
 
   it('still rejects cross-origin LAN mutations when bound to a wildcard host', async () => {
     process.env.HOST = '0.0.0.0';
-    process.env.TRUSTED_HOSTS = '192.168.1.50';
     testServer = await startTestServer(loadAppContext());
 
     const response = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {

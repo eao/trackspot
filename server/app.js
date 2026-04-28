@@ -5,6 +5,7 @@ const {
   getCorsAllowedOrigins,
   getTrustedHosts,
   normalizeHostName,
+  shouldTrustAnyRequestHost,
 } = require('./config');
 
 function getOriginFromReferer(referer) {
@@ -58,7 +59,8 @@ function isSameOriginRequest(req, browserOrigin) {
   return Boolean(browserOrigin) && browserOrigin === getRequestOrigin(req);
 }
 
-function isTrustedRequestHost(req, trustedHosts) {
+function isTrustedRequestHost(req, trustedHosts, trustAnyRequestHost = false) {
+  if (trustAnyRequestHost) return true;
   const hostName = getRequestHostName(req);
   if (!hostName) return true;
   return trustedHosts.has(hostName);
@@ -69,8 +71,9 @@ function createApp() {
 
   const allowedOrigins = new Set(getCorsAllowedOrigins());
   const trustedHosts = new Set(getTrustedHosts());
+  const trustAnyRequestHost = shouldTrustAnyRequestHost();
   app.use((req, res, next) => {
-    if (!isTrustedRequestHost(req, trustedHosts)) {
+    if (!isTrustedRequestHost(req, trustedHosts, trustAnyRequestHost)) {
       return res.status(403).json({ error: 'Request host is not trusted.' });
     }
 
