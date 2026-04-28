@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 const AdmZip = require('adm-zip');
 const serverModulePaths = [
   '../server/routes/backup.js',
+  '../server/backup-mutation-lock.js',
   '../server/welcome-tour-store.js',
   '../server/preferences-store.js',
   '../server/album-helpers.js',
@@ -1090,6 +1091,41 @@ describe('backup and restore', () => {
     expect(fs.readdirSync(dataDir).filter(fileName => fileName.startsWith('_import_tmp_'))).toEqual([]);
   });
 
+  it('normalizes legacy constraint values instead of silently skipping merge rows', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: 'legacy-invalid-rating',
+        album_name: 'Legacy Invalid Rating Album',
+        artists: JSON.stringify([{ name: 'Legacy Artist' }]),
+        rating: 101,
+      },
+    ]);
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare(`
+      SELECT album_name, rating, repeats, priority
+      FROM albums
+      WHERE spotify_album_id = ?
+    `).get('legacy-invalid-rating');
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+    });
+    expect(restored).toEqual({
+      album_name: 'Legacy Invalid Rating Album',
+      rating: null,
+      repeats: 0,
+      priority: 0,
+    });
+  }, 15000);
+
   it('blocks merges while a restore is in progress', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     openDbs.push(dbModule.db);
@@ -1173,6 +1209,47 @@ describe('backup and restore', () => {
       imagesRefetched: 1,
     });
   }, 15000);
+
+  it('blocks restores while another app mutation is active', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const backupLock = require('../server/backup-mutation-lock.js');
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        album_name: 'Blocked By App Mutation Album',
+        artists: JSON.stringify([{ name: 'Blocked Artist' }]),
+      },
+    ]);
+
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'completed',
+      'manual',
+      '2026-04-01 12:00:00',
+      '2026-04-01 12:00:00',
+    );
+
+    const endMutation = backupLock.beginAppMutation();
+    try {
+      await expect(backupRouter.__private.restoreFromZip(zip))
+        .rejects.toThrow(/app update is already in progress/);
+    } finally {
+      endMutation();
+    }
+
+    expect(db.prepare('SELECT album_name FROM albums').get()).toEqual({
+      album_name: 'Current Album',
+    });
+  });
 
   it('rolls back merge rows, cleans partial images, and retries cleanly when final image copy fails', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
@@ -2036,7 +2113,7 @@ describe('backup and restore', () => {
     expect(fs.readFileSync(path.join(dataDir, restored.image_path)).toString()).toBe('refetched-image');
   }, 15000);
 
-  it('does not let skipped merge rows reserve preferred image paths for later rows', async () => {
+  it('reuses staged backup art when normalized merge rows share a preferred image path', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
     openDbs.push(db);
@@ -2052,8 +2129,8 @@ describe('backup and restore', () => {
       {
         id: 101,
         spotify_album_id: 'shared-preferred',
-        album_name: 'Ignored Refetch Album',
-        artists: JSON.stringify([{ name: 'Ignored Artist' }]),
+        album_name: 'Normalized Refetch Album',
+        artists: JSON.stringify([{ name: 'Normalized Artist' }]),
         rating: 101,
         image_url_large: 'https://example.test/shared-preferred.jpg',
         source: 'spotify',
@@ -2072,19 +2149,25 @@ describe('backup and restore', () => {
     const restored = db.prepare(`
       SELECT album_name, image_path
       FROM albums
-      WHERE album_name = ?
-    `).get('Kept Preferred Art Album');
+      ORDER BY album_name
+    `).all();
 
     expect(result).toMatchObject({
-      added: 1,
-      skipped: 1,
+      added: 2,
+      skipped: 0,
       imagesCopied: 1,
       imagesRefetched: 0,
     });
-    expect(restored).toEqual({
-      album_name: 'Kept Preferred Art Album',
-      image_path: preferredImagePath,
-    });
+    expect(restored).toEqual([
+      {
+        album_name: 'Kept Preferred Art Album',
+        image_path: preferredImagePath,
+      },
+      {
+        album_name: 'Normalized Refetch Album',
+        image_path: preferredImagePath,
+      },
+    ]);
     expect(fs.readFileSync(path.join(dataDir, preferredImagePath)).toString()).toBe('preferred-zip-image');
   }, 15000);
 
@@ -2176,7 +2259,7 @@ describe('backup and restore', () => {
     ]);
   }, 15000);
 
-  it('tries later backup duplicate keys when earlier duplicate rows are ignored', async () => {
+  it('normalizes earlier backup duplicate keys before skipping later duplicates', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
     openDbs.push(db);
@@ -2229,13 +2312,13 @@ describe('backup and restore', () => {
     expect(restored).toEqual([
       {
         spotify_album_id: 'duplicate-spotify-id',
-        album_name: 'Kept Spotify Duplicate',
-        rating: 82,
+        album_name: 'Ignored Spotify Duplicate',
+        rating: null,
       },
       {
         spotify_album_id: null,
         album_name: 'Legacy Manual Duplicate',
-        rating: 77,
+        rating: null,
       },
     ]);
   }, 15000);

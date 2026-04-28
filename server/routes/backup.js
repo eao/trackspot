@@ -7,6 +7,7 @@ const AdmZip   = require('adm-zip');
 const multer   = require('multer');
 const { db, DATA_DIR, IMAGES_DIR, replaceDatabaseFile } = require('../db');
 const { getBackupUploadMaxBytes, getConfiguredPath } = require('../config');
+const { beginBackupMutation, endBackupMutation } = require('../backup-mutation-lock');
 const {
   buildManagedAlbumImagePath,
   buildUniqueAlbumImagePath,
@@ -761,14 +762,39 @@ function tableHasColumn(connection, tableName, columnName) {
 
 function getBackupAlbumValue(columnName, row) {
   if (columnName === 'spotify_album_id') return normalizeBackupSpotifyAlbumId(row.spotify_album_id);
+  if (columnName === 'album_name') return row.album_name ?? '';
   if (columnName === 'artists') return row.artists || '[]';
   if (columnName === 'genres') return row.genres || '[]';
   if (columnName === 'copyright') return row.copyright || '[]';
   if (columnName === 'status') return row.status ?? 'completed';
-  if (columnName === 'repeats') return row.repeats ?? 0;
-  if (columnName === 'priority') return row.priority ?? 0;
+  if (columnName === 'rating') return normalizeBackupRating(row.rating);
+  if (columnName === 'repeats') return normalizeBackupNonNegativeInteger(row.repeats);
+  if (columnName === 'priority') return normalizeBackupNonNegativeInteger(row.priority);
   if (columnName === 'source') return row.source ?? 'manual';
+  if (columnName === 'created_at' || columnName === 'updated_at') {
+    return row[columnName] || sqliteDatetimeNow();
+  }
   return row[columnName] ?? null;
+}
+
+function normalizeBackupInteger(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function normalizeBackupRating(value) {
+  const parsed = normalizeBackupInteger(value);
+  return parsed !== null && parsed >= 0 && parsed <= 100 ? parsed : null;
+}
+
+function normalizeBackupNonNegativeInteger(value) {
+  const parsed = normalizeBackupInteger(value);
+  return parsed !== null && parsed >= 0 ? parsed : 0;
+}
+
+function sqliteDatetimeNow() {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ');
 }
 
 function normalizeBackupSpotifyAlbumId(value) {
@@ -854,7 +880,7 @@ function buildAlbumInsertStatement(srcDb, options = {}) {
     && (sourceColumns.has(column) || extraColumns.has(column))
   ));
   const sql = `
-    INSERT OR IGNORE INTO albums (
+    INSERT INTO albums (
       ${insertColumns.join(', ')}
     ) VALUES (
       ${insertColumns.map(column => `:${column}`).join(', ')}
@@ -865,6 +891,12 @@ function buildAlbumInsertStatement(srcDb, options = {}) {
     insertColumns,
     statement: db.prepare(sql),
   };
+}
+
+function isAlbumDuplicateConstraintError(error) {
+  const message = String(error?.message || '');
+  return error?.code === 'SQLITE_CONSTRAINT_UNIQUE'
+    || message.includes('UNIQUE constraint failed: albums.spotify_album_id');
 }
 
 function getZipAlbumImageEntries(zip) {
@@ -1370,7 +1402,17 @@ function commitMergeImportRows(
       const params = Object.fromEntries(
         insertColumns.map(column => [column, getBackupAlbumValue(column, rowToInsert)])
       );
-      const result = insertStmt.run(params);
+      let result = null;
+      try {
+        result = insertStmt.run(params);
+      } catch (error) {
+        if (!isAlbumDuplicateConstraintError(error)) throw error;
+        skipped++;
+        if (allocatedAsset && !assetsToCommit.has(allocatedAsset.finalImagePath)) {
+          releaseMergeAssetFinalPath(allocatedAsset, reservedFinalImagePaths);
+        }
+        continue;
+      }
       if (result.changes > 0) {
         added++;
         if (allocatedAsset) assetsToCommit.set(allocatedAsset.finalImagePath, allocatedAsset);
@@ -1589,20 +1631,6 @@ const upload = multer({
   }),
   limits: { fileSize: BACKUP_UPLOAD_MAX_BYTES },
 });
-let backupMutationInProgress = null;
-
-function beginBackupMutation(operation) {
-  if (backupMutationInProgress) {
-    throw new Error(`A backup ${backupMutationInProgress} is already in progress.`);
-  }
-  backupMutationInProgress = operation;
-}
-
-function endBackupMutation(operation) {
-  if (backupMutationInProgress === operation) {
-    backupMutationInProgress = null;
-  }
-}
 
 function openUploadedBackupZip(uploadedFile) {
   if (!uploadedFile?.path) {
@@ -1629,7 +1657,7 @@ router.post('/merge', upload.single('backup'), async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error('Merge error:', e);
-    res.status(500).json({ error: e.message });
+    res.status(e.status || e.statusCode || 500).json({ error: e.message });
   } finally {
     cleanupUploadedBackup(req.file);
   }
@@ -1647,7 +1675,7 @@ router.post('/restore', upload.single('backup'), async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error('Restore error:', e);
-    res.status(500).json({ error: e.message });
+    res.status(e.status || e.statusCode || 500).json({ error: e.message });
   } finally {
     cleanupUploadedBackup(req.file);
   }

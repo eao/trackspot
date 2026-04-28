@@ -72,15 +72,16 @@ function createApp() {
   const themesRouter = require('./routes/themes');
   const preferencesRouter = require('./routes/preferences');
   const welcomeTourRouter = require('./routes/welcome-tour');
+  const { trackNonBackupMutation } = require('./backup-mutation-lock');
 
-  app.use('/api/albums', albumsRouter);
+  app.use('/api/albums', trackNonBackupMutation, albumsRouter);
   app.use('/api/backup', backupRouter);
-  app.use('/api/imports', importsRouter);
-  app.use('/api/backgrounds', backgroundsRouter);
-  app.use('/api/opacity-presets', opacityPresetsRouter);
-  app.use('/api/themes', themesRouter);
-  app.use('/api/preferences', preferencesRouter);
-  app.use('/api/welcome-tour', welcomeTourRouter);
+  app.use('/api/imports', trackNonBackupMutation, importsRouter);
+  app.use('/api/backgrounds', trackNonBackupMutation, backgroundsRouter);
+  app.use('/api/opacity-presets', trackNonBackupMutation, opacityPresetsRouter);
+  app.use('/api/themes', trackNonBackupMutation, themesRouter);
+  app.use('/api/preferences', trackNonBackupMutation, preferencesRouter);
+  app.use('/api/welcome-tour', trackNonBackupMutation, welcomeTourRouter);
 
   app.use((err, req, res, next) => {
     console.error(err);
