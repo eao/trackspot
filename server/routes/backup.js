@@ -729,10 +729,14 @@ function sanitizeBackupAlbumImagePaths(connection) {
   return sanitizedImagePaths;
 }
 
-function buildAlbumInsertStatement(srcDb) {
+function buildAlbumInsertStatement(srcDb, options = {}) {
+  const extraColumns = new Set(options.extraColumns || []);
   const currentColumns = getAlbumTableColumns(db);
   const sourceColumns = new Set(getAlbumTableColumns(srcDb));
-  const insertColumns = currentColumns.filter(column => column !== 'id' && sourceColumns.has(column));
+  const insertColumns = currentColumns.filter(column => (
+    column !== 'id'
+    && (sourceColumns.has(column) || extraColumns.has(column))
+  ));
   const sql = `
     INSERT OR IGNORE INTO albums (
       ${insertColumns.join(', ')}
@@ -766,6 +770,11 @@ function getManualMergeKey(row) {
   if (row.album_name === null || row.album_name === undefined) return null;
   if (row.artists === null || row.artists === undefined) return null;
   return `${row.album_name}\u0000${row.artists}`;
+}
+
+function getAlbumImageReservationKey(imagePath) {
+  const normalized = normalizeAlbumImagePath(imagePath);
+  return normalized ? normalized.toLowerCase() : null;
 }
 
 function selectMergeCandidateRows(backupAlbums) {
@@ -823,9 +832,10 @@ function reserveMergeImagePath(preferredImagePath, reservedFinalImagePaths) {
     return null;
   }
   if (!preferred) return null;
+  const preferredKey = getAlbumImageReservationKey(preferred.imagePath);
 
-  if (!fs.existsSync(preferred.fullPath) && !reservedFinalImagePaths.has(preferred.imagePath)) {
-    reservedFinalImagePaths.add(preferred.imagePath);
+  if (!fs.existsSync(preferred.fullPath) && !reservedFinalImagePaths.has(preferredKey)) {
+    reservedFinalImagePaths.add(preferredKey);
     return preferred;
   }
 
@@ -833,8 +843,9 @@ function reserveMergeImagePath(preferredImagePath, reservedFinalImagePaths) {
   const prefix = `merge_${path.basename(preferred.filename, ext)}`;
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const unique = buildUniqueAlbumImagePath({ imagesDir: IMAGES_DIR, prefix, ext });
-    if (reservedFinalImagePaths.has(unique.imagePath)) continue;
-    reservedFinalImagePaths.add(unique.imagePath);
+    const uniqueKey = getAlbumImageReservationKey(unique.imagePath);
+    if (reservedFinalImagePaths.has(uniqueKey)) continue;
+    reservedFinalImagePaths.add(uniqueKey);
     return unique;
   }
 
@@ -917,7 +928,7 @@ function getCurrentAlbumImagePathReservations() {
   return new Set(rows
     .map(row => {
       try {
-        return normalizeAlbumImagePath(row.image_path);
+        return getAlbumImageReservationKey(row.image_path);
       } catch {
         return null;
       }
@@ -1243,7 +1254,9 @@ async function importFromZip(zip) {
 
     sanitizedImagePaths = sanitizeBackupAlbumImagePaths(srcDb);
     const backupAlbums = srcDb.prepare('SELECT * FROM albums').all().map(normalizeBackupAlbumRow);
-    const { insertColumns, statement: insertStmt } = buildAlbumInsertStatement(srcDb);
+    const { insertColumns, statement: insertStmt } = buildAlbumInsertStatement(srcDb, {
+      extraColumns: ['image_path'],
+    });
     const selectedRows = selectMergeCandidateRows(backupAlbums);
     skipped = selectedRows.skipped;
 

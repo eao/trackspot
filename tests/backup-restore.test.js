@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const AdmZip = require('adm-zip');
@@ -93,6 +93,51 @@ function addLegacyAlbumsDatabase(zip, dataDir, rows) {
   fs.unlinkSync(legacyPath);
 }
 
+function addLegacyAlbumsDatabaseWithoutImagePath(zip, dataDir, rows) {
+  const BetterSqlite = require('better-sqlite3');
+  const legacyPath = path.join(dataDir, `legacy-albums-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+  const legacyDb = new BetterSqlite(legacyPath);
+  try {
+    legacyDb.exec(`
+      CREATE TABLE albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        spotify_album_id TEXT,
+        album_name TEXT NOT NULL,
+        artists TEXT NOT NULL,
+        image_url_large TEXT,
+        status TEXT NOT NULL,
+        source TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+    const insert = legacyDb.prepare(`
+      INSERT INTO albums (
+        id, spotify_album_id, album_name, artists, image_url_large, status, source, created_at, updated_at
+      ) VALUES (
+        :id, :spotify_album_id, :album_name, :artists, :image_url_large, :status, :source, :created_at, :updated_at
+      )
+    `);
+    rows.forEach((row, index) => {
+      insert.run({
+        id: row.id ?? index + 1,
+        spotify_album_id: row.spotify_album_id ?? null,
+        album_name: row.album_name,
+        artists: row.artists ?? JSON.stringify([{ name: 'Legacy Artist' }]),
+        image_url_large: row.image_url_large ?? null,
+        status: row.status ?? 'completed',
+        source: row.source ?? 'spotify',
+        created_at: row.created_at ?? '2026-04-01 12:00:00',
+        updated_at: row.updated_at ?? '2026-04-01 12:00:00',
+      });
+    });
+  } finally {
+    legacyDb.close();
+  }
+  zip.addLocalFile(legacyPath, '', 'albums.db');
+  fs.unlinkSync(legacyPath);
+}
+
 function addFullBackupManifest(zip, backupRouter) {
   zip.addFile(
     backupRouter.__private.BACKUP_MANIFEST_NAME,
@@ -101,6 +146,8 @@ function addFullBackupManifest(zip, backupRouter) {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+
   while (openDbs.length) {
     openDbs.pop()?.close();
   }
@@ -1067,6 +1114,67 @@ describe('backup and restore', () => {
     expect(fs.readFileSync(path.join(dataDir, imported.image_path)).toString()).toBe('backup-image');
   }, 15000);
 
+  it('renames backup image paths that collide by case with current album references', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const backupImagePath = 'images/caseart.jpg';
+    const currentImagePath = 'images/CaseArt.jpg';
+    writeFileEnsured(path.join(dataDir, backupImagePath), Buffer.from('backup-image'));
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      101,
+      'Case Collision Backup Album',
+      JSON.stringify([{ name: 'Backup Artist' }]),
+      'completed',
+      backupImagePath,
+      'manual',
+      '2026-04-01 12:00:00',
+      '2026-04-01 12:00:00',
+    );
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addLocalFile(path.join(dataDir, backupImagePath), 'images', 'caseart.jpg');
+
+    db.prepare('DELETE FROM albums').run();
+    fs.rmSync(path.join(dataDir, backupImagePath), { force: true });
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Current Missing Case Art Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'completed',
+      currentImagePath,
+      'manual',
+      '2026-04-02 12:00:00',
+      '2026-04-02 12:00:00',
+    );
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const current = db.prepare('SELECT image_path FROM albums WHERE album_name = ?').get('Current Missing Case Art Album');
+    const imported = db.prepare('SELECT image_path FROM albums WHERE album_name = ?').get('Case Collision Backup Album');
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+      imagesCopied: 1,
+      imagesRefetched: 0,
+    });
+    expect(current.image_path).toBe(currentImagePath);
+    expect(imported.image_path).not.toBe(backupImagePath);
+    expect(imported.image_path).toMatch(/^images\/merge_caseart_/);
+    expect(fs.existsSync(path.join(dataDir, backupImagePath))).toBe(false);
+    expect(fs.readFileSync(path.join(dataDir, imported.image_path)).toString()).toBe('backup-image');
+  }, 15000);
+
   it('clears missing backup image paths during merge when art cannot be restored', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
@@ -1119,6 +1227,47 @@ describe('backup and restore', () => {
     });
     expect(restored.image_path).toBeNull();
     expect(fs.readFileSync(path.join(dataDir, missingBackupImagePath)).toString()).toBe('current-image');
+  }, 15000);
+
+  it('stores refetched image paths when merging legacy backups without an image_path column', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => Buffer.from('refetched-image'),
+    });
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabaseWithoutImagePath(zip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: 'legacy123',
+        album_name: 'Legacy Refetched Art Album',
+        artists: JSON.stringify([{ name: 'Legacy Artist' }]),
+        image_url_large: 'https://example.test/legacy-art.jpg',
+      },
+    ]);
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare(`
+      SELECT album_name, image_path
+      FROM albums
+      WHERE album_name = ?
+    `).get('Legacy Refetched Art Album');
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+      imagesCopied: 0,
+      imagesRefetched: 1,
+    });
+    expect(restored).toEqual({
+      album_name: 'Legacy Refetched Art Album',
+      image_path: 'images/legacy123.jpg',
+    });
+    expect(fs.readFileSync(path.join(dataDir, restored.image_path)).toString()).toBe('refetched-image');
   }, 15000);
 
   it('normalizes legacy empty Spotify IDs to null when merging distinct manual albums', async () => {
