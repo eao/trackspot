@@ -1,4 +1,5 @@
 const path = require('path');
+const os = require('os');
 const dotenv = require('dotenv');
 
 const APP_ROOT = path.resolve(__dirname, '..');
@@ -102,6 +103,21 @@ function getHostNameFromOrigin(origin) {
   }
 }
 
+function getLocalNetworkHosts() {
+  const hosts = [];
+  const hostName = normalizeHostName(os.hostname());
+  if (hostName) hosts.push(hostName);
+
+  Object.values(os.networkInterfaces() || {}).forEach(entries => {
+    (entries || []).forEach(entry => {
+      const address = normalizeHostName(entry?.address);
+      if (address && !isWildcardHost(address)) hosts.push(address);
+    });
+  });
+
+  return [...new Set(hosts)];
+}
+
 function getCorsAllowedOrigins() {
   return [...new Set([
     'https://open.spotify.com',
@@ -117,19 +133,17 @@ function getCorsAllowedOrigins() {
 function getTrustedHosts() {
   const configuredOrigins = parseOriginList(process.env.CORS_ALLOWED_ORIGINS);
   const configuredHost = normalizeHostName(getHost());
+  const wildcardHost = isWildcardHost(configuredHost);
   const hosts = [
     'localhost',
     '127.0.0.1',
     '::1',
-    isWildcardHost(configuredHost) ? '' : configuredHost,
+    wildcardHost ? '' : configuredHost,
+    ...(wildcardHost ? getLocalNetworkHosts() : []),
     ...configuredOrigins.map(getHostNameFromOrigin),
     ...parseList(process.env.TRUSTED_HOSTS).map(normalizeHostName),
   ];
   return [...new Set(hosts.filter(Boolean))];
-}
-
-function shouldTrustAnyRequestHost() {
-  return isWildcardHost(getHost());
 }
 
 module.exports = {
@@ -144,10 +158,10 @@ module.exports = {
   getDataDir,
   getHost,
   getPort,
+  getLocalNetworkHosts,
   getTrustedHosts,
   isWildcardHost,
   normalizeHostName,
   parsePositiveInteger,
   resolveConfigPath,
-  shouldTrustAnyRequestHost,
 };

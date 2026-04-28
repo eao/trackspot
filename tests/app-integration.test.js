@@ -177,8 +177,23 @@ describe('Express app integration', () => {
     expect(rejected.body).toEqual({ error: 'Request host is not trusted.' });
   });
 
-  it('allows same-origin LAN mutations when bound to a wildcard host', async () => {
+  it('rejects arbitrary Host headers even when bound to a wildcard host', async () => {
     process.env.HOST = '0.0.0.0';
+    testServer = await startTestServer(loadAppContext());
+
+    const rejected = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
+      host: 'evil.example:1060',
+      origin: 'http://evil.example:1060',
+      body: JSON.stringify({ contentWidthPx: 1275 }),
+    });
+
+    expect(rejected.status).toBe(403);
+    expect(rejected.body).toEqual({ error: 'Request host is not trusted.' });
+  });
+
+  it('allows same-origin LAN mutations for trusted hosts when bound to a wildcard host', async () => {
+    process.env.HOST = '0.0.0.0';
+    process.env.TRUSTED_HOSTS = '192.168.1.50';
     testServer = await startTestServer(loadAppContext());
 
     const response = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
@@ -193,6 +208,7 @@ describe('Express app integration', () => {
 
   it('still rejects cross-origin LAN mutations when bound to a wildcard host', async () => {
     process.env.HOST = '0.0.0.0';
+    process.env.TRUSTED_HOSTS = '192.168.1.50';
     testServer = await startTestServer(loadAppContext());
 
     const response = await requestJsonWithHost(testServer.baseUrl, '/api/preferences', {
@@ -203,6 +219,16 @@ describe('Express app integration', () => {
 
     expect(response.status).toBe(403);
     expect(response.body).toEqual({ error: 'Cross-origin mutation rejected.' });
+  });
+
+  it('only treats loopback remote addresses as eligible for no-origin unsafe requests', () => {
+    const { isLoopbackRemoteAddress } = require('../server/app.js');
+
+    expect(isLoopbackRemoteAddress('127.0.0.1')).toBe(true);
+    expect(isLoopbackRemoteAddress('::1')).toBe(true);
+    expect(isLoopbackRemoteAddress('::ffff:127.0.0.1')).toBe(true);
+    expect(isLoopbackRemoteAddress('192.168.1.50')).toBe(false);
+    expect(isLoopbackRemoteAddress('10.0.0.22')).toBe(false);
   });
 
   it('rejects unsafe referer-only browser mutations but allows direct local tools', async () => {

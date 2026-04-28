@@ -5,7 +5,6 @@ const {
   getCorsAllowedOrigins,
   getTrustedHosts,
   normalizeHostName,
-  shouldTrustAnyRequestHost,
 } = require('./config');
 
 function getOriginFromReferer(referer) {
@@ -26,6 +25,26 @@ function getRequestHostName(req) {
   return normalizeHostName(req.headers.host);
 }
 
+function normalizeRemoteAddress(value) {
+  let address = String(value || '').trim().toLowerCase();
+  if (!address) return '';
+  if (address.startsWith('::ffff:')) address = address.slice('::ffff:'.length);
+  if (address.startsWith('[')) address = normalizeHostName(address);
+  return address;
+}
+
+function isLoopbackRemoteAddress(value) {
+  const address = normalizeRemoteAddress(value);
+  return address === '::1'
+    || address === '0:0:0:0:0:0:0:1'
+    || address === 'localhost'
+    || address.startsWith('127.');
+}
+
+function isLoopbackRequest(req) {
+  return isLoopbackRemoteAddress(req.socket?.remoteAddress || req.connection?.remoteAddress);
+}
+
 function isReadOnlyRequest(req) {
   return req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
 }
@@ -39,8 +58,7 @@ function isSameOriginRequest(req, browserOrigin) {
   return Boolean(browserOrigin) && browserOrigin === getRequestOrigin(req);
 }
 
-function isTrustedRequestHost(req, trustedHosts, trustAnyRequestHost = false) {
-  if (trustAnyRequestHost) return true;
+function isTrustedRequestHost(req, trustedHosts) {
   const hostName = getRequestHostName(req);
   if (!hostName) return true;
   return trustedHosts.has(hostName);
@@ -51,9 +69,8 @@ function createApp() {
 
   const allowedOrigins = new Set(getCorsAllowedOrigins());
   const trustedHosts = new Set(getTrustedHosts());
-  const trustAnyRequestHost = shouldTrustAnyRequestHost();
   app.use((req, res, next) => {
-    if (!isTrustedRequestHost(req, trustedHosts, trustAnyRequestHost)) {
+    if (!isTrustedRequestHost(req, trustedHosts)) {
       return res.status(403).json({ error: 'Request host is not trusted.' });
     }
 
@@ -69,7 +86,10 @@ function createApp() {
     }
     if (!isReadOnlyRequest(req)) {
       const browserOrigin = origin || getOriginFromReferer(req.headers.referer);
-      if (!isSameOriginRequest(req, browserOrigin) && !isAllowedBrowserOrigin(browserOrigin, allowedOrigins)) {
+      if (!browserOrigin && !isLoopbackRequest(req)) {
+        return res.status(403).json({ error: 'Cross-origin mutation rejected.' });
+      }
+      if (browserOrigin && !isSameOriginRequest(req, browserOrigin) && !isAllowedBrowserOrigin(browserOrigin, allowedOrigins)) {
         return res.status(403).json({ error: 'Cross-origin mutation rejected.' });
       }
     }
@@ -162,6 +182,7 @@ module.exports = {
   getOriginFromReferer,
   getRequestHostName,
   getRequestOrigin,
+  isLoopbackRemoteAddress,
   isAllowedBrowserOrigin,
   isReadOnlyRequest,
   isSameOriginRequest,
