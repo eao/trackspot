@@ -149,12 +149,13 @@ describe('loadAlbums startup gating', () => {
       order.push('render');
     });
 
-    await loadAlbums({
+    const result = await loadAlbums({
       gateStartupArt: true,
       preloadVisibleAlbumArt,
       renderAlbums,
     });
 
+    expect(result).toBe(true);
     expect(stateMock.albumsLoaded).toBe(true);
     expect(stateMock.pagination.currentPage).toBe(1);
     expect(preloadVisibleAlbumArt).toHaveBeenCalledWith([
@@ -207,7 +208,7 @@ describe('loadAlbums startup gating', () => {
         trackedListenedMs: 0,
       },
     });
-    await secondLoad;
+    await expect(secondLoad).resolves.toBe(true);
 
     expect(stateMock.albums).toEqual([{ id: 2, album_name: 'Newest Result' }]);
     expect(stateMock.pagination.currentPage).toBe(3);
@@ -228,7 +229,7 @@ describe('loadAlbums startup gating', () => {
         trackedListenedMs: 0,
       },
     });
-    await firstLoad;
+    await expect(firstLoad).resolves.toBe(false);
 
     expect(stateMock.albums).toEqual([{ id: 2, album_name: 'Newest Result' }]);
     expect(stateMock.pagination.currentPage).toBe(3);

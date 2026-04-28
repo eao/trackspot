@@ -188,26 +188,31 @@ function canDeleteComplexStatus(status) {
 // Removes any that are wrong and re-inserts correct versions at the front.
 // Returns the ID of the default filter ('cs_listened').
 export function resetComplexStatuses() {
-  const listenedStatuses = ['completed', 'dropped'];
-  const allStatuses      = ['completed', 'dropped', 'planned'];
-
   const setsEqual = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
 
-  const goodListened = state.complexStatuses.find(
-    cs => cs.id === 'cs_listened' && setsEqual(cs.statuses, listenedStatuses)
-  );
-  const goodAll = state.complexStatuses.find(
-    cs => cs.id === 'cs_all' && setsEqual(cs.statuses, allStatuses)
-  );
+  const cloneDefaultStatus = status => ({
+    ...status,
+    statuses: [...status.statuses],
+    includedWithApp: status.includedWithApp === true,
+  });
+  const defaultById = new Map(DEFAULT_COMPLEX_STATUSES.map(status => [status.id, status]));
+  const builtInIds = new Set(defaultById.keys());
+  const isCorrectBuiltInStatus = (status, expected) => status
+    && status.includedWithApp === true
+    && Array.isArray(status.statuses)
+    && setsEqual(status.statuses, expected.statuses);
+  const currentBuiltIns = state.complexStatuses.filter(cs => builtInIds.has(cs.id));
+  const needsRepair = currentBuiltIns.length !== DEFAULT_COMPLEX_STATUSES.length
+    || DEFAULT_COMPLEX_STATUSES.some(expected => !isCorrectBuiltInStatus(
+      state.complexStatuses.find(cs => cs.id === expected.id),
+      expected
+    ));
 
-  if (!goodListened || !goodAll) {
-    // Remove any stale versions of the defaults.
-    state.complexStatuses = state.complexStatuses.filter(
-      cs => cs.id !== 'cs_listened' && cs.id !== 'cs_all'
-    );
-    // Re-insert correct defaults at the front, in order.
-    if (!goodAll)      state.complexStatuses.unshift({ id: 'cs_all',      name: 'All',      statuses: allStatuses });
-    if (!goodListened) state.complexStatuses.unshift({ id: 'cs_listened', name: 'Listened', statuses: listenedStatuses });
+  if (needsRepair) {
+    state.complexStatuses = [
+      ...DEFAULT_COMPLEX_STATUSES.map(cloneDefaultStatus),
+      ...state.complexStatuses.filter(cs => !builtInIds.has(cs.id)),
+    ];
     saveComplexStatuses();
   }
 

@@ -1234,7 +1234,7 @@ export async function loadAlbums(options = {}) {
 
   try {
     const response = await apiFetch(`/api/albums?${params}`);
-    if (requestId !== latestAlbumLoadRequestId) return;
+    if (requestId !== latestAlbumLoadRequestId) return false;
 
     const albums = Array.isArray(response) ? response : response.albums;
     const meta = Array.isArray(response) ? getDefaultAlbumListMeta() : (response.meta ?? getDefaultAlbumListMeta());
@@ -1243,7 +1243,7 @@ export async function loadAlbums(options = {}) {
 
     if (gateStartupArt) {
       await preloadVisibleAlbumArt(normalizedAlbums);
-      if (requestId !== latestAlbumLoadRequestId) return;
+      if (requestId !== latestAlbumLoadRequestId) return false;
     }
 
     state.albums = normalizedAlbums;
@@ -1255,8 +1255,9 @@ export async function loadAlbums(options = {}) {
     state.albumsLoaded = true;
     state.albumsLoading = false;
     renderAlbums();
+    return true;
   } catch (e) {
-    if (requestId !== latestAlbumLoadRequestId) return;
+    if (requestId !== latestAlbumLoadRequestId) return false;
     state.albumsLoading = false;
     console.error('Failed to load albums:', e);
     // Show a minimal error in the content area rather than a blank screen.
@@ -1266,5 +1267,6 @@ export async function loadAlbums(options = {}) {
         <p style="margin-top:8px; font-size:0.8rem;">${escHtml(e.message)}</p>
       </div>
     `;
+    return true;
   }
 }

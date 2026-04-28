@@ -113,6 +113,8 @@ describe('dashboard wrapped year resolution', () => {
     apiFetch.mockResolvedValue({
       albums: [makeAlbum(2025, 1)],
       meta: {
+        totalCount: 7,
+        filteredCount: 7,
         trackedListenedMs: 17_999_999,
       },
     });
@@ -123,6 +125,8 @@ describe('dashboard wrapped year resolution', () => {
 
     expect(apiFetch).toHaveBeenCalledWith('/api/albums');
     expect(albums).toHaveLength(1);
+    expect(stateMock.albumListMeta.totalCount).toBe(7);
+    expect(stateMock.albumListMeta.filteredCount).toBe(7);
     expect(stateMock.albumListMeta.trackedListenedMs).toBe(17_999_999);
     expect(syncHeaderTooltipMock).toHaveBeenCalled();
   });

@@ -71,13 +71,20 @@ export function resolveWrappedYear(albums, requestedYear, now = new Date()) {
   return { yearsAvailable, resolvedYear };
 }
 
+function mergeDashboardAlbumListMeta(albums, meta = null) {
+  state.albumListMeta = {
+    ...(state.albumListMeta || {}),
+    totalCount: meta?.totalCount ?? albums.length,
+    filteredCount: meta?.filteredCount ?? albums.length,
+    trackedListenedMs: meta?.trackedListenedMs
+      ?? albums.reduce((sum, album) => sum + (album.duration_ms || 0), 0),
+  };
+}
+
 export async function loadAlbumsForDashboard() {
   if (state.welcomeTour?.active) {
     const albums = normalizeAlbumsForStats(state.albums || []);
-    state.albumListMeta = {
-      ...(state.albumListMeta || {}),
-      trackedListenedMs: albums.reduce((sum, album) => sum + (album.duration_ms || 0), 0),
-    };
+    mergeDashboardAlbumListMeta(albums);
     syncHeaderTooltip();
     return albums;
   }
@@ -87,11 +94,8 @@ export async function loadAlbumsForDashboard() {
   dashboardState.loadingPromise = (async () => {
     const response = await apiFetch('/api/albums');
     const albums = Array.isArray(response) ? response : (response.albums || []);
-    const trackedListenedMs = Array.isArray(response) ? 0 : (response.meta?.trackedListenedMs ?? 0);
-    state.albumListMeta = {
-      ...(state.albumListMeta || {}),
-      trackedListenedMs,
-    };
+    const meta = Array.isArray(response) ? null : response.meta;
+    mergeDashboardAlbumListMeta(albums, meta);
     syncHeaderTooltip();
     dashboardState.albums = normalizeAlbumsForStats(albums);
     return dashboardState.albums;

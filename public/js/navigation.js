@@ -14,6 +14,10 @@ const VALID_COLLECTION_VIEWS = new Set(['list', 'grid']);
 
 let navigationRenderToken = 0;
 
+export function getNavigationRevision() {
+  return navigationRenderToken;
+}
+
 function getNormalizedPage(page) {
   return VALID_PAGES.has(page) ? page : 'collection';
 }

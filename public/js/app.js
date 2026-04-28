@@ -11,7 +11,7 @@ import {
 } from './state.js';
 import { todayISO } from './utils.js';
 import { closeArtistPopover } from './artists.js';
-import { loadAlbums, closeArtLightbox, resetPagination } from './render.js';
+import { loadAlbums, closeArtLightbox } from './render.js';
 import { getLaunchAlbumId, maybeClearLaunchAlbumParam, openLaunchAlbumModal } from './launch.js';
 import { runStartupFlow } from './startup-flow.js';
 import { revealSidebarForStartup } from './startup-ui.js';
@@ -47,6 +47,7 @@ import { persistWrappedName, setWrappedName, syncWrappedNameSettingsInput } from
 import { initHeaderScrollTracking } from './header-scroll.js';
 import { getSteppedContentWidthPx } from './layout-width.js';
 import { initWelcomeTourEvents, maybeStartWelcomeTour } from './welcome-tour.js';
+import { initStatsTopArtistJumpListener } from './top-artist-jump.js';
 
 // ---------------------------------------------------------------------------
 // Tooltips
@@ -143,53 +144,7 @@ function initTooltips() {
 // ---------------------------------------------------------------------------
 
 function initEvents() {
-  let statsTopArtistJumpPending = false;
-
-  function applyTopArtistCollectionPreset(artistName) {
-    const normalizedArtistName = String(artistName ?? '').trim();
-    if (!normalizedArtistName) return false;
-
-    const allStatusFilter = state.complexStatuses.find(cs => cs.id === 'cs_all')?.id
-      ?? DEFAULT_COMPLEX_STATUSES.find(cs => cs.id === 'cs_all')?.id
-      ?? 'cs_all';
-
-    state.filters = {
-      search: '',
-      artist: normalizedArtistName,
-      artistMatchExact: true,
-      year: '',
-      ratingMin: '',
-      ratingMax: '',
-      statusFilter: allStatusFilter,
-      importTypeFilter: 'all',
-      ratedFilter: 'both',
-      typeAlbum: true,
-      typeEP: true,
-      typeSingle: true,
-      typeCompilation: true,
-      typeOther: true,
-    };
-    state.sort = normalizeSortState({
-      field: 'release_date',
-      order: 'desc',
-    });
-
-    resetPagination();
-    syncFilterControlsFromState();
-    updateStatusFilterBtn();
-    updateImportTypeFilterBtn();
-    updateRatedFilterBtn();
-    updateTypeFilterBtn();
-    updateSortFieldBtn();
-    updateSortOrderBtn();
-
-    if (state.navigation?.scrollPositions) {
-      state.navigation.scrollPositions.collection = 0;
-    }
-
-    return true;
-  }
-
+  initStatsTopArtistJumpListener();
 
   function nudgeNumberInput(input, delta) {
     const min = input.min === '' ? null : parseInt(input.min, 10);
@@ -247,26 +202,6 @@ function initEvents() {
       void setPage('wrapped');
     });
   }
-
-  window.addEventListener('stats:open-top-artist', async event => {
-    const artistName = event?.detail?.artistName;
-    if (statsTopArtistJumpPending) return;
-    if (!applyTopArtistCollectionPreset(artistName)) return;
-
-    statsTopArtistJumpPending = true;
-    try {
-      await loadAlbums({
-        gateStartupArt: true,
-        renderAlbums: () => {},
-      });
-      await setPage('collection', {
-        suppressTransitions: true,
-        skipCollectionLoad: true,
-      });
-    } finally {
-      statsTopArtistJumpPending = false;
-    }
-  });
 
   el.pageControlFirst.addEventListener('click', () => {
     state.pagination.currentPage = 1;

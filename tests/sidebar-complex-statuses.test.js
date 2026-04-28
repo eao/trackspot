@@ -29,7 +29,10 @@ vi.mock('../public/js/state.js', () => ({
   LS_SIDEBAR_COLLAPSED_GRID: 'ts_sidebarCollapsedGrid',
   LS_DEBUG_CONTROLS: 'ts_debugControls',
   FILTER_PRESET_KEY: 'ts_filterPreset',
-  DEFAULT_COMPLEX_STATUSES: [],
+  DEFAULT_COMPLEX_STATUSES: [
+    { id: 'cs_listened', name: 'Listened', statuses: ['completed', 'dropped'], includedWithApp: true },
+    { id: 'cs_all', name: 'All', statuses: ['completed', 'dropped', 'planned'], includedWithApp: true },
+  ],
   U_BUTTON_DEFS: [],
 }));
 
@@ -103,5 +106,23 @@ describe('complex status list', () => {
 
     expect(deleteButtons[1].disabled).toBe(false);
     expect(deleteButtons[1].title).toBe('Delete');
+  });
+
+  it('repairs built-in statuses that are missing included-with-app protection', async () => {
+    stateMock.complexStatuses = [
+      { id: 'cs_listened', name: 'Listened', statuses: ['completed', 'dropped'], includedWithApp: false },
+      { id: 'cs_all', name: 'All', statuses: ['completed', 'dropped', 'planned'], includedWithApp: true },
+      { id: 'cs_focus', name: 'Focus', statuses: ['planned'], includedWithApp: false },
+    ];
+
+    const { resetComplexStatuses } = await import('../public/js/sidebar.js');
+
+    expect(resetComplexStatuses()).toBe('cs_listened');
+
+    expect(stateMock.complexStatuses).toEqual([
+      { id: 'cs_listened', name: 'Listened', statuses: ['completed', 'dropped'], includedWithApp: true },
+      { id: 'cs_all', name: 'All', statuses: ['completed', 'dropped', 'planned'], includedWithApp: true },
+      { id: 'cs_focus', name: 'Focus', statuses: ['planned'], includedWithApp: false },
+    ]);
   });
 });

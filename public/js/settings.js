@@ -29,6 +29,7 @@ import {
 } from './layout-width.js';
 import { syncHeaderScrollBaseline } from './header-scroll.js';
 import { syncAppShellLayout } from './app-shell.js';
+import { invalidateDashboardCache } from './dashboard.js';
 import {
   saveComplexStatuses, renderComplexStatusList, renderStatusDropdown,
   updateRestoreBtn, applyFilterState,
@@ -93,6 +94,14 @@ const EARLY_WRAPPED_CONFIRM_STEPS = [
     moving: true,
   },
 ];
+
+function invalidateAlbumDerivedState(options = {}) {
+  const { clearDetails = true } = options;
+  invalidateDashboardCache();
+  if (clearDetails) {
+    state.albumDetailsCache = {};
+  }
+}
 const EARLY_WRAPPED_CHEAT_TOAST_MESSAGE = "Nope. You'll have to click the button the old-fashioned way.";
 const EARLY_WRAPPED_CHEAT_TOAST_MS = 6000;
 const EARLY_WRAPPED_CHEAT_TOAST_FADE_MS = 100;
@@ -2600,6 +2609,7 @@ export async function removeWelcomeSampleAlbums() {
     state.welcomeTour.sampleCount = result.status?.sampleCount ?? 0;
     el.welcomeSamplesRow?.classList.toggle('hidden', !(state.welcomeTour.sampleCount > 0));
     setSettingsStatus(`Removed ${result.removedCount ?? 0} sample album${result.removedCount === 1 ? '' : 's'}.`);
+    invalidateAlbumDerivedState();
     await loadAlbums({ preservePage: true });
   } catch (error) {
     setSettingsStatus(error.message, true);
@@ -2654,6 +2664,12 @@ function formatCsvImportHeading(job) {
   return 'Import complete';
 }
 
+function shouldRefreshAlbumsAfterCsvJob(previousJob, nextJob) {
+  const wasActive = previousJob && ['queued', 'processing'].includes(previousJob.status);
+  const isTerminal = nextJob && ['completed', 'failed', 'canceled'].includes(nextJob.status);
+  return wasActive && isTerminal && Number(nextJob.imported_rows || 0) > 0;
+}
+
 function renderCsvImportJob(job) {
   state.csvImport.job = job;
   const isDismissed = job && isCsvImportJobDismissed(job.id) && !['queued', 'processing'].includes(job.status);
@@ -2694,6 +2710,7 @@ async function fetchCsvImportJobById(jobId) {
 
 export async function refreshCsvImportJob() {
   let job;
+  const previousJob = state.csvImport.job;
 
   try {
     const active = await apiFetch('/api/imports/active');
@@ -2721,6 +2738,11 @@ export async function refreshCsvImportJob() {
     }
   }
   renderCsvImportJob(job);
+
+  if (shouldRefreshAlbumsAfterCsvJob(previousJob, job)) {
+    invalidateAlbumDerivedState();
+    await loadAlbums({ preservePage: true });
+  }
 
   if (job && (job.status === 'queued' || job.status === 'processing')) {
     scheduleCsvImportPoll();
@@ -2787,10 +2809,15 @@ async function cancelCsvImport() {
     const data = await apiFetch(`/api/imports/${job.id}/cancel`, {
       method: 'POST',
     });
+    const previousJob = state.csvImport.job;
     rememberCsvImportJobId(data.job.id);
     renderCsvImportJob(data.job);
     clearCsvImportPoll();
     setSettingsStatus('CSV import canceled. Already imported albums were kept.');
+    if (shouldRefreshAlbumsAfterCsvJob(previousJob, data.job)) {
+      invalidateAlbumDerivedState();
+      await loadAlbums({ preservePage: true });
+    }
   } catch (error) {
     setSettingsStatus(error.message, true);
   } finally {
@@ -3915,6 +3942,7 @@ export async function mergeBackup() {
       if (data.imagesRefetched) imgParts.push(`${data.imagesRefetched} image${data.imagesRefetched!==1?'s':''} re-fetched`);
       const imgMsg = imgParts.length ? `, ${imgParts.join(', ')}` : '';
       setSettingsStatus(`Done — added ${data.added}, skipped ${data.skipped}${imgMsg}.`);
+      invalidateAlbumDerivedState();
       await loadAlbums();
     } catch (e) {
       setSettingsStatus(e.message, true);
@@ -3947,6 +3975,7 @@ export async function restoreBackup() {
         return;
       }
       setSettingsStatus(doneMessage);
+      invalidateAlbumDerivedState();
       await loadAlbums();
     } catch (e) {
       setSettingsStatus(e.message, true);
@@ -3967,6 +3996,9 @@ export async function wipeDatabase() {
   try {
     await apiFetch('/api/albums/wipe', { method: 'DELETE' });
     state.albums = [];
+    state.albumDetailsCache = {};
+    state.albumsLoaded = true;
+    state.albumsLoading = false;
     state.albumListMeta = {
       totalCount: 0,
       filteredCount: 0,
@@ -3979,6 +4011,7 @@ export async function wipeDatabase() {
       pageCount: 0,
       trackedListenedMs: 0,
     };
+    invalidateAlbumDerivedState();
     render();
     setSettingsStatus('Database wiped.');
   } catch (e) {
