@@ -5,6 +5,13 @@ const fs = require('fs');
 const multer = require('multer');
 const { db, IMAGES_DIR } = require('../db');
 const {
+  buildUniqueAlbumImagePath: buildUniqueManagedAlbumImagePath,
+  getAlbumImageFilename,
+  normalizeAlbumImagePath,
+  resolveAlbumImagePath,
+  requireExistingAlbumImagePath: requireExistingManagedAlbumImagePath,
+} = require('../album-image-paths');
+const {
   deriveReleaseYear,
   getReleaseDateFromSpotifyReleaseDate,
   localDateISO,
@@ -82,58 +89,18 @@ function normalizeEtagHeader(value) {
 }
 
 const KNOWN_ALBUM_TYPES = ['ALBUM', 'EP', 'SINGLE', 'COMPILATION'];
-const MANAGED_ALBUM_IMAGE_PREFIX = 'images/';
-const ALBUM_IMAGE_FILENAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]*\.(?:jpe?g|png|webp)$/i;
 const REFETCH_TEMP_IMAGE_FILENAME_RE = /^_temp_\d+_\d+\.jpg$/i;
 
 function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj || {}, key);
 }
 
-function getAlbumImageFilename(imagePath) {
-  return imagePath.slice(MANAGED_ALBUM_IMAGE_PREFIX.length);
-}
-
-function normalizeAlbumImagePath(value) {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value !== 'string') throw new Error('Invalid album image path.');
-
-  const normalized = value.trim().replace(/\\/g, '/');
-  if (!normalized.startsWith(MANAGED_ALBUM_IMAGE_PREFIX)) {
-    throw new Error('Album image paths must stay under images/.');
-  }
-
-  const filename = getAlbumImageFilename(normalized);
-  if (
-    !ALBUM_IMAGE_FILENAME_RE.test(filename) ||
-    filename !== path.basename(filename)
-  ) {
-    throw new Error('Invalid album image filename.');
-  }
-
-  return `${MANAGED_ALBUM_IMAGE_PREFIX}${filename}`;
-}
-
 function resolveAlbumImage(imagePath) {
-  const normalized = normalizeAlbumImagePath(imagePath);
-  if (!normalized) return null;
-
-  const fullPath = path.resolve(IMAGES_DIR, getAlbumImageFilename(normalized));
-  const imagesRoot = path.resolve(IMAGES_DIR);
-  const relativePath = path.relative(imagesRoot, fullPath);
-  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    throw new Error('Album image path escapes the images directory.');
-  }
-
-  return { imagePath: normalized, fullPath };
+  return resolveAlbumImagePath(imagePath, IMAGES_DIR);
 }
 
 function requireExistingAlbumImagePath(imagePath) {
-  const resolved = resolveAlbumImage(imagePath);
-  if (!resolved || !fs.existsSync(resolved.fullPath)) {
-    throw new Error('Album image file does not exist.');
-  }
-  return resolved.imagePath;
+  return requireExistingManagedAlbumImagePath(imagePath, IMAGES_DIR);
 }
 
 function cleanupUnusedAlbumImage(imagePath) {
@@ -163,19 +130,7 @@ function cleanupUnusedAlbumImage(imagePath) {
 }
 
 function buildUniqueAlbumImagePath(prefix, ext = '.jpg') {
-  const safePrefix = String(prefix || 'album').replace(/[^A-Za-z0-9_-]/g, '_') || 'album';
-  const safeExt = ['.jpg', '.jpeg', '.png', '.webp'].includes(String(ext).toLowerCase())
-    ? String(ext).toLowerCase()
-    : '.jpg';
-
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}${attempt ? `_${attempt}` : ''}`;
-    const imagePath = `${MANAGED_ALBUM_IMAGE_PREFIX}${safePrefix}_${suffix}${safeExt}`;
-    const resolved = resolveAlbumImage(imagePath);
-    if (!fs.existsSync(resolved.fullPath)) return resolved;
-  }
-
-  throw new Error('Could not allocate a unique album image filename.');
+  return buildUniqueManagedAlbumImagePath({ imagesDir: IMAGES_DIR, prefix, ext });
 }
 
 function normalizeRefetchTempImagePath(value, albumId = null) {

@@ -1,7 +1,10 @@
-const path = require('path');
 const fs = require('fs');
 
 const { IMAGES_DIR } = require('./db');
+const {
+  buildManagedAlbumImagePath,
+  resolveAlbumImagePath,
+} = require('./album-image-paths');
 
 // Accepts Spotify album URLs and URIs:
 //   https://open.spotify.com/album/2gvrhSDbT29UtKoQSJDqmW?si=xxx
@@ -20,11 +23,11 @@ function extractAlbumId(input) {
 }
 
 async function downloadImage(imageUrl, albumId) {
-  const filename = `${albumId}.jpg`;
-  const filepath = path.join(IMAGES_DIR, filename);
+  const imagePath = buildManagedAlbumImagePath(albumId, '.jpg');
+  const { fullPath: filepath } = resolveAlbumImagePath(imagePath, IMAGES_DIR);
 
   if (fs.existsSync(filepath)) {
-    return `images/${filename}`;
+    return imagePath;
   }
 
   const response = await fetch(imageUrl);
@@ -35,7 +38,7 @@ async function downloadImage(imageUrl, albumId) {
   const buffer = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(filepath, buffer);
 
-  return `images/${filename}`;
+  return imagePath;
 }
 
 module.exports = { extractAlbumId, downloadImage };

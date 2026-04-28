@@ -347,6 +347,146 @@ describe('albums route helpers', () => {
     expect(db.prepare('SELECT image_path FROM albums WHERE id = ?').get(1).image_path).toBe(oldPath);
   });
 
+  it('does not delete outside files when clearing crafted album art rows', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const preferencesPath = path.join(dbModule.DATA_DIR, 'preferences.json');
+    fs.writeFileSync(preferencesPath, 'keep-me');
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, image_path
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Crafted Art Album',
+      JSON.stringify([{ name: 'Careful Artist' }]),
+      'completed',
+      'manual',
+      'images/../preferences.json',
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'post', '/:id/delete-art');
+    const res = createResponse();
+    handler({ params: { id: '1' } }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fs.readFileSync(preferencesPath, 'utf8')).toBe('keep-me');
+    expect(db.prepare('SELECT image_path FROM albums WHERE id = ?').get(1).image_path).toBeNull();
+  });
+
+  it('does not delete outside files when deleting crafted album rows', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const preferencesPath = path.join(dbModule.DATA_DIR, 'preferences.json');
+    fs.writeFileSync(preferencesPath, 'keep-me');
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, image_path
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Crafted Delete Album',
+      JSON.stringify([{ name: 'Careful Artist' }]),
+      'completed',
+      'manual',
+      'images/../preferences.json',
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'delete', '/:id');
+    const res = createResponse();
+    handler({ params: { id: '1' } }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fs.readFileSync(preferencesPath, 'utf8')).toBe('keep-me');
+    expect(db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+  });
+
+  it('does not delete outside files when wiping crafted album rows', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const preferencesPath = path.join(dbModule.DATA_DIR, 'preferences.json');
+    fs.writeFileSync(preferencesPath, 'keep-me');
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, image_path
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Crafted Wipe Album',
+      JSON.stringify([{ name: 'Careful Artist' }]),
+      'completed',
+      'manual',
+      'images/../preferences.json',
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'delete', '/wipe');
+    const res = createResponse();
+    handler({}, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(fs.readFileSync(preferencesPath, 'utf8')).toBe('keep-me');
+    expect(db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+  });
+
+  it('rejects unsafe temp-art discard paths without deleting outside files', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    openDbs.push(dbModule.db);
+
+    const preferencesPath = path.join(dbModule.DATA_DIR, 'preferences.json');
+    fs.writeFileSync(preferencesPath, 'keep-me');
+
+    const handler = getRouteHandler(albumsRouter, 'post', '/discard-temp-art');
+    const res = createResponse();
+    handler({ body: { path: 'images/../preferences.json' } }, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(fs.readFileSync(preferencesPath, 'utf8')).toBe('keep-me');
+  });
+
+  it('does not copy random art from crafted donor image paths', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const preferencesPath = path.join(dbModule.DATA_DIR, 'preferences.json');
+    fs.writeFileSync(preferencesPath, 'keep-me');
+
+    [
+      { id: 1, name: 'Target Album', imagePath: null },
+      { id: 2, name: 'Crafted Donor Album', imagePath: 'images/../preferences.json' },
+    ].forEach(album => {
+      db.prepare(`
+        INSERT INTO albums (
+          id, album_name, artists, status, source, image_path
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        album.id,
+        album.name,
+        JSON.stringify([{ name: 'Careful Artist' }]),
+        'completed',
+        'manual',
+        album.imagePath,
+      );
+    });
+
+    const handler = getRouteHandler(albumsRouter, 'post', '/:id/random-art');
+    const res = createResponse();
+    handler({ params: { id: '1' } }, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(fs.readFileSync(preferencesPath, 'utf8')).toBe('keep-me');
+    expect(db.prepare('SELECT image_path FROM albums WHERE id = ?').get(1).image_path).toBeNull();
+  });
+
   it('searches artist names without matching unrelated artist JSON metadata', () => {
     const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
     const { db } = dbModule;

@@ -210,6 +210,31 @@ describe('welcome tour store', () => {
     expect(fs.existsSync(path.join(dbModule.IMAGES_DIR, 'welcome-placeholder-spotify-album.jpg'))).toBe(false);
   });
 
+  it('does not delete outside files when removing crafted sample rows', () => {
+    const { dbModule, welcomeStore } = loadContext();
+    const preferencesPath = path.join(dbModule.DATA_DIR, 'preferences.json');
+    fs.writeFileSync(preferencesPath, JSON.stringify({ wrappedName: 'keep-me' }));
+
+    dbModule.db.prepare(`
+      INSERT INTO albums (
+        album_name, artists, status, source, welcome_sample_key, image_path
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      'Crafted Welcome Album',
+      JSON.stringify([{ name: 'Careful Artist' }]),
+      'completed',
+      'manual',
+      welcomeStore.SAMPLE_KEYS.MANUAL,
+      'images/../preferences.json',
+    );
+
+    const result = welcomeStore.removeWelcomeSamples();
+
+    expect(result.removedCount).toBe(1);
+    expect(JSON.parse(fs.readFileSync(preferencesPath, 'utf8')).wrappedName).toBe('keep-me');
+    expect(dbModule.db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+  });
+
   it('blocks mutations while a tour lock is active and lets the lock expire', () => {
     const { welcomeStore } = loadContext();
     welcomeStore.upsertWelcomeTourLock('session-1');

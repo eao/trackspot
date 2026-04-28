@@ -9,6 +9,7 @@ const {
   getReleaseDateFromSpotifyReleaseDate,
   parseJsonField,
 } = require('./album-helpers');
+const { normalizeAlbumImagePath } = require('./album-image-paths');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const IMAGES_DIR = path.join(DATA_DIR, 'images');
@@ -761,6 +762,47 @@ function backfillAlbumReleaseDates(connection) {
   return runBackfill(rowsNeedingBackfill);
 }
 
+function sanitizeStoredAlbumImagePaths(connection) {
+  if (!tableExists(connection, 'albums')) return 0;
+  const columns = new Set(tableInfo(connection, 'albums').map(column => column.name));
+  if (!columns.has('image_path')) return 0;
+
+  const rows = connection.prepare(`
+    SELECT id, image_path
+    FROM albums
+    WHERE image_path IS NOT NULL
+  `).all();
+  if (!rows.length) return 0;
+
+  const update = connection.prepare('UPDATE albums SET image_path = ? WHERE id = ?');
+  let sanitizedCount = 0;
+  const run = connection.transaction(items => {
+    for (const row of items) {
+      let nextImagePath = null;
+      let shouldUpdate = false;
+
+      try {
+        nextImagePath = normalizeAlbumImagePath(row.image_path);
+        shouldUpdate = nextImagePath !== row.image_path;
+      } catch {
+        nextImagePath = null;
+        shouldUpdate = true;
+      }
+
+      if (!shouldUpdate) continue;
+      update.run(nextImagePath, row.id);
+      sanitizedCount++;
+    }
+  });
+  run(rows);
+
+  if (sanitizedCount > 0) {
+    console.warn(`Cleared ${sanitizedCount} invalid album image path${sanitizedCount === 1 ? '' : 's'}.`);
+  }
+
+  return sanitizedCount;
+}
+
 function ensureAppSchema(connection) {
   ensureCurrentTableSchemas(connection);
 
@@ -790,6 +832,7 @@ function ensureAppSchema(connection) {
   backfillSpotifyReleaseDates(connection);
   backfillAlbumReleaseDates(connection);
   backfillSpotifyFirstTracks(connection);
+  sanitizeStoredAlbumImagePaths(connection);
 }
 
 function getDb() {

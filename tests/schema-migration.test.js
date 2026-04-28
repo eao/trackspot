@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 const BetterSqlite = require('better-sqlite3');
 const serverModulePaths = [
   '../server/import-jobs.js',
+  '../server/album-image-paths.js',
   '../server/album-helpers.js',
   '../server/spotify-helpers.js',
   '../server/db.js',
@@ -463,6 +464,54 @@ describe('legacy schema migration', () => {
       lease_expires_at: '2026-04-15 00:00:00',
       raw_row_json: JSON.stringify(['https://open.spotify.com/album/ABCDEFGHIJKLMNOPQRST']),
     });
+  });
+
+  it('clears invalid stored album image paths during startup', () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackspot-image-path-startup-test-'));
+    tempDirs.push(dataDir);
+    process.env.DATA_DIR = dataDir;
+
+    const legacyDb = new BetterSqlite(path.join(dataDir, 'albums.db'));
+    openDbs.push(legacyDb);
+    legacyDb.exec(`
+      CREATE TABLE albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        album_name TEXT NOT NULL,
+        artists TEXT NOT NULL,
+        image_path TEXT
+      );
+    `);
+    legacyDb.prepare(`
+      INSERT INTO albums (album_name, artists, image_path)
+      VALUES (?, ?, ?), (?, ?, ?)
+    `).run(
+      'Safe Art Album',
+      JSON.stringify([{ name: 'Careful Artist' }]),
+      'images/safe-art.jpg',
+      'Unsafe Art Album',
+      JSON.stringify([{ name: 'Careful Artist' }]),
+      'images/../preferences.json',
+    );
+    resetServerModules();
+
+    const { db } = require('../server/db.js');
+    openDbs.push(db);
+    const rows = db.prepare(`
+      SELECT album_name, image_path
+      FROM albums
+      ORDER BY id ASC
+    `).all();
+
+    expect(rows).toEqual([
+      {
+        album_name: 'Safe Art Album',
+        image_path: 'images/safe-art.jpg',
+      },
+      {
+        album_name: 'Unsafe Art Album',
+        image_path: null,
+      },
+    ]);
   });
 
   it('restores timestamp defaults and constraints on migrated tables', () => {

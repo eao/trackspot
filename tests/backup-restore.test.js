@@ -782,6 +782,115 @@ describe('backup and restore', () => {
     fs.rmSync(outsidePath, { force: true });
   }, 15000);
 
+  it('sanitizes unsafe album image paths when merging backups', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), 'keep-me');
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      101,
+      'Unsafe Merge Album',
+      JSON.stringify([{ name: 'Careful Artist' }]),
+      'completed',
+      'images/../preferences.json',
+      'manual',
+      '2026-04-01 12:00:00',
+      '2026-04-01 12:00:00',
+    );
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+    db.prepare('DELETE FROM albums').run();
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare('SELECT album_name, image_path FROM albums').get();
+
+    expect(result).toMatchObject({
+      added: 1,
+      sanitizedImagePaths: 1,
+    });
+    expect(restored).toEqual({
+      album_name: 'Unsafe Merge Album',
+      image_path: null,
+    });
+    expect(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).toBe('keep-me');
+  });
+
+  it('sanitizes unsafe album image paths before replacing the database on restore', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), 'keep-me');
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      101,
+      'Unsafe Restore Album',
+      JSON.stringify([{ name: 'Careful Artist' }]),
+      'completed',
+      'images/../preferences.json',
+      'manual',
+      '2026-04-01 12:00:00',
+      '2026-04-01 12:00:00',
+    );
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+
+    db.prepare('DELETE FROM albums').run();
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      202,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'completed',
+      null,
+      'manual',
+      '2026-04-02 12:00:00',
+      '2026-04-02 12:00:00',
+    );
+
+    const result = await backupRouter.__private.restoreFromZip(zip);
+    const restored = db.prepare('SELECT id, album_name, image_path FROM albums').get();
+
+    expect(result).toMatchObject({
+      added: 1,
+      sanitizedImagePaths: 1,
+    });
+    expect(restored).toEqual({
+      id: 101,
+      album_name: 'Unsafe Restore Album',
+      image_path: null,
+    });
+    expect(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).toBe('keep-me');
+  }, 15000);
+
+  it('skips unsafe stored image paths when selecting essential backup images', () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    writeFileEnsured(path.join(dataDir, 'images', 'manual.jpg'), 'image');
+
+    expect(backupRouter.__private.resolveBackupAlbumImageForArchive('images/../preferences.json')).toBeNull();
+    expect(backupRouter.__private.resolveBackupAlbumImageForArchive('images/manual.jpg')).toMatchObject({
+      imagePath: 'images/manual.jpg',
+      fullPath: path.join(dataDir, 'images', 'manual.jpg'),
+    });
+  });
+
   it('creates album_link and artist_link columns on a fresh database', () => {
     const { dbModule } = loadBackupTestContext();
     openDbs.push(dbModule.db);

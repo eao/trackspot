@@ -6,6 +6,11 @@ const archiver = require('archiver');
 const AdmZip   = require('adm-zip');
 const multer   = require('multer');
 const { db, IMAGES_DIR, replaceDatabaseFile } = require('../db');
+const {
+  buildManagedAlbumImagePath,
+  normalizeAlbumImagePath,
+  resolveAlbumImagePath,
+} = require('../album-image-paths');
 const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
 const DATA_DIR = path.join(IMAGES_DIR, '..');
@@ -418,11 +423,11 @@ function commitImagesFromStaging(stagingImagesDir, rollback = createImageRollbac
 }
 
 async function downloadImageToDir(imageUrl, albumId, targetImagesDir) {
-  const filename = `${albumId}.jpg`;
-  const filepath = path.join(targetImagesDir, filename);
+  const imagePath = buildManagedAlbumImagePath(albumId, '.jpg');
+  const { fullPath: filepath } = resolveAlbumImagePath(imagePath, targetImagesDir);
 
   if (fs.existsSync(filepath)) {
-    return `images/${filename}`;
+    return imagePath;
   }
 
   const response = await fetch(imageUrl);
@@ -434,7 +439,7 @@ async function downloadImageToDir(imageUrl, albumId, targetImagesDir) {
   fs.mkdirSync(targetImagesDir, { recursive: true });
   fs.writeFileSync(filepath, buffer);
 
-  return `images/${filename}`;
+  return imagePath;
 }
 
 const RESTORE_PHASES = [
@@ -626,6 +631,11 @@ function getAlbumTableColumns(connection) {
   return connection.prepare('PRAGMA table_info(albums)').all().map(column => column.name);
 }
 
+function tableHasColumn(connection, tableName, columnName) {
+  return connection.prepare(`PRAGMA table_info(${tableName})`).all()
+    .some(column => column.name === columnName);
+}
+
 function getBackupAlbumValue(columnName, row) {
   if (columnName === 'artists') return row.artists || '[]';
   if (columnName === 'genres') return row.genres || '[]';
@@ -635,6 +645,46 @@ function getBackupAlbumValue(columnName, row) {
   if (columnName === 'priority') return row.priority ?? 0;
   if (columnName === 'source') return row.source ?? 'manual';
   return row[columnName] ?? null;
+}
+
+function sanitizeBackupAlbumImagePathValue(value) {
+  if (value === null || value === undefined) {
+    return { imagePath: null, sanitized: false };
+  }
+
+  try {
+    const imagePath = normalizeAlbumImagePath(value);
+    return {
+      imagePath,
+      sanitized: imagePath !== value,
+    };
+  } catch {
+    return { imagePath: null, sanitized: true };
+  }
+}
+
+function sanitizeBackupAlbumImagePaths(connection) {
+  if (!tableHasColumn(connection, 'albums', 'image_path')) return 0;
+
+  const rows = connection.prepare(`
+    SELECT rowid AS rowid, image_path
+    FROM albums
+    WHERE image_path IS NOT NULL
+  `).all();
+  const update = connection.prepare('UPDATE albums SET image_path = ? WHERE rowid = ?');
+  let sanitizedImagePaths = 0;
+
+  const run = connection.transaction(items => {
+    for (const row of items) {
+      const sanitized = sanitizeBackupAlbumImagePathValue(row.image_path);
+      if (!sanitized.sanitized) continue;
+      update.run(sanitized.imagePath, row.rowid);
+      sanitizedImagePaths++;
+    }
+  });
+  run(rows);
+
+  return sanitizedImagePaths;
 }
 
 function buildAlbumInsertStatement(srcDb) {
@@ -663,8 +713,12 @@ async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
   const zipImageEntries = new Map();
   for (const entry of zip.getEntries()) {
     const normalized = normalizeZipEntryName(entry.entryName);
-    if (normalized.startsWith('images/') && !entry.isDirectory) {
-      zipImageEntries.set(normalized, entry);
+    if (entry.isDirectory) continue;
+    try {
+      const imagePath = normalizeAlbumImagePath(normalized);
+      if (imagePath) zipImageEntries.set(imagePath, entry);
+    } catch {
+      // Non-album-image entries are handled elsewhere in the backup.
     }
   }
 
@@ -675,10 +729,15 @@ async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
 
   for (const row of rows) {
     if (row.image_path) {
-      const entryKey = row.image_path.replace(/\\/g, '/');
+      let entryKey = null;
+      try {
+        entryKey = normalizeAlbumImagePath(row.image_path);
+      } catch {
+        entryKey = null;
+      }
       const entry = zipImageEntries.get(entryKey);
       if (entry) {
-        const destPath = path.join(targetImagesDir, path.basename(entryKey));
+        const destPath = resolveAlbumImagePath(entryKey, targetImagesDir).fullPath;
         if (isRestore || !fs.existsSync(destPath)) {
           fs.writeFileSync(destPath, entry.getData());
           imagesCopied++;
@@ -690,7 +749,8 @@ async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
     if (!row.spotify_album_id) continue;
     const imageUrl = row.image_url_large || row.image_url_medium || row.image_url_small;
     if (!imageUrl) continue;
-    const destPath = path.join(targetImagesDir, `${row.spotify_album_id}.jpg`);
+    const refetchedImagePath = buildManagedAlbumImagePath(row.spotify_album_id, '.jpg');
+    const destPath = resolveAlbumImagePath(refetchedImagePath, targetImagesDir).fullPath;
     if (!isRestore && fs.existsSync(destPath)) continue;
 
     try {
@@ -702,6 +762,14 @@ async function restoreAlbumImages(rows, zip, isRestore, options = {}) {
   }
 
   return { imagesCopied, imagesRefetched };
+}
+
+function resolveBackupAlbumImageForArchive(imagePath) {
+  try {
+    return resolveAlbumImagePath(imagePath, IMAGES_DIR);
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -755,9 +823,9 @@ router.get('/download-essential', async (_req, res) => {
     archive.file(tmpPath, { name: 'albums.db' });
     for (const row of manualRows) {
       if (!row.image_path) continue;
-      const imgFile = path.join(DATA_DIR, row.image_path);
-      if (fs.existsSync(imgFile)) {
-        archive.file(imgFile, { name: row.image_path });
+      const image = resolveBackupAlbumImageForArchive(row.image_path);
+      if (image && fs.existsSync(image.fullPath)) {
+        archive.file(image.fullPath, { name: image.imagePath });
       }
     }
     await archive.finalize();
@@ -857,9 +925,10 @@ async function importFromZip(zip, isRestore) {
   fs.writeFileSync(tmpPath, dbEntry.getData());
 
   const BetterSqlite = require('better-sqlite3');
-  const srcDb = new BetterSqlite(tmpPath, { readonly: true });
+  const srcDb = new BetterSqlite(tmpPath);
 
   let added = 0, skipped = 0, imagesCopied = 0, imagesRefetched = 0;
+  let sanitizedImagePaths = 0;
 
   try {
     const tableCheck = srcDb.prepare(
@@ -867,6 +936,7 @@ async function importFromZip(zip, isRestore) {
     ).get();
     if (!tableCheck) throw new Error('Backup database does not contain an albums table.');
 
+    sanitizedImagePaths = sanitizeBackupAlbumImagePaths(srcDb);
     const backupAlbums = srcDb.prepare('SELECT * FROM albums').all();
     const { insertColumns, statement: insertStmt } = buildAlbumInsertStatement(srcDb);
 
@@ -897,7 +967,7 @@ async function importFromZip(zip, isRestore) {
     if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
   }
 
-  return { added, skipped, imagesCopied, imagesRefetched };
+  return { added, skipped, imagesCopied, imagesRefetched, sanitizedImagePaths };
 }
 
 async function restoreFromZip(zip) {
@@ -913,6 +983,7 @@ async function restoreFromZip(zip) {
   let backupDb = null;
   let restoreSucceeded = false;
   let journal = null;
+  let sanitizedImagePaths = 0;
   const manifest = readBackupManifest(zip);
   const shouldRestoreAppState = manifest?.includesAppState === true;
 
@@ -921,12 +992,13 @@ async function restoreFromZip(zip) {
     validateZipEntryNames(zip);
     fs.writeFileSync(tmpPath, dbEntry.getData());
     const BetterSqlite = require('better-sqlite3');
-    backupDb = new BetterSqlite(tmpPath, { readonly: true });
+    backupDb = new BetterSqlite(tmpPath);
     const tableCheck = backupDb.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='albums'"
     ).get();
     if (!tableCheck) throw new Error('Backup database does not contain an albums table.');
 
+    sanitizedImagePaths = sanitizeBackupAlbumImagePaths(backupDb);
     const restoredAlbums = backupDb.prepare('SELECT * FROM albums ORDER BY created_at ASC').all();
     stagingImagesDir = createRestoreTempDir('_restore_images_');
     const { imagesCopied, imagesRefetched } = await restoreAlbumImages(
@@ -942,6 +1014,9 @@ async function restoreFromZip(zip) {
       appStateFilesRestored = stageAppStateFromZip(zip, stagingAppStateDir);
       appStateRollbackDir = createAppStateRollback();
     }
+
+    backupDb.close();
+    backupDb = null;
 
     await db.backup(rollbackDbPath);
     imageRollback = createImageRollback();
@@ -987,6 +1062,7 @@ async function restoreFromZip(zip) {
       skipped: 0,
       imagesCopied,
       imagesRefetched,
+      sanitizedImagePaths,
       appStateRestored: shouldRestoreAppState,
       appStateFilesRestored,
     };
@@ -1030,9 +1106,12 @@ router.__private = {
   readBackupManifest,
   readRestoreJournal,
   recoverInterruptedRestore,
+  resolveBackupAlbumImageForArchive,
   restoreAppStateFromZip,
   stageAppStateFromZip,
   restoreFromZip,
+  sanitizeBackupAlbumImagePathValue,
+  sanitizeBackupAlbumImagePaths,
   writeRestoreJournal,
 };
 

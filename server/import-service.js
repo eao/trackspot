@@ -1,6 +1,9 @@
 const fs = require('fs');
-const path = require('path');
 const { db, IMAGES_DIR } = require('./db');
+const {
+  buildManagedAlbumImagePath,
+  resolveAlbumImagePath,
+} = require('./album-image-paths');
 const {
   deriveReleaseYear,
   getReleaseDateFromSpotifyReleaseDate,
@@ -57,12 +60,12 @@ function assertSpotifyAlbumNotImported(spotifyId) {
 }
 
 function getImageFullPath(imagePath) {
-  return path.join(IMAGES_DIR, '..', imagePath);
+  return resolveAlbumImagePath(imagePath, IMAGES_DIR).fullPath;
 }
 
 async function downloadImportImage(imageUrl, albumId) {
-  const finalImagePath = `images/${albumId}.jpg`;
-  const finalFullPath = path.join(IMAGES_DIR, `${albumId}.jpg`);
+  const finalImagePath = buildManagedAlbumImagePath(albumId, '.jpg');
+  const finalFullPath = getImageFullPath(finalImagePath);
   if (fs.existsSync(finalFullPath)) {
     return { imagePath: finalImagePath, createdImagePath: null };
   }
@@ -72,9 +75,11 @@ async function downloadImportImage(imageUrl, albumId) {
     throw new Error(`Failed to download album art: ${response.status}`);
   }
 
-  const tempFilename = `${albumId}.import-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
-  const tempImagePath = `images/${tempFilename}`;
-  const tempFullPath = path.join(IMAGES_DIR, tempFilename);
+  const tempImagePath = buildManagedAlbumImagePath(
+    `${albumId}.import-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    '.jpg',
+  );
+  const tempFullPath = getImageFullPath(tempImagePath);
   const buffer = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(tempFullPath, buffer);
 

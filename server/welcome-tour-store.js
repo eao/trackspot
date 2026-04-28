@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { db, IMAGES_DIR } = require('./db');
+const { resolveAlbumImagePath } = require('./album-image-paths');
 const { parseAlbum } = require('./album-helpers');
 const { getPreferences, updatePreferences } = require('./preferences-store');
 
@@ -128,7 +129,8 @@ function markWelcomeTourComplete({ skipped = false } = {}) {
 
 function copySampleArt(assetName, destinationName) {
   const src = path.join(SAMPLE_ASSET_DIR, assetName);
-  const dest = path.join(IMAGES_DIR, destinationName);
+  const imagePath = `images/${destinationName}`;
+  const dest = resolveAlbumImagePath(imagePath, IMAGES_DIR).fullPath;
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
   if (!fs.existsSync(src)) {
     throw new Error(`Missing welcome sample art asset: ${assetName}`);
@@ -136,7 +138,32 @@ function copySampleArt(assetName, destinationName) {
   if (!fs.existsSync(dest)) {
     fs.copyFileSync(src, dest);
   }
-  return `images/${destinationName}`;
+  return imagePath;
+}
+
+function cleanupWelcomeSampleImage(imagePath) {
+  let resolved;
+  try {
+    resolved = resolveAlbumImagePath(imagePath, IMAGES_DIR);
+  } catch {
+    return false;
+  }
+  if (!resolved) return false;
+
+  const inUse = db.prepare(`
+    SELECT 1
+    FROM albums
+    WHERE image_path = ?
+    LIMIT 1
+  `).get(resolved.imagePath);
+  if (inUse) return false;
+
+  try {
+    if (fs.existsSync(resolved.fullPath)) fs.unlinkSync(resolved.fullPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildWelcomeSamples() {
@@ -253,12 +280,7 @@ function removeWelcomeSamples() {
     WHERE welcome_sample_key IN (?, ?)
   `).run(SAMPLE_KEYS.SPOTIFY, SAMPLE_KEYS.MANUAL);
 
-  imagePaths.forEach(imagePath => {
-    const fullPath = path.join(IMAGES_DIR, '..', imagePath);
-    try {
-      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-    } catch (_) {}
-  });
+  imagePaths.forEach(cleanupWelcomeSampleImage);
 
   return {
     removedCount: rows.length,
