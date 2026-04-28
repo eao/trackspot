@@ -474,7 +474,6 @@ function copyExpression(tableName, legacyTableName, columnName, existingColumnNa
   if (!existingColumnNames.has(columnName)) return fallback;
 
   if (columnName === 'spotify_album_id' && tableName === 'albums') {
-    if (!existingColumnNames.has('id')) return `NULLIF(${legacyColumn}, '')`;
     return `
       CASE
         WHEN ${legacyColumn} IS NULL OR ${legacyColumn} = '' THEN NULL
@@ -535,16 +534,14 @@ function copyWhereClause(tableName, legacyTableName, existingColumnNames) {
     )
   `];
 
-  if (existingColumnNames.has('id')) {
-    clauses.push(`
-      legacy.rowid = (
-        SELECT MIN(dedupe.rowid)
-        FROM ${quoteIdentifier(legacyTableName)} AS dedupe
-        WHERE dedupe.${quoteIdentifier('job_id')} = legacy.${quoteIdentifier('job_id')}
-          AND dedupe.${quoteIdentifier('row_index')} = legacy.${quoteIdentifier('row_index')}
-      )
-    `);
-  }
+  clauses.push(`
+    legacy.rowid = (
+      SELECT MIN(dedupe.rowid)
+      FROM ${quoteIdentifier(legacyTableName)} AS dedupe
+      WHERE dedupe.${quoteIdentifier('job_id')} = legacy.${quoteIdentifier('job_id')}
+        AND dedupe.${quoteIdentifier('row_index')} = legacy.${quoteIdentifier('row_index')}
+    )
+  `);
 
   return `WHERE ${clauses.join(' AND ')}`;
 }

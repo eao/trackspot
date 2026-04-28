@@ -259,6 +259,63 @@ function createConstraintDriftDatabase() {
   `).run(42, 1, 'https://open.spotify.com/album/NULLIDIMPORTROW', 'queued');
 }
 
+function createNoIdDuplicateKeyDatabase() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackspot-schema-no-id-dedupe-test-'));
+  tempDirs.push(dataDir);
+  process.env.DATA_DIR = dataDir;
+
+  const dbPath = path.join(dataDir, 'albums.db');
+  const driftedDb = new BetterSqlite(dbPath);
+  openDbs.push(driftedDb);
+
+  driftedDb.exec(`
+    CREATE TABLE albums (
+      spotify_album_id TEXT,
+      album_name TEXT,
+      artists TEXT,
+      status TEXT DEFAULT 'completed',
+      source TEXT DEFAULT 'manual'
+    );
+
+    CREATE TABLE import_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      default_status TEXT NOT NULL
+    );
+
+    CREATE TABLE import_job_rows (
+      job_id INTEGER NOT NULL,
+      row_index INTEGER NOT NULL,
+      spotify_url TEXT,
+      status TEXT NOT NULL DEFAULT 'queued'
+    );
+  `);
+
+  driftedDb.prepare(`
+    INSERT INTO albums (spotify_album_id, album_name, artists)
+    VALUES (?, ?, ?)
+  `).run('duplicate-album-id', 'First Duplicate Album', '[]');
+
+  driftedDb.prepare(`
+    INSERT INTO albums (spotify_album_id, album_name, artists)
+    VALUES (?, ?, ?)
+  `).run('duplicate-album-id', 'Second Duplicate Album', '[]');
+
+  driftedDb.prepare(`
+    INSERT INTO import_jobs (id, default_status)
+    VALUES (?, ?)
+  `).run(1, 'completed');
+
+  driftedDb.prepare(`
+    INSERT INTO import_job_rows (job_id, row_index, spotify_url, status)
+    VALUES (?, ?, ?, ?)
+  `).run(1, 1, 'https://open.spotify.com/album/FIRSTDUPLICATEROW', 'queued');
+
+  driftedDb.prepare(`
+    INSERT INTO import_job_rows (job_id, row_index, spotify_url, status)
+    VALUES (?, ?, ?, ?)
+  `).run(1, 1, 'https://open.spotify.com/album/SECONDDUPLICATEROW', 'queued');
+}
+
 function tableColumns(db, tableName) {
   return db.prepare(`PRAGMA table_info(${tableName})`).all().map(column => column.name);
 }
@@ -567,5 +624,62 @@ describe('legacy schema migration', () => {
       VALUES (?, ?)
     `).run('Next Album', '[]');
     expect(insertedAlbum.lastInsertRowid).toBe(9);
+  });
+
+  it('deduplicates constraint keys when drifted tables have no id column', () => {
+    createNoIdDuplicateKeyDatabase();
+    resetServerModules();
+
+    const dbModule = require('../server/db.js');
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const migratedAlbums = db.prepare(`
+      SELECT id, spotify_album_id, album_name
+      FROM albums
+      ORDER BY id
+    `).all();
+    expect(migratedAlbums).toEqual([
+      {
+        id: 1,
+        spotify_album_id: 'duplicate-album-id',
+        album_name: 'First Duplicate Album',
+      },
+      {
+        id: 2,
+        spotify_album_id: null,
+        album_name: 'Second Duplicate Album',
+      },
+    ]);
+
+    const duplicateAlbumCount = db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM albums
+      WHERE spotify_album_id = ?
+    `).get('duplicate-album-id').count;
+    expect(duplicateAlbumCount).toBe(1);
+
+    expect(db.prepare(`
+      SELECT id, job_id, row_index, spotify_url, status
+      FROM import_job_rows
+    `).all()).toEqual([
+      {
+        id: 1,
+        job_id: 1,
+        row_index: 1,
+        spotify_url: 'https://open.spotify.com/album/FIRSTDUPLICATEROW',
+        status: 'queued',
+      },
+    ]);
+
+    expect(() => db.prepare(`
+      INSERT INTO albums (album_name, artists, spotify_album_id)
+      VALUES (?, ?, ?)
+    `).run('Still Unique', '[]', 'duplicate-album-id')).toThrow(/UNIQUE/i);
+
+    expect(() => db.prepare(`
+      INSERT INTO import_job_rows (job_id, row_index)
+      VALUES (?, ?)
+    `).run(1, 1)).toThrow(/UNIQUE/i);
   });
 });
