@@ -352,6 +352,81 @@ describe('backup and restore', () => {
     expect(fs.existsSync(path.join(dataDir, 'images', 'backup-art.jpg'))).toBe(false);
   }, 15000);
 
+  it('recovers an interrupted restore journal on startup after the DB swap', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+
+    writeFileEnsured(path.join(dataDir, 'images', 'current-art.jpg'), Buffer.from('current-image'));
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, image_path, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      7,
+      'Current Album',
+      JSON.stringify([{ name: 'Current Artist' }]),
+      'planned',
+      'images/current-art.jpg',
+      'manual',
+      '2026-04-02 00:00:00',
+      '2026-04-02 00:00:00',
+    );
+
+    const rollbackDbPath = path.join(dataDir, '_restore_rollback_test.db');
+    await db.backup(rollbackDbPath);
+
+    db.prepare('DELETE FROM albums').run();
+    db.prepare(`
+      INSERT INTO albums (id, album_name, artists, status, image_path, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      42,
+      'Backup Album',
+      JSON.stringify([{ name: 'Backup Artist' }]),
+      'completed',
+      'images/backup-art.jpg',
+      'manual',
+      '2026-04-01 00:00:00',
+      '2026-04-01 00:00:00',
+    );
+
+    const stagingImagesDir = fs.mkdtempSync(path.join(dataDir, '_restore_images_'));
+    writeFileEnsured(path.join(stagingImagesDir, 'backup-art.jpg'), Buffer.from('backup-image'));
+    fs.writeFileSync(
+      path.join(dataDir, backupRouter.__private.RESTORE_JOURNAL_NAME),
+      `${JSON.stringify({
+        operation: 'restore',
+        phase: 'db-swapped',
+        tmpPath: path.join(dataDir, '_restore_tmp_test.db'),
+        rollbackDbPath,
+        stagingImagesDir,
+        stagingAppStateDir: null,
+        imageRollback: {
+          path: path.join(dataDir, '_restore_images_rollback_test'),
+          hadImagesDir: true,
+        },
+        appStateRollbackDir: null,
+      }, null, 2)}\n`,
+    );
+
+    db.close();
+    resetServerModules();
+
+    const recoveredDbModule = require('../server/db.js');
+    require('../server/routes/backup.js');
+    openDbs.push(recoveredDbModule.db);
+
+    const currentAlbum = recoveredDbModule.db.prepare('SELECT id, album_name, image_path FROM albums').get();
+    expect(currentAlbum).toEqual({
+      id: 7,
+      album_name: 'Current Album',
+      image_path: 'images/current-art.jpg',
+    });
+    expect(fs.readFileSync(path.join(dataDir, 'images', 'current-art.jpg')).toString()).toBe('current-image');
+    expect(fs.existsSync(path.join(dataDir, 'images', 'backup-art.jpg'))).toBe(false);
+    expect(fs.existsSync(stagingImagesDir)).toBe(false);
+    expect(fs.existsSync(path.join(dataDir, backupRouter.__private.RESTORE_JOURNAL_NAME))).toBe(false);
+  }, 15000);
+
   it('restores app-state files from new full backups', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;

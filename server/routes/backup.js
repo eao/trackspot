@@ -11,6 +11,8 @@ const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 const DATA_DIR = path.join(IMAGES_DIR, '..');
 const BACKUP_MANIFEST_NAME = 'trackspot-backup.json';
 const BACKUP_MANIFEST_VERSION = 1;
+const RESTORE_JOURNAL_NAME = '_restore_journal.json';
+const RESTORE_JOURNAL_PATH = path.join(DATA_DIR, RESTORE_JOURNAL_NAME);
 const APP_STATE_BACKUP_ITEMS = [
   { zipPath: 'preferences.json', type: 'file' },
   { zipPath: 'opacity-presets', type: 'directory' },
@@ -109,6 +111,35 @@ async function snapshotDb(tmpPath) {
 function createRestoreTempDir(prefix) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   return fs.mkdtempSync(path.join(DATA_DIR, prefix));
+}
+
+function createRestoreTempPath(prefix) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  return path.join(DATA_DIR, `${prefix}${unique}`);
+}
+
+function writeRestoreJournal(journal) {
+  fs.writeFileSync(
+    RESTORE_JOURNAL_PATH,
+    `${JSON.stringify({ ...journal, updatedAt: new Date().toISOString() }, null, 2)}\n`,
+  );
+}
+
+function readRestoreJournal() {
+  if (!fs.existsSync(RESTORE_JOURNAL_PATH)) return null;
+  try {
+    const journal = JSON.parse(fs.readFileSync(RESTORE_JOURNAL_PATH, 'utf8'));
+    if (!journal || journal.operation !== 'restore') return null;
+    return journal;
+  } catch (error) {
+    console.error('Could not read restore journal:', error);
+    return null;
+  }
+}
+
+function removeRestoreJournal() {
+  fs.rmSync(RESTORE_JOURNAL_PATH, { force: true });
 }
 
 function buildBackupManifest(kind, includesAppState) {
@@ -269,24 +300,26 @@ function stageAppStateFromZip(zip, stagingDir) {
   return filesRestored;
 }
 
-function commitAppStateFromStaging(stagingDir) {
+function createAppStateRollback() {
   const rollbackDir = createRestoreTempDir('_restore_app_state_rollback_');
-  try {
-    copyAppStateItems(DATA_DIR, rollbackDir);
+  copyAppStateItems(DATA_DIR, rollbackDir);
+  return rollbackDir;
+}
 
+function commitAppStateFromStaging(stagingDir, rollbackDir = null) {
+  const ownedRollbackDir = rollbackDir || createAppStateRollback();
+  try {
+    clearAppStateBackupTargets();
+    copyAppStateItems(stagingDir, DATA_DIR, { createMissingDirectories: true });
+  } catch (error) {
     try {
-      clearAppStateBackupTargets();
-      copyAppStateItems(stagingDir, DATA_DIR, { createMissingDirectories: true });
-    } catch (error) {
-      try {
-        restoreAppStateRollback(rollbackDir);
-      } catch (rollbackError) {
-        console.error('App-state restore rollback failed:', rollbackError);
-      }
-      throw error;
+      restoreAppStateRollback(ownedRollbackDir);
+    } catch (rollbackError) {
+      console.error('App-state restore rollback failed:', rollbackError);
     }
+    throw error;
   } finally {
-    fs.rmSync(rollbackDir, { recursive: true, force: true });
+    if (!rollbackDir) fs.rmSync(ownedRollbackDir, { recursive: true, force: true });
   }
 }
 
@@ -301,28 +334,38 @@ function restoreAppStateFromZip(zip) {
   }
 }
 
-function moveImagesDirToRollback() {
-  const rollbackDir = createRestoreTempDir('_restore_images_rollback_');
-  fs.rmSync(rollbackDir, { recursive: true, force: true });
+function createImageRollback() {
+  return {
+    path: createRestoreTempPath('_restore_images_rollback_'),
+    hadImagesDir: fs.existsSync(IMAGES_DIR),
+  };
+}
+
+function moveImagesDirToRollback(rollback = createImageRollback()) {
+  fs.rmSync(rollback.path, { recursive: true, force: true });
   if (fs.existsSync(IMAGES_DIR)) {
-    fs.renameSync(IMAGES_DIR, rollbackDir);
-    return { path: rollbackDir, hadImagesDir: true };
+    fs.renameSync(IMAGES_DIR, rollback.path);
   }
-  return { path: rollbackDir, hadImagesDir: false };
+  return rollback;
 }
 
 function restoreImagesRollback(rollback) {
-  fs.rmSync(IMAGES_DIR, { recursive: true, force: true });
-  if (rollback?.hadImagesDir && fs.existsSync(rollback.path)) {
-    fs.renameSync(rollback.path, IMAGES_DIR);
+  if (rollback?.hadImagesDir) {
+    if (fs.existsSync(rollback.path)) {
+      fs.rmSync(IMAGES_DIR, { recursive: true, force: true });
+      fs.renameSync(rollback.path, IMAGES_DIR);
+    } else if (!fs.existsSync(IMAGES_DIR)) {
+      fs.mkdirSync(IMAGES_DIR, { recursive: true });
+    }
   } else {
+    fs.rmSync(IMAGES_DIR, { recursive: true, force: true });
     fs.mkdirSync(IMAGES_DIR, { recursive: true });
   }
 }
 
-function commitImagesFromStaging(stagingImagesDir) {
-  const rollback = moveImagesDirToRollback();
+function commitImagesFromStaging(stagingImagesDir, rollback = createImageRollback()) {
   try {
+    rollback = moveImagesDirToRollback(rollback);
     fs.renameSync(stagingImagesDir, IMAGES_DIR);
     return rollback;
   } catch (error) {
@@ -353,6 +396,103 @@ async function downloadImageToDir(imageUrl, albumId, targetImagesDir) {
   fs.writeFileSync(filepath, buffer);
 
   return `images/${filename}`;
+}
+
+const RESTORE_PHASES = [
+  'prepared',
+  'db-swapping',
+  'db-swapped',
+  'images-swapping',
+  'images-swapped',
+  'app-state-swapping',
+  'app-state-swapped',
+  'committed',
+];
+
+function restorePhaseIndex(phase) {
+  const index = RESTORE_PHASES.indexOf(phase);
+  return index === -1 ? 0 : index;
+}
+
+function restorePhaseReached(journal, phase) {
+  return restorePhaseIndex(journal?.phase) >= restorePhaseIndex(phase);
+}
+
+function resolveRestoreArtifact(artifactPath) {
+  if (!artifactPath) return null;
+  const resolved = path.resolve(artifactPath);
+  const resolvedDataDir = path.resolve(DATA_DIR);
+  if (resolved !== resolvedDataDir && !resolved.startsWith(`${resolvedDataDir}${path.sep}`)) {
+    return null;
+  }
+  if (!path.basename(resolved).startsWith('_restore_')) return null;
+  return resolved;
+}
+
+function cleanupRestoreArtifacts(journal) {
+  const artifactPaths = [
+    journal?.tmpPath,
+    journal?.rollbackDbPath,
+    journal?.stagingImagesDir,
+    journal?.stagingAppStateDir,
+    journal?.appStateRollbackDir,
+    journal?.imageRollback?.path,
+  ];
+
+  for (const artifactPath of artifactPaths) {
+    const resolved = resolveRestoreArtifact(artifactPath);
+    if (resolved && fs.existsSync(resolved)) {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    }
+  }
+}
+
+function rollbackInterruptedRestore(journal) {
+  if (!journal) return;
+
+  if (journal.phase === 'committed') {
+    cleanupRestoreArtifacts(journal);
+    removeRestoreJournal();
+    return;
+  }
+
+  if (restorePhaseReached(journal, 'app-state-swapping') && journal.appStateRollbackDir) {
+    const appStateRollbackDir = resolveRestoreArtifact(journal.appStateRollbackDir);
+    if (appStateRollbackDir && fs.existsSync(appStateRollbackDir)) {
+      restoreAppStateRollback(appStateRollbackDir);
+    }
+  }
+
+  if (restorePhaseReached(journal, 'images-swapping') && journal.imageRollback) {
+    const imageRollbackPath = resolveRestoreArtifact(journal.imageRollback.path);
+    restoreImagesRollback({
+      ...journal.imageRollback,
+      path: imageRollbackPath || '',
+    });
+  }
+
+  if (restorePhaseReached(journal, 'db-swapping')) {
+    const rollbackDbPath = resolveRestoreArtifact(journal.rollbackDbPath);
+    if (rollbackDbPath && fs.existsSync(rollbackDbPath)) {
+      replaceDatabaseFile(rollbackDbPath);
+    }
+  }
+
+  cleanupRestoreArtifacts(journal);
+  removeRestoreJournal();
+}
+
+function recoverInterruptedRestore() {
+  const journal = readRestoreJournal();
+  if (!journal) return false;
+
+  try {
+    rollbackInterruptedRestore(journal);
+    return true;
+  } catch (error) {
+    console.error('Interrupted restore recovery failed:', error);
+    throw error;
+  }
 }
 
 function getAlbumTableColumns(connection) {
@@ -642,13 +782,15 @@ async function restoreFromZip(zip) {
   let stagingImagesDir = null;
   let stagingAppStateDir = null;
   let imageRollback = null;
+  let appStateRollbackDir = null;
   let backupDb = null;
-  let liveSwapStarted = false;
   let restoreSucceeded = false;
+  let journal = null;
   const manifest = readBackupManifest(zip);
   const shouldRestoreAppState = manifest?.includesAppState === true;
 
   try {
+    recoverInterruptedRestore();
     validateZipEntryNames(zip);
     fs.writeFileSync(tmpPath, dbEntry.getData());
     const BetterSqlite = require('better-sqlite3');
@@ -671,18 +813,47 @@ async function restoreFromZip(zip) {
     if (shouldRestoreAppState) {
       stagingAppStateDir = createRestoreTempDir('_restore_app_state_');
       appStateFilesRestored = stageAppStateFromZip(zip, stagingAppStateDir);
+      appStateRollbackDir = createAppStateRollback();
     }
 
     await db.backup(rollbackDbPath);
+    imageRollback = createImageRollback();
+    journal = {
+      operation: 'restore',
+      phase: 'prepared',
+      tmpPath,
+      rollbackDbPath,
+      stagingImagesDir,
+      stagingAppStateDir,
+      imageRollback,
+      appStateRollbackDir,
+    };
+    writeRestoreJournal(journal);
+
+    journal = { ...journal, phase: 'db-swapping' };
+    writeRestoreJournal(journal);
     replaceDatabaseFile(tmpPath);
-    liveSwapStarted = true;
-    imageRollback = commitImagesFromStaging(stagingImagesDir);
+
+    journal = { ...journal, phase: 'db-swapped' };
+    writeRestoreJournal(journal);
+
+    journal = { ...journal, phase: 'images-swapping' };
+    writeRestoreJournal(journal);
+    imageRollback = commitImagesFromStaging(stagingImagesDir, imageRollback);
     stagingImagesDir = null;
+    journal = { ...journal, phase: 'images-swapped', stagingImagesDir, imageRollback };
+    writeRestoreJournal(journal);
 
     if (shouldRestoreAppState) {
-      commitAppStateFromStaging(stagingAppStateDir);
+      journal = { ...journal, phase: 'app-state-swapping' };
+      writeRestoreJournal(journal);
+      commitAppStateFromStaging(stagingAppStateDir, appStateRollbackDir);
+      journal = { ...journal, phase: 'app-state-swapped' };
+      writeRestoreJournal(journal);
     }
 
+    journal = { ...journal, phase: 'committed' };
+    writeRestoreJournal(journal);
     restoreSucceeded = true;
     return {
       added: restoredAlbums.length,
@@ -693,40 +864,44 @@ async function restoreFromZip(zip) {
       appStateFilesRestored,
     };
   } catch (error) {
-    if (liveSwapStarted) {
+    if (backupDb) {
+      backupDb.close();
+      backupDb = null;
+    }
+    const activeJournal = journal || readRestoreJournal();
+    if (activeJournal) {
       try {
-        if (fs.existsSync(rollbackDbPath)) replaceDatabaseFile(rollbackDbPath);
+        rollbackInterruptedRestore(activeJournal);
       } catch (rollbackError) {
-        console.error('Database restore rollback failed:', rollbackError);
-      }
-      if (imageRollback) {
-        try {
-          restoreImagesRollback(imageRollback);
-          imageRollback = null;
-        } catch (rollbackError) {
-          console.error('Image restore rollback failed:', rollbackError);
-        }
+        console.error('Restore rollback failed:', rollbackError);
       }
     }
     throw error;
   } finally {
     backupDb?.close();
-    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-    if (fs.existsSync(rollbackDbPath)) fs.unlinkSync(rollbackDbPath);
-    if (stagingImagesDir) fs.rmSync(stagingImagesDir, { recursive: true, force: true });
-    if (stagingAppStateDir) fs.rmSync(stagingAppStateDir, { recursive: true, force: true });
-    if (restoreSucceeded && imageRollback) {
-      fs.rmSync(imageRollback.path, { recursive: true, force: true });
+    if (restoreSucceeded && journal) {
+      cleanupRestoreArtifacts(journal);
+      removeRestoreJournal();
+    } else if (!readRestoreJournal()) {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      if (fs.existsSync(rollbackDbPath)) fs.unlinkSync(rollbackDbPath);
+      if (stagingImagesDir) fs.rmSync(stagingImagesDir, { recursive: true, force: true });
+      if (stagingAppStateDir) fs.rmSync(stagingAppStateDir, { recursive: true, force: true });
+      if (appStateRollbackDir) fs.rmSync(appStateRollbackDir, { recursive: true, force: true });
     }
   }
 }
 
+recoverInterruptedRestore();
+
 router.__private = {
   APP_STATE_BACKUP_ITEMS,
   BACKUP_MANIFEST_NAME,
+  RESTORE_JOURNAL_NAME,
   buildBackupManifest,
   importFromZip,
   readBackupManifest,
+  recoverInterruptedRestore,
   restoreAppStateFromZip,
   stageAppStateFromZip,
   restoreFromZip,
