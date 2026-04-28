@@ -36,26 +36,39 @@ const {
 const { normalizeSpotifyNoteLinks } = require('../spotify-note-links');
 const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
+const ALLOWED_ALBUM_IMAGE_TYPES = new Map([
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
+  ['image/webp', '.webp'],
+]);
+
+function buildManualAlbumImageName(file) {
+  const ext = ALLOWED_ALBUM_IMAGE_TYPES.get(file?.mimetype) || '.jpg';
+  return `manual_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
+}
+
+function filterManualAlbumImage(_req, file, cb) {
+  if (ALLOWED_ALBUM_IMAGE_TYPES.has(file.mimetype)) {
+    cb(null, true);
+    return;
+  }
+
+  const error = new Error('Only JPEG, PNG, and WebP images are allowed.');
+  error.status = 400;
+  cb(error);
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, IMAGES_DIR),
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-    const name = `manual_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
-    cb(null, name);
+    cb(null, buildManualAlbumImageName(file));
   },
 });
 
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only JPEG, PNG, and WebP images are allowed.'));
-    }
-  },
+  fileFilter: filterManualAlbumImage,
 });
 
 router.use((req, res, next) => {
@@ -976,7 +989,7 @@ router.patch('/:id', async (req, res) => {
 
   let validatedRating, validatedStatus, validatedRepeats, validatedPriority, validatedTrackCount;
   try {
-    validatedRating   = validateRating(rating);
+    validatedRating   = hasOwn(req.body, 'rating') ? validateRating(rating) : existing.rating;
     validatedStatus   = status !== undefined ? validateStatus(status) : existing.status;
     validatedRepeats  = repeats !== undefined ? validateNonNegativeInt(repeats, 'Repeat listens') : existing.repeats;
     validatedPriority = priority !== undefined ? validateNonNegativeInt(priority, 'Priority') : existing.priority;
@@ -1335,7 +1348,10 @@ router.post('/:id/random-art', (req, res) => {
 });
 
 router.__private = {
+  ALLOWED_ALBUM_IMAGE_TYPES,
+  buildManualAlbumImageName,
   buildAlbumIndexRevision,
+  filterManualAlbumImage,
   normalizeEtagHeader,
 };
 

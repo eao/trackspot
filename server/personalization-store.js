@@ -90,7 +90,7 @@ const DEFAULT_OPACITY = {
   styleBackgroundGradient: 0,
 };
 
-const INCLUDED_WITH_APP_THEME_NAMES = new Set(['Basic Blue']);
+const SAFE_PERSONALIZATION_ID_RE = /^[A-Za-z0-9_-]+$/;
 
 function createStoreError(status, message, extra = {}) {
   const error = new Error(message);
@@ -109,6 +109,49 @@ function readJsonFile(filePath, label) {
 
 function writeJsonFile(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function isSafePersonalizationId(value) {
+  return typeof value === 'string' && SAFE_PERSONALIZATION_ID_RE.test(value.trim());
+}
+
+function normalizePersonalizationId(value, label = 'id') {
+  const id = typeof value === 'string' ? value.trim() : '';
+  if (!SAFE_PERSONALIZATION_ID_RE.test(id)) {
+    throw createStoreError(400, `Invalid ${label}.`);
+  }
+  return id;
+}
+
+function resolveInsideDirectory(directoryPath, fileName) {
+  const resolvedDir = path.resolve(directoryPath);
+  const resolvedPath = path.resolve(resolvedDir, fileName);
+  const relativePath = path.relative(resolvedDir, resolvedPath);
+
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    throw createStoreError(400, 'Unsafe file path.');
+  }
+
+  return resolvedPath;
+}
+
+function ensureSafeJsonFileName(fileName) {
+  const normalized = typeof fileName === 'string' ? fileName.trim() : '';
+  if (
+    !normalized ||
+    normalized === '.' ||
+    normalized === '..' ||
+    normalized.includes('/') ||
+    normalized.includes('\\') ||
+    /^[A-Za-z]:/.test(normalized) ||
+    path.basename(normalized) !== normalized ||
+    path.win32.basename(normalized) !== normalized ||
+    path.extname(normalized).toLowerCase() !== '.json'
+  ) {
+    return null;
+  }
+
+  return normalized;
 }
 
 function listJsonFileNames(directoryPath) {
@@ -130,6 +173,22 @@ function normalizeNameForUniqueness(value) {
 
 function createStableId(prefix = 'preset') {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getRawRecordId(raw, fileName) {
+  return typeof raw?.id === 'string' && raw.id.trim()
+    ? raw.id.trim()
+    : path.parse(fileName).name;
+}
+
+function getSafeFallbackIdFromFileName(fileName, prefix) {
+  const baseName = path.parse(fileName).name.trim();
+  if (isSafePersonalizationId(baseName)) return baseName;
+
+  const safeBase = baseName
+    .replace(/[^A-Za-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return safeBase ? `${prefix}-${safeBase}` : prefix;
 }
 
 function buildStoredPreviewImageName(originalName, mimeType) {
@@ -200,11 +259,13 @@ function normalizeBackgroundReference(selection) {
 }
 
 function getOpacityPresetFilePath(presetId) {
-  return path.join(OPACITY_PRESETS_DIR, `${presetId}.json`);
+  const safeId = normalizePersonalizationId(presetId, 'opacity preset id');
+  return resolveInsideDirectory(OPACITY_PRESETS_DIR, `${safeId}.json`);
 }
 
 function getThemeFilePath(themeId) {
-  return path.join(THEMES_DIR, `${themeId}.json`);
+  const safeId = normalizePersonalizationId(themeId, 'theme id');
+  return resolveInsideDirectory(THEMES_DIR, `${safeId}.json`);
 }
 
 function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
@@ -216,9 +277,14 @@ function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
         throw createStoreError(500, `Opacity preset file "${fileName}" must contain a JSON object.`);
       }
 
-      const id = typeof raw.id === 'string' && raw.id.trim()
-        ? raw.id.trim()
-        : path.parse(fileName).name;
+      const rawId = getRawRecordId(raw, fileName);
+      if (!isSafePersonalizationId(rawId)) {
+        if (options.forceIncludedWithApp) {
+          throw createStoreError(500, `Opacity preset file "${fileName}" has an invalid id.`);
+        }
+        return null;
+      }
+      const id = rawId.trim();
       if (options.ignoredIds?.has(id)) return null;
 
       const name = typeof raw.name === 'string' ? raw.name.trim() : '';
@@ -229,7 +295,7 @@ function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
       return {
         id,
         name,
-        includedWithApp: !!options.forceIncludedWithApp || !!raw.includedWithApp,
+        includedWithApp: !!options.forceIncludedWithApp,
         opacity: normalizeOpacityValues(raw.opacity),
       };
     })
@@ -286,7 +352,7 @@ function createOpacityPreset(input) {
   const preset = {
     id: createStableId('opacity'),
     name,
-    includedWithApp: !!input?.includedWithApp,
+    includedWithApp: false,
     opacity: normalizeOpacityValues(input?.opacity),
   };
 
@@ -314,7 +380,7 @@ function updateOpacityPreset(presetId, input) {
   const updated = {
     id: existing.id,
     name,
-    includedWithApp: !!input?.includedWithApp,
+    includedWithApp: false,
     opacity: normalizeOpacityValues(input?.opacity ?? existing.opacity),
   };
 
@@ -403,9 +469,10 @@ function buildInvalidUserThemeRecord(rawTheme, fileName, reason) {
     ? rawTheme
     : {};
   const fallbackName = path.parse(fileName).name;
-  const id = typeof rawObject.id === 'string' && rawObject.id.trim()
-    ? rawObject.id.trim()
-    : fallbackName;
+  const rawId = getRawRecordId(rawObject, fileName);
+  const id = isSafePersonalizationId(rawId)
+    ? rawId.trim()
+    : getSafeFallbackIdFromFileName(fileName, 'invalid-theme');
   const name = typeof rawObject.name === 'string' && rawObject.name.trim()
     ? rawObject.name.trim()
     : fallbackName;
@@ -449,9 +516,12 @@ function hydrateThemeRecord(rawTheme, fileName, options = {}) {
     return { valid: false, reason: `Theme file "${fileName}" must contain a JSON object.` };
   }
 
-  const id = typeof rawTheme.id === 'string' && rawTheme.id.trim()
-    ? rawTheme.id.trim()
-    : path.parse(fileName).name;
+  const rawId = getRawRecordId(rawTheme, fileName);
+  if (!isSafePersonalizationId(rawId)) {
+    return { valid: false, reason: `Theme file "${fileName}" has an invalid id.` };
+  }
+  const id = rawId.trim();
+
   const name = typeof rawTheme.name === 'string' ? rawTheme.name.trim() : '';
   if (!name) {
     return { valid: false, reason: `Theme file "${fileName}" is missing a non-empty "name".` };
@@ -490,7 +560,7 @@ function hydrateThemeRecord(rawTheme, fileName, options = {}) {
 
   const colorSchemePreset = colorSchemesById.get(colorSchemePresetId);
   const opacityPreset = opacityPresetsById.get(opacityPresetId);
-  const includedWithApp = !!options.forceIncludedWithApp || !!rawTheme.includedWithApp || INCLUDED_WITH_APP_THEME_NAMES.has(name);
+  const includedWithApp = !!options.forceIncludedWithApp;
 
   return {
     valid: true,
@@ -521,9 +591,9 @@ function hydrateThemeRecord(rawTheme, fileName, options = {}) {
 }
 
 function removeThemeFile(theme) {
-  const sourceFileName = ensureSafeStoredName(theme?.sourceFileName);
+  const sourceFileName = ensureSafeJsonFileName(theme?.sourceFileName);
   const filePath = sourceFileName && path.extname(sourceFileName).toLowerCase() === '.json'
-    ? path.join(THEMES_DIR, sourceFileName)
+    ? resolveInsideDirectory(THEMES_DIR, sourceFileName)
     : getThemeFilePath(typeof theme === 'string' ? theme : theme?.id);
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
@@ -548,10 +618,8 @@ function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
       return;
     }
 
-    const rawId = typeof raw?.id === 'string' && raw.id.trim()
-      ? raw.id.trim()
-      : path.parse(fileName).name;
-    if (options.ignoredIds?.has(rawId)) return;
+    const rawId = getRawRecordId(raw, fileName);
+    if (isSafePersonalizationId(rawId) && options.ignoredIds?.has(rawId.trim())) return;
 
     const hydrated = hydrateThemeRecord(raw, fileName, options);
     if (!hydrated.valid) {
@@ -650,7 +718,7 @@ function validateThemeInput(input, options = {}) {
     backgroundImageBlur: clampOpacityValue(input?.backgroundImageBlur ?? DEFAULT_OPACITY.backgroundImageBlur),
     secondaryBackgroundImageOpacity: clampOpacityValue(input?.secondaryBackgroundImageOpacity ?? DEFAULT_OPACITY.secondaryBackgroundImage),
     secondaryBackgroundImageBlur: clampOpacityValue(input?.secondaryBackgroundImageBlur ?? DEFAULT_OPACITY.secondaryBackgroundImageBlur),
-    includedWithApp: !!input?.includedWithApp,
+    includedWithApp: false,
   };
 }
 

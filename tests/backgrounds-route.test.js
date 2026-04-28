@@ -7,6 +7,34 @@ import { afterEach, describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 
 const touchedPaths = [];
+const openDbs = [];
+const seedThemesDir = path.join(process.cwd(), 'server', 'seed-data', 'themes');
+
+function readSeedThemes() {
+  return fs.readdirSync(seedThemesDir)
+    .filter(fileName => fileName.endsWith('.json'))
+    .map(fileName => JSON.parse(fs.readFileSync(path.join(seedThemesDir, fileName), 'utf8')));
+}
+
+function writeFileIfMissing(filePath, content = 'placeholder') {
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, content);
+  }
+}
+
+function createSeedBackgroundPlaceholders(presetDir, secondaryPresetDir) {
+  readSeedThemes().forEach(theme => {
+    const primary = theme.primaryBackgroundSelection;
+    if (primary?.kind === 'preset') {
+      writeFileIfMissing(path.join(presetDir, primary.id));
+    }
+
+    const secondary = theme.secondaryBackgroundSelection;
+    if (secondary?.kind === 'preset') {
+      writeFileIfMissing(path.join(secondaryPresetDir, secondary.id));
+    }
+  });
+}
 
 function makeTempDir(prefix) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -15,6 +43,7 @@ function makeTempDir(prefix) {
 }
 
 function loadBackgroundRouteTestContext() {
+  const dataDir = makeTempDir('trackspot-bg-data-');
   const userDir = makeTempDir('trackspot-bg-user-');
   const userThumbDir = makeTempDir('trackspot-bg-user-thumbs-');
   const presetDir = makeTempDir('trackspot-bg-preset-');
@@ -24,6 +53,7 @@ function loadBackgroundRouteTestContext() {
   const secondaryPresetDir = makeTempDir('trackspot-bg-secondary-preset-');
   const secondaryPresetThumbDir = makeTempDir('trackspot-bg-secondary-preset-thumbs-');
 
+  process.env.DATA_DIR = dataDir;
   process.env.USER_BACKGROUNDS_DIR = userDir;
   process.env.USER_BACKGROUND_THUMBS_DIR = userThumbDir;
   process.env.PRESET_BACKGROUNDS_DIR = presetDir;
@@ -33,12 +63,17 @@ function loadBackgroundRouteTestContext() {
   process.env.SECONDARY_PRESET_BACKGROUNDS_DIR = secondaryPresetDir;
   process.env.SECONDARY_PRESET_BACKGROUND_THUMBS_DIR = secondaryPresetThumbDir;
 
+  delete require.cache[require.resolve('../server/db.js')];
   delete require.cache[require.resolve('../server/background-library.js')];
   delete require.cache[require.resolve('../server/personalization-store.js')];
   delete require.cache[require.resolve('../server/routes/backgrounds.js')];
   const backgroundsRouter = require('../server/routes/backgrounds.js');
+  const dbModule = require('../server/db.js');
+  openDbs.push(dbModule.db);
+
   return {
     backgroundsRouter,
+    dataDir,
     userDir,
     userThumbDir,
     presetDir,
@@ -50,7 +85,34 @@ function loadBackgroundRouteTestContext() {
   };
 }
 
+function getRouteHandler(router, method, routePath) {
+  const layer = router.stack.find(entry =>
+    entry.route?.path === routePath && entry.route.methods?.[method]
+  );
+  return layer?.route?.stack?.at(-1)?.handle ?? null;
+}
+
+function createResponse() {
+  return {
+    statusCode: 200,
+    jsonBody: undefined,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.jsonBody = payload;
+      return this;
+    },
+  };
+}
+
 afterEach(() => {
+  while (openDbs.length) {
+    openDbs.pop()?.close();
+  }
+
+  delete process.env.DATA_DIR;
   delete process.env.USER_BACKGROUNDS_DIR;
   delete process.env.USER_BACKGROUND_THUMBS_DIR;
   delete process.env.PRESET_BACKGROUNDS_DIR;
@@ -59,6 +121,11 @@ afterEach(() => {
   delete process.env.SECONDARY_USER_BACKGROUND_THUMBS_DIR;
   delete process.env.SECONDARY_PRESET_BACKGROUNDS_DIR;
   delete process.env.SECONDARY_PRESET_BACKGROUND_THUMBS_DIR;
+  delete require.cache[require.resolve('../server/db.js')];
+  delete require.cache[require.resolve('../server/background-library.js')];
+  delete require.cache[require.resolve('../server/personalization-store.js')];
+  delete require.cache[require.resolve('../server/routes/backgrounds.js')];
+
   while (touchedPaths.length) {
     fs.rmSync(touchedPaths.pop(), { recursive: true, force: true });
   }
@@ -167,6 +234,67 @@ describe('background route helpers', () => {
     expect(backgroundsRouter.__private.buildThumbnailFileName(storedName)).toMatch(/__My Scene\.jpg$/);
     expect(backgroundsRouter.__private.ensureSafeStoredName(storedName)).toBe(storedName);
     expect(backgroundsRouter.__private.ensureSafeStoredName('../nope.png')).toBeNull();
+    expect(backgroundsRouter.__private.ensureSafeStoredName('.')).toBeNull();
+    expect(backgroundsRouter.__private.ensureSafeStoredName('..')).toBeNull();
+    expect(backgroundsRouter.__private.ensureSafeStoredName('a/b.png')).toBeNull();
+    expect(backgroundsRouter.__private.ensureSafeStoredName('a\\b.png')).toBeNull();
+    expect(backgroundsRouter.__private.ensureSafeStoredName('C:foo.png')).toBeNull();
+    expect(backgroundsRouter.__private.ensureSafeStoredName('cover.html')).toBeNull();
+  });
+
+  it('rejects dot segments in user thumbnail routes', () => {
+    const { backgroundsRouter } = loadBackgroundRouteTestContext();
+    const handler = getRouteHandler(backgroundsRouter, 'post', '/user/:fileName/thumbnail');
+    const res = createResponse();
+
+    handler({
+      params: { fileName: '.' },
+      file: { buffer: Buffer.from('thumb') },
+    }, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.jsonBody).toEqual({ error: 'Invalid background image name.' });
+  });
+
+  it('does not cascade-delete dependent themes when the background target is not a file', () => {
+    const {
+      backgroundsRouter,
+      dataDir,
+      userDir,
+      presetDir,
+      secondaryPresetDir,
+    } = loadBackgroundRouteTestContext();
+    createSeedBackgroundPlaceholders(presetDir, secondaryPresetDir);
+
+    const targetName = 'directory-target.png';
+    fs.mkdirSync(path.join(userDir, targetName));
+    fs.mkdirSync(path.join(dataDir, 'theme-preview-images'), { recursive: true });
+    fs.mkdirSync(path.join(dataDir, 'themes'), { recursive: true });
+    fs.writeFileSync(path.join(dataDir, 'theme-preview-images', 'directory-preview.png'), 'preview');
+
+    const themePath = path.join(dataDir, 'themes', 'directory-dependent-theme.json');
+    fs.writeFileSync(themePath, JSON.stringify({
+      id: 'directory-dependent-theme',
+      name: 'Directory Dependent Theme',
+      previewImage: { fileName: 'directory-preview.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'default-opaque',
+      primaryBackgroundSelection: { kind: 'user', id: targetName },
+    }));
+
+    const handler = getRouteHandler(backgroundsRouter, 'delete', '/user/:fileName');
+    const res = createResponse();
+    let nextError = null;
+
+    handler({
+      params: { fileName: targetName },
+      query: { cascadeThemes: '1' },
+    }, res, error => { nextError = error; });
+
+    expect(nextError).toBeNull();
+    expect(res.statusCode).toBe(404);
+    expect(res.jsonBody).toEqual({ error: 'Background image not found.' });
+    expect(fs.existsSync(themePath)).toBe(true);
   });
 
   it('removes preset thumbnails that no longer match the preset folder or are stale', () => {

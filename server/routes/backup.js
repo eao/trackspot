@@ -124,6 +124,10 @@ function createRestoreTempPath(prefix) {
   return path.join(DATA_DIR, `${prefix}${unique}`);
 }
 
+function createMergeTempPath() {
+  return createRestoreTempPath('_import_tmp_');
+}
+
 function fsyncDirectoryBestEffort(directoryPath) {
   let dirFd = null;
   try {
@@ -921,16 +925,17 @@ async function importFromZip(zip, isRestore) {
   const dbEntry = zip.getEntry('albums.db');
   if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
 
-  const tmpPath = path.join(DATA_DIR, '_import_tmp.db');
-  fs.writeFileSync(tmpPath, dbEntry.getData());
-
   const BetterSqlite = require('better-sqlite3');
-  const srcDb = new BetterSqlite(tmpPath);
+  const tmpPath = createMergeTempPath();
+  let srcDb = null;
 
   let added = 0, skipped = 0, imagesCopied = 0, imagesRefetched = 0;
   let sanitizedImagePaths = 0;
 
   try {
+    fs.writeFileSync(tmpPath, dbEntry.getData());
+    srcDb = new BetterSqlite(tmpPath);
+
     const tableCheck = srcDb.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='albums'"
     ).get();
@@ -963,7 +968,7 @@ async function importFromZip(zip, isRestore) {
     ({ imagesCopied, imagesRefetched } = await restoreAlbumImages(insertedRows, zip, isRestore));
 
   } finally {
-    srcDb.close();
+    if (srcDb) srcDb.close();
     if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
   }
 
@@ -1102,6 +1107,8 @@ router.__private = {
   BACKUP_MANIFEST_NAME,
   RESTORE_JOURNAL_NAME,
   buildBackupManifest,
+  createMergeTempPath,
+  createRestoreTempPath,
   importFromZip,
   readBackupManifest,
   readRestoreJournal,

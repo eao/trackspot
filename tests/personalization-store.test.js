@@ -53,6 +53,26 @@ function createSeedBackgroundPlaceholders(presetDir, secondaryPresetDir) {
   });
 }
 
+function makeThemeInput(overrides = {}) {
+  return {
+    name: 'User Theme',
+    description: 'User-created theme',
+    colorSchemePresetId: 'bunan-blue',
+    opacityPresetId: 'default-opaque',
+    primaryBackgroundSelection: null,
+    primaryBackgroundDisplay: null,
+    secondaryBackgroundSelection: null,
+    secondaryBackgroundDisplay: null,
+    previewImageFile: {
+      originalname: 'user-theme-preview.png',
+      mimetype: 'image/png',
+      buffer: Buffer.from('preview-image'),
+    },
+    previewThumbnailFile: null,
+    ...overrides,
+  };
+}
+
 function loadPersonalizationStoreTestContext() {
   const dataDir = makeTempDir('trackspot-personalization-');
   const presetDir = makeTempDir('trackspot-theme-bg-preset-');
@@ -301,6 +321,159 @@ describe('personalization store', () => {
     expect(preset.canEdit).toBe(true);
     expect(preset.canDelete).toBe(true);
     expect(fs.existsSync(path.join(store.OPACITY_PRESETS_DIR, `${preset.id}.json`))).toBe(true);
+  });
+
+  it('ignores client included-with-app flags for user-created opacity presets', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+
+    const preset = store.createOpacityPreset({
+      name: 'Client Locked Preset',
+      includedWithApp: true,
+      opacity: {
+        header: 80,
+      },
+    });
+    expect(preset).toMatchObject({
+      includedWithApp: false,
+      canEdit: true,
+      canDelete: true,
+    });
+
+    const updatedPreset = store.updateOpacityPreset(preset.id, {
+      name: 'Still Editable Preset',
+      includedWithApp: true,
+    });
+    expect(updatedPreset).toMatchObject({
+      includedWithApp: false,
+      canEdit: true,
+      canDelete: true,
+    });
+    expect(store.deleteOpacityPreset(preset.id).preset.id).toBe(preset.id);
+  });
+
+  it('ignores client included-with-app flags for user-created themes', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const theme = store.createTheme(makeThemeInput({
+      name: 'Client Locked Theme',
+      includedWithApp: true,
+    }));
+    expect(theme).toMatchObject({
+      includedWithApp: false,
+      canEdit: true,
+      canDelete: true,
+    });
+
+    const updatedTheme = store.updateTheme(theme.id, makeThemeInput({
+      name: 'Still Editable Theme',
+      includedWithApp: true,
+      previewImageFile: null,
+      previewThumbnailFile: null,
+    }));
+    expect(updatedTheme).toMatchObject({
+      includedWithApp: false,
+      canEdit: true,
+      canDelete: true,
+    });
+    expect(store.deleteTheme(theme.id).id).toBe(theme.id);
+  });
+
+  it('ignores persisted included-with-app flags in user personalization records', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'restored-opacity.json'), JSON.stringify({
+      id: 'restored-opacity',
+      name: 'Restored Opacity',
+      includedWithApp: true,
+      opacity: {
+        header: 60,
+      },
+    }));
+
+    fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, 'restored-preview.png'), 'preview');
+    fs.writeFileSync(path.join(store.THEMES_DIR, 'restored-theme.json'), JSON.stringify({
+      id: 'restored-theme',
+      name: 'Restored Theme',
+      previewImage: { fileName: 'restored-preview.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'default-opaque',
+      includedWithApp: true,
+    }));
+
+    expect(store.listOpacityPresets().find(preset => preset.id === 'restored-opacity')).toMatchObject({
+      includedWithApp: false,
+      canEdit: true,
+      canDelete: true,
+    });
+    expect(store.findThemeById('restored-theme')).toMatchObject({
+      includedWithApp: false,
+      canEdit: true,
+      canDelete: true,
+    });
+
+    expect(store.updateOpacityPreset('restored-opacity', { name: 'Updated Restored Opacity' }).includedWithApp).toBe(false);
+    expect(store.updateTheme('restored-theme', makeThemeInput({
+      name: 'Updated Restored Theme',
+      previewImageFile: null,
+      previewThumbnailFile: null,
+    })).includedWithApp).toBe(false);
+    expect(store.deleteOpacityPreset('restored-opacity').preset.id).toBe('restored-opacity');
+    expect(store.deleteTheme('restored-theme').id).toBe('restored-theme');
+  });
+
+  it('does not trust unsafe persisted personalization ids for path operations', () => {
+    const { store, dataDir } = loadPersonalizationStoreTestContext();
+    const unsafeIds = ['../preferences', 'a/b', 'a\\b', 'C:foo'];
+    const sentinelPath = path.join(dataDir, 'preferences.json');
+    fs.writeFileSync(sentinelPath, 'keep-me');
+    fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, 'unsafe-preview.png'), 'preview');
+
+    unsafeIds.forEach((unsafeId, index) => {
+      fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, `unsafe-opacity-${index}.json`), JSON.stringify({
+        id: unsafeId,
+        name: `Unsafe Opacity ${index}`,
+        opacity: {
+          header: 70,
+        },
+      }));
+      fs.writeFileSync(path.join(store.THEMES_DIR, `unsafe-theme-${index}.json`), JSON.stringify({
+        id: unsafeId,
+        name: `Unsafe Theme ${index}`,
+        previewImage: { fileName: 'unsafe-preview.png' },
+        colorSchemePresetId: 'bunan-blue',
+        opacityPresetId: 'default-opaque',
+      }));
+    });
+
+    const unsafePresets = store.listOpacityPresets()
+      .filter(preset => preset.name.startsWith('Unsafe Opacity'));
+    expect(unsafePresets).toEqual([]);
+
+    const unsafeThemes = store.listThemes()
+      .filter(theme => theme.name.startsWith('Unsafe Theme'))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    expect(unsafeThemes.map(theme => theme.id)).toEqual([
+      'unsafe-theme-0',
+      'unsafe-theme-1',
+      'unsafe-theme-2',
+      'unsafe-theme-3',
+    ]);
+    expect(unsafeThemes.every(theme => theme.invalid && theme.canDelete)).toBe(true);
+
+    unsafeIds.forEach((unsafeId, index) => {
+      expect(() => store.updateOpacityPreset(unsafeId, { name: `Nope ${index}` }))
+        .toThrow('Opacity preset not found.');
+      expect(() => store.deleteOpacityPreset(unsafeId))
+        .toThrow('Opacity preset not found.');
+      expect(() => store.updateTheme(unsafeId, makeThemeInput({
+        name: `Nope ${index}`,
+        previewImageFile: null,
+        previewThumbnailFile: null,
+      }))).toThrow('Theme not found.');
+      expect(() => store.deleteTheme(unsafeId))
+        .toThrow('Theme not found.');
+    });
+
+    expect(fs.readFileSync(sentinelPath, 'utf8')).toBe('keep-me');
   });
 
   it('prevents editing or deleting seed themes and opacity presets', () => {

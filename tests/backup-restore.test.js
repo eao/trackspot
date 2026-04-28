@@ -820,6 +820,20 @@ describe('backup and restore', () => {
       image_path: null,
     });
     expect(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).toBe('keep-me');
+    expect(fs.readdirSync(dataDir).filter(fileName => fileName.startsWith('_import_tmp_'))).toEqual([]);
+  });
+
+  it('allocates unique temp database paths for backup merges', () => {
+    const { backupRouter, dataDir } = loadBackupTestContext();
+
+    const firstPath = backupRouter.__private.createMergeTempPath();
+    const secondPath = backupRouter.__private.createMergeTempPath();
+
+    expect(firstPath).not.toBe(secondPath);
+    expect(path.dirname(firstPath)).toBe(dataDir);
+    expect(path.dirname(secondPath)).toBe(dataDir);
+    expect(path.basename(firstPath)).toMatch(/^_import_tmp_/);
+    expect(path.basename(secondPath)).toMatch(/^_import_tmp_/);
   });
 
   it('sanitizes unsafe album image paths before replacing the database on restore', async () => {

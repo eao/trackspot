@@ -17,6 +17,11 @@ const ALLOWED_IMAGE_TYPES = new Map([
   ['image/webp', '.webp'],
   ['image/gif', '.gif'],
 ]);
+const ALLOWED_IMAGE_EXTENSIONS = new Set([
+  '.gif',
+  '.jpeg',
+  ...ALLOWED_IMAGE_TYPES.values(),
+]);
 
 [
   USER_BACKGROUNDS_DIR,
@@ -80,9 +85,20 @@ function buildUserBackgroundName(originalName, mimeType) {
 }
 
 function ensureSafeStoredName(storedName) {
-  if (!storedName) return null;
-  const safeName = path.basename(storedName);
-  if (safeName !== storedName) return null;
+  const safeName = typeof storedName === 'string' ? storedName.trim() : '';
+  if (
+    !safeName ||
+    safeName === '.' ||
+    safeName === '..' ||
+    safeName.includes('/') ||
+    safeName.includes('\\') ||
+    /^[A-Za-z]:/.test(safeName) ||
+    path.basename(safeName) !== safeName ||
+    path.win32.basename(safeName) !== safeName ||
+    !ALLOWED_IMAGE_EXTENSIONS.has(path.extname(safeName).toLowerCase())
+  ) {
+    return null;
+  }
   return safeName;
 }
 
@@ -227,6 +243,7 @@ module.exports = {
   SECONDARY_PRESET_BACKGROUND_THUMBS_DIR,
   BACKGROUND_SLOT_CONFIGS,
   ALLOWED_IMAGE_TYPES,
+  ALLOWED_IMAGE_EXTENSIONS,
   sanitizeFileNamePart,
   humanizeFileLabel,
   buildUserBackgroundName,

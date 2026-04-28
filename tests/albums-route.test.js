@@ -160,6 +160,40 @@ describe('albums route helpers', () => {
     expect(res.jsonBody).toEqual({ error: 'No image file received.' });
   });
 
+  it('reports invalid manual image uploads as bad requests', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    openDbs.push(dbModule.db);
+
+    let callbackError = null;
+    albumsRouter.__private.filterManualAlbumImage(
+      {},
+      { mimetype: 'text/html', originalname: 'cover.html' },
+      error => { callbackError = error; },
+    );
+
+    expect(callbackError).toBeInstanceOf(Error);
+    expect(callbackError.status).toBe(400);
+    expect(callbackError.message).toBe('Only JPEG, PNG, and WebP images are allowed.');
+  });
+
+  it('uses the accepted mimetype when naming manual image uploads', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    openDbs.push(dbModule.db);
+
+    expect(albumsRouter.__private.buildManualAlbumImageName({
+      mimetype: 'image/jpeg',
+      originalname: 'cover.html',
+    })).toMatch(/^manual_\d+_[a-z0-9]+\.jpg$/);
+    expect(albumsRouter.__private.buildManualAlbumImageName({
+      mimetype: 'image/png',
+      originalname: 'cover.html',
+    })).toMatch(/^manual_\d+_[a-z0-9]+\.png$/);
+    expect(albumsRouter.__private.buildManualAlbumImageName({
+      mimetype: 'image/webp',
+      originalname: 'cover.html',
+    })).toMatch(/^manual_\d+_[a-z0-9]+\.webp$/);
+  });
+
   it('commits refetched art through the replacement endpoint and removes old art', async () => {
     const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
     const { db } = dbModule;
@@ -1434,6 +1468,76 @@ describe('albums route helpers', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.jsonBody.notes).toBe('Now [Patched Album](spotify:album:3rHzUZDIsTv0zVyoNDN8YQ) and [artist](spotify:artist:0Ve5w7gefOsFmwW6aU3eSW)');
+  });
+
+  it('preserves rating when a partial album edit omits rating', async () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, rating, notes, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Rated Album',
+      JSON.stringify([{ name: 'Rating Artist' }]),
+      'completed',
+      92,
+      'before',
+      'manual',
+      '2026-04-15 10:00:00',
+      '2026-04-15 10:00:00',
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'patch', '/:id');
+    const res = createResponse();
+
+    await handler({
+      params: { id: '1' },
+      body: { notes: 'after' },
+    }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.rating).toBe(92);
+    expect(db.prepare('SELECT rating, notes FROM albums WHERE id = ?').get(1)).toEqual({
+      rating: 92,
+      notes: 'after',
+    });
+  });
+
+  it('still clears rating when a partial album edit explicitly sends a blank rating', async () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, rating, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Clear Rated Album',
+      JSON.stringify([{ name: 'Rating Artist' }]),
+      'completed',
+      88,
+      'manual',
+      '2026-04-15 10:00:00',
+      '2026-04-15 10:00:00',
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'patch', '/:id');
+    const res = createResponse();
+
+    await handler({
+      params: { id: '1' },
+      body: { rating: '' },
+    }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.rating).toBeNull();
+    expect(db.prepare('SELECT rating FROM albums WHERE id = ?').get(1).rating).toBeNull();
   });
 
   it('normalizes Spotify note links on manual create and deduplicates oEmbed lookups', async () => {

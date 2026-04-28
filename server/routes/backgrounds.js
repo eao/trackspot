@@ -33,6 +33,15 @@ const router = express.Router();
 
 const MAX_BACKGROUND_FILE_SIZE = 25 * 1024 * 1024;
 
+function getExistingFileStats(filePath) {
+  try {
+    const stats = fs.statSync(filePath);
+    return stats.isFile() ? stats : null;
+  } catch {
+    return null;
+  }
+}
+
 function handlePresetThumbnailUpload(slotKey = 'primary') {
   return (req, res) => {
     const safeName = ensureSafeStoredName(req.params.fileName);
@@ -46,7 +55,7 @@ function handlePresetThumbnailUpload(slotKey = 'primary') {
 
     const slotConfig = getBackgroundSlotConfig(slotKey);
     const targetPath = path.join(slotConfig.presetDir, safeName);
-    if (!fs.existsSync(targetPath)) {
+    if (!getExistingFileStats(targetPath)) {
       return res.status(404).json({ error: 'Background image not found.' });
     }
 
@@ -111,7 +120,7 @@ function handleUserThumbnailUpload(slotKey = 'primary') {
 
     const slotConfig = getBackgroundSlotConfig(slotKey);
     const targetPath = path.join(slotConfig.userDir, safeName);
-    if (!fs.existsSync(targetPath)) {
+    if (!getExistingFileStats(targetPath)) {
       return res.status(404).json({ error: 'Background image not found.' });
     }
 
@@ -141,7 +150,7 @@ function handleUserDelete(slotKey = 'primary') {
 
       const slotConfig = getBackgroundSlotConfig(slotKey);
       const targetPath = path.join(slotConfig.userDir, safeName);
-      if (!fs.existsSync(targetPath)) {
+      if (!getExistingFileStats(targetPath)) {
         return res.status(404).json({ error: 'Background image not found.' });
       }
 
@@ -243,6 +252,7 @@ router.__private = {
   listBackgroundLibrary,
   syncPresetThumbnailFiles,
   ensureSafeStoredName,
+  getExistingFileStats,
 };
 
 module.exports = router;
