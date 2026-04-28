@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DATA_DIR } = require('./db');
+const { getConfiguredPath } = require('./config');
 const { loadColorSchemePresets } = require('./color-scheme-presets');
 const {
   ALLOWED_IMAGE_TYPES,
@@ -10,10 +11,10 @@ const {
   getBackgroundImageRecord,
 } = require('./background-library');
 
-const OPACITY_PRESETS_DIR = process.env.OPACITY_PRESETS_DIR || path.join(DATA_DIR, 'opacity-presets');
-const THEMES_DIR = process.env.THEMES_DIR || path.join(DATA_DIR, 'themes');
-const THEME_PREVIEW_IMAGES_DIR = process.env.THEME_PREVIEW_IMAGES_DIR || path.join(DATA_DIR, 'theme-preview-images');
-const THEME_PREVIEW_IMAGES_THUMBS_DIR = process.env.THEME_PREVIEW_IMAGES_THUMBS_DIR || path.join(DATA_DIR, 'theme-preview-images-thumbs');
+const OPACITY_PRESETS_DIR = getConfiguredPath('OPACITY_PRESETS_DIR', path.join(DATA_DIR, 'opacity-presets'));
+const THEMES_DIR = getConfiguredPath('THEMES_DIR', path.join(DATA_DIR, 'themes'));
+const THEME_PREVIEW_IMAGES_DIR = getConfiguredPath('THEME_PREVIEW_IMAGES_DIR', path.join(DATA_DIR, 'theme-preview-images'));
+const THEME_PREVIEW_IMAGES_THUMBS_DIR = getConfiguredPath('THEME_PREVIEW_IMAGES_THUMBS_DIR', path.join(DATA_DIR, 'theme-preview-images-thumbs'));
 const SEED_DATA_DIR = path.join(__dirname, 'seed-data');
 const SEED_OPACITY_PRESETS_DIR = path.join(SEED_DATA_DIR, 'opacity-presets');
 const SEED_THEMES_DIR = path.join(SEED_DATA_DIR, 'themes');
@@ -168,7 +169,7 @@ function listJsonFileNames(directoryPath) {
 }
 
 function normalizeNameForUniqueness(value) {
-  return String(value || '').trim().toLocaleLowerCase();
+  return String(value || '').trim().toLowerCase();
 }
 
 function createStableId(prefix = 'preset') {

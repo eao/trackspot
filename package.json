@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "engines": {
+    "node": ">=20.19 <26",
+    "npm": ">=10"
+  },
   "scripts": {
+    "start": "node server/index.js",
     "db:export-json": "node scripts/export-db-json.js",
     "styles:sync": "node scripts/sync-color-scheme-presets.js",
     "pretest": "npm run styles:sync",

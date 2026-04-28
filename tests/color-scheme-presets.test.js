@@ -9,6 +9,7 @@ const {
   loadColorSchemePresets,
   buildGeneratedColorSchemePresetsModule,
   loadColorSchemeManifest,
+  assertGeneratedColorSchemePresetsModuleFresh,
 } = require('../server/color-scheme-presets.js');
 
 const tempDirs = [];
@@ -113,5 +114,36 @@ describe('color scheme preset loader', () => {
     expect(moduleSource).toContain('export const COLOR_SCHEME_PRESETS =');
     expect(moduleSource).toContain('"bunan-blue"');
     expect(moduleSource).toContain('/styles/manifest.json');
+  });
+
+  it('validates the generated module without rewriting it at runtime', () => {
+    const dir = makeTempDir('trackspot-styles-');
+    const manifestPath = path.join(dir, 'manifest.json');
+    const outputPath = path.join(dir, 'generated.js');
+    const preset = {
+      id: 'runtime-test',
+      name: 'Runtime Test',
+      description: 'Generated before startup.',
+      vars: { '--accent': '#abcdef' },
+    };
+
+    fs.writeFileSync(path.join(dir, 'runtime-test.json'), JSON.stringify(preset, null, 2));
+    fs.writeFileSync(manifestPath, JSON.stringify({
+      themes: [
+        { id: 'runtime-test', file: 'runtime-test.json', enabled: true },
+      ],
+    }, null, 2));
+    fs.writeFileSync(outputPath, buildGeneratedColorSchemePresetsModule([preset]));
+
+    expect(assertGeneratedColorSchemePresetsModuleFresh({ stylesDir: dir, manifestPath, outputPath })).toMatchObject({
+      changed: false,
+      outputPath,
+    });
+
+    fs.writeFileSync(outputPath, 'stale');
+
+    expect(() => assertGeneratedColorSchemePresetsModuleFresh({ stylesDir: dir, manifestPath, outputPath }))
+      .toThrow(/npm run styles:sync/);
+    expect(fs.readFileSync(outputPath, 'utf8')).toBe('stale');
   });
 });

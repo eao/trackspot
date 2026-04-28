@@ -32,4 +32,6 @@ If your Trackspot server is running somewhere else, open the Trackspot settings 
 
 ![Menu diagram](images/menu-diagram.png)
 
+For a Trackspot server on another machine, use a URL like `http://192.168.1.25:1060`, make sure Trackspot is configured with `HOST=0.0.0.0`, and keep it on a trusted network.
+
 So if you haven't already, install Trackspot by following the instructions at https://github.com/eao/trackspot, and get tracking!

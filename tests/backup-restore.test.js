@@ -880,6 +880,52 @@ describe('backup and restore', () => {
     fs.rmSync(outsidePath, { force: true });
   }, 15000);
 
+  it('rejects backup paths that collide on case-insensitive file systems', async () => {
+    const { dbModule, backupRouter } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const zip = new AdmZip();
+    zip.addFile('albums.db', Buffer.from('not-a-real-db'));
+    zip.addFile('images/Cover.jpg', Buffer.from('upper'));
+    zip.addFile('images/cover.jpg', Buffer.from('lower'));
+
+    expect(() => backupRouter.__private.validateZipEntryNames(zip))
+      .toThrow(/case-insensitive file systems/);
+    await expect(backupRouter.__private.importFromZip(zip))
+      .rejects.toThrow(/case-insensitive file systems/);
+  });
+
+  it('rejects Windows-reserved backup path segments before writing staged files', async () => {
+    const { dbModule, backupRouter } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const zip = new AdmZip();
+    zip.addFile('albums.db', Buffer.from('not-a-real-db'));
+    zip.addFile('theme-preview-images/CON.jpg', Buffer.from('preview'));
+
+    expect(backupRouter.__private.isWindowsReservedPathSegment('CON.jpg')).toBe(true);
+    await expect(backupRouter.__private.restoreFromZip(zip))
+      .rejects.toThrow(/not portable to Windows/);
+  });
+
+  it('reads uploaded backup zips from disk and cleans the upload artifact', () => {
+    const { backupRouter, dataDir } = loadBackupTestContext();
+    const uploadPath = path.join(backupRouter.__private.BACKUP_UPLOADS_DIR, 'upload.zip');
+    const zip = new AdmZip();
+
+    fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
+    zip.addFile('albums.db', Buffer.from('db'));
+    zip.writeZip(uploadPath);
+
+    const opened = backupRouter.__private.openUploadedBackupZip({ path: uploadPath });
+    expect(opened.getEntry('albums.db')).toBeTruthy();
+    expect(backupRouter.__private.BACKUP_UPLOADS_DIR).toBe(path.join(dataDir, '_backup_uploads'));
+
+    backupRouter.__private.cleanupUploadedBackup({ path: uploadPath });
+
+    expect(fs.existsSync(uploadPath)).toBe(false);
+  });
+
   it('sanitizes unsafe album image paths when merging backups', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;

@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { DATA_DIR } = require('./db');
+const { getConfiguredPath } = require('./config');
 
-const PREFERENCES_PATH = process.env.PREFERENCES_PATH || path.join(DATA_DIR, 'preferences.json');
+const PREFERENCES_PATH = getConfiguredPath('PREFERENCES_PATH', path.join(DATA_DIR, 'preferences.json'));
 
 const DEFAULT_COMPLEX_STATUSES = [
   { id: 'cs_listened', name: 'Listened', statuses: ['completed', 'dropped'], includedWithApp: true },

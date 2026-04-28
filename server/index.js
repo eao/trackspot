@@ -1,13 +1,13 @@
-require('dotenv').config();
-
 const { createApp } = require('./app');
-const { syncGeneratedColorSchemePresetsModule } = require('./color-scheme-presets');
+const { getHost, getPort } = require('./config');
+const { assertGeneratedColorSchemePresetsModuleFresh } = require('./color-scheme-presets');
 
-syncGeneratedColorSchemePresetsModule();
+assertGeneratedColorSchemePresetsModuleFresh();
 
-const PORT = process.env.PORT || 1060;
+const PORT = getPort();
+const HOST = getHost();
 const app = createApp();
 
-app.listen(PORT, () => {
-  console.log(`Trackspot running on port ${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Trackspot running at http://${HOST}:${PORT}`);
 });

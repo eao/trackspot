@@ -196,11 +196,36 @@ function syncGeneratedColorSchemePresetsModule(options = {}) {
   };
 }
 
+function assertGeneratedColorSchemePresetsModuleFresh(options = {}) {
+  const {
+    stylesDir = STYLES_DIR,
+    manifestPath = STYLES_MANIFEST_PATH,
+    outputPath = GENERATED_PRESETS_MODULE_PATH,
+  } = options;
+
+  const presets = loadColorSchemePresets({ stylesDir, manifestPath });
+  const moduleSource = buildGeneratedColorSchemePresetsModule(presets);
+  const previousSource = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, 'utf8') : null;
+
+  if (previousSource !== moduleSource) {
+    throw new Error(
+      `Generated color scheme presets are stale or missing at ${outputPath}. Run "npm run styles:sync" before starting Trackspot.`
+    );
+  }
+
+  return {
+    presets,
+    outputPath,
+    changed: false,
+  };
+}
+
 module.exports = {
   STYLES_DIR,
   STYLES_SCRAPPED_DIR,
   STYLES_MANIFEST_PATH,
   GENERATED_PRESETS_MODULE_PATH,
+  assertGeneratedColorSchemePresetsModuleFresh,
   buildGeneratedColorSchemePresetsModule,
   listThemeJsonFileNames,
   loadColorSchemeManifest,

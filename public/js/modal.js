@@ -197,7 +197,7 @@ function getArtistNameSuggestions() {
 
     artistNames.forEach(name => {
       const trimmed = typeof name === 'string' ? name.trim() : '';
-      const normalized = trimmed.toLocaleLowerCase();
+      const normalized = trimmed.toLowerCase();
       if (!trimmed || namesByNormalized.has(normalized)) return;
       namesByNormalized.set(normalized, trimmed);
     });

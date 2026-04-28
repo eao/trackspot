@@ -74,6 +74,7 @@ The app is designed for local/trusted use. There is **no auth layer**.
 ### Backend
 
 - `server/index.js`: app entry point, static serving, CORS, route mounting, error handling
+- `server/config.js`: `.env` loading and runtime path/host/port resolution
 - `server/db.js`: SQLite setup via `better-sqlite3`, schema creation, schema evolution with `ensureColumn`, trigger setup, DB replacement helpers
 - `server/album-helpers.js`: album parsing and normalization utilities
 - `server/spotify-helpers.js`: Spotify album URL/URI parsing and album-art download helpers
@@ -147,7 +148,7 @@ Be careful with generated assets:
 
 - `public/js/color-scheme-presets.generated.js` is generated from `styles/manifest.json` and `styles/*.json`
 - `npm run styles:sync` regenerates that module
-- `server/index.js` also calls the sync on startup
+- `server/index.js` validates the generated module on startup and tells you to run `npm run styles:sync` if it is stale
 - `npm test` triggers `pretest`, which runs `npm run styles:sync`
 
 If you change built-in style JSON or `styles/manifest.json`, regenerate the browser module.

@@ -1,15 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 const { DATA_DIR } = require('./db');
+const { APP_ROOT, getConfiguredPath } = require('./config');
 
-const USER_BACKGROUNDS_DIR = process.env.USER_BACKGROUNDS_DIR || path.join(DATA_DIR, 'backgrounds-user');
-const USER_BACKGROUND_THUMBS_DIR = process.env.USER_BACKGROUND_THUMBS_DIR || path.join(DATA_DIR, 'backgrounds-user-thumbs');
-const PRESET_BACKGROUNDS_DIR = process.env.PRESET_BACKGROUNDS_DIR || path.join(__dirname, '..', 'public', 'background-presets');
-const PRESET_BACKGROUND_THUMBS_DIR = process.env.PRESET_BACKGROUND_THUMBS_DIR || path.join(__dirname, '..', 'public', 'background-presets-thumbs');
-const SECONDARY_USER_BACKGROUNDS_DIR = process.env.SECONDARY_USER_BACKGROUNDS_DIR || path.join(DATA_DIR, 'backgrounds-user-secondary');
-const SECONDARY_USER_BACKGROUND_THUMBS_DIR = process.env.SECONDARY_USER_BACKGROUND_THUMBS_DIR || path.join(DATA_DIR, 'backgrounds-user-secondary-thumbs');
-const SECONDARY_PRESET_BACKGROUNDS_DIR = process.env.SECONDARY_PRESET_BACKGROUNDS_DIR || path.join(__dirname, '..', 'public', 'background-presets-secondary');
-const SECONDARY_PRESET_BACKGROUND_THUMBS_DIR = process.env.SECONDARY_PRESET_BACKGROUND_THUMBS_DIR || path.join(__dirname, '..', 'public', 'background-presets-secondary-thumbs');
+const PUBLIC_PRESET_BACKGROUNDS_DIR = path.join(APP_ROOT, 'public', 'background-presets');
+const PUBLIC_PRESET_BACKGROUND_THUMBS_DIR = path.join(APP_ROOT, 'public', 'background-presets-thumbs');
+const SECONDARY_PUBLIC_PRESET_BACKGROUNDS_DIR = path.join(APP_ROOT, 'public', 'background-presets-secondary');
+const SECONDARY_PUBLIC_PRESET_BACKGROUND_THUMBS_DIR = path.join(APP_ROOT, 'public', 'background-presets-secondary-thumbs');
+
+const USER_BACKGROUNDS_DIR = getConfiguredPath('USER_BACKGROUNDS_DIR', path.join(DATA_DIR, 'backgrounds-user'));
+const USER_BACKGROUND_THUMBS_DIR = getConfiguredPath('USER_BACKGROUND_THUMBS_DIR', path.join(DATA_DIR, 'backgrounds-user-thumbs'));
+const PRESET_BACKGROUNDS_DIR = getConfiguredPath('PRESET_BACKGROUNDS_DIR', PUBLIC_PRESET_BACKGROUNDS_DIR);
+const PRESET_BACKGROUND_THUMBS_DIR = getConfiguredPath('PRESET_BACKGROUND_THUMBS_DIR', path.join(DATA_DIR, 'background-presets-thumbs'));
+const SECONDARY_USER_BACKGROUNDS_DIR = getConfiguredPath('SECONDARY_USER_BACKGROUNDS_DIR', path.join(DATA_DIR, 'backgrounds-user-secondary'));
+const SECONDARY_USER_BACKGROUND_THUMBS_DIR = getConfiguredPath('SECONDARY_USER_BACKGROUND_THUMBS_DIR', path.join(DATA_DIR, 'backgrounds-user-secondary-thumbs'));
+const SECONDARY_PRESET_BACKGROUNDS_DIR = getConfiguredPath('SECONDARY_PRESET_BACKGROUNDS_DIR', SECONDARY_PUBLIC_PRESET_BACKGROUNDS_DIR);
+const SECONDARY_PRESET_BACKGROUND_THUMBS_DIR = getConfiguredPath('SECONDARY_PRESET_BACKGROUND_THUMBS_DIR', path.join(DATA_DIR, 'background-presets-secondary-thumbs'));
 
 const ALLOWED_IMAGE_TYPES = new Map([
   ['image/jpeg', '.jpg'],
@@ -26,11 +32,9 @@ const ALLOWED_IMAGE_EXTENSIONS = new Set([
 [
   USER_BACKGROUNDS_DIR,
   USER_BACKGROUND_THUMBS_DIR,
-  PRESET_BACKGROUNDS_DIR,
   PRESET_BACKGROUND_THUMBS_DIR,
   SECONDARY_USER_BACKGROUNDS_DIR,
   SECONDARY_USER_BACKGROUND_THUMBS_DIR,
-  SECONDARY_PRESET_BACKGROUNDS_DIR,
   SECONDARY_PRESET_BACKGROUND_THUMBS_DIR,
 ].forEach(directoryPath => {
   fs.mkdirSync(directoryPath, { recursive: true });
@@ -43,6 +47,7 @@ const BACKGROUND_SLOT_CONFIGS = {
     userThumbDir: USER_BACKGROUND_THUMBS_DIR,
     presetDir: PRESET_BACKGROUNDS_DIR,
     presetThumbDir: PRESET_BACKGROUND_THUMBS_DIR,
+    bundledPresetThumbDir: PUBLIC_PRESET_BACKGROUND_THUMBS_DIR,
     userBaseUrl: '/backgrounds/user',
     userThumbBaseUrl: '/backgrounds/user-thumbnails',
     presetBaseUrl: '/backgrounds/presets',
@@ -54,6 +59,7 @@ const BACKGROUND_SLOT_CONFIGS = {
     userThumbDir: SECONDARY_USER_BACKGROUND_THUMBS_DIR,
     presetDir: SECONDARY_PRESET_BACKGROUNDS_DIR,
     presetThumbDir: SECONDARY_PRESET_BACKGROUND_THUMBS_DIR,
+    bundledPresetThumbDir: SECONDARY_PUBLIC_PRESET_BACKGROUND_THUMBS_DIR,
     userBaseUrl: '/backgrounds/secondary/user',
     userThumbBaseUrl: '/backgrounds/secondary/user-thumbnails',
     presetBaseUrl: '/backgrounds/secondary/presets',
@@ -125,14 +131,17 @@ function listStoredImages(directoryPath) {
     .map(entry => entry.name);
 }
 
-function buildImageRecord({ kind, fileName, baseUrl, thumbnailDir, thumbnailBaseUrl, canDelete }) {
+function buildImageRecord({ kind, fileName, baseUrl, thumbnailDir, fallbackThumbnailDir, thumbnailBaseUrl, canDelete }) {
   const nameParts = fileName.split('__');
   const labelSource = kind === 'user' && nameParts.length > 1
     ? nameParts.slice(1).join('__')
     : fileName;
   const thumbnailFileName = buildThumbnailFileName(fileName);
   const thumbnailPath = thumbnailDir ? path.join(thumbnailDir, thumbnailFileName) : null;
-  const thumbnailUrl = thumbnailPath && fs.existsSync(thumbnailPath)
+  const fallbackThumbnailPath = fallbackThumbnailDir ? path.join(fallbackThumbnailDir, thumbnailFileName) : null;
+  const hasThumbnail = (thumbnailPath && fs.existsSync(thumbnailPath))
+    || (fallbackThumbnailPath && fs.existsSync(fallbackThumbnailPath));
+  const thumbnailUrl = hasThumbnail
     ? `${thumbnailBaseUrl}/${encodeURIComponent(thumbnailFileName)}`
     : null;
 
@@ -203,6 +212,7 @@ function listBackgroundLibrary(slotKey = 'primary') {
       kind: 'preset',
       baseUrl: slotConfig.presetBaseUrl,
       thumbnailDir: slotConfig.presetThumbDir,
+      fallbackThumbnailDir: slotConfig.bundledPresetThumbDir,
       thumbnailBaseUrl: slotConfig.presetThumbBaseUrl,
       canDelete: false,
     }),
@@ -217,6 +227,7 @@ function getBackgroundImageRecord(slotKey = 'primary', selection = null) {
   const slotConfig = getBackgroundSlotConfig(slotKey);
   const baseUrl = kind === 'preset' ? slotConfig.presetBaseUrl : slotConfig.userBaseUrl;
   const thumbnailDir = kind === 'preset' ? slotConfig.presetThumbDir : slotConfig.userThumbDir;
+  const fallbackThumbnailDir = kind === 'preset' ? slotConfig.bundledPresetThumbDir : null;
   const thumbnailBaseUrl = kind === 'preset' ? slotConfig.presetThumbBaseUrl : slotConfig.userThumbBaseUrl;
   const directoryPath = kind === 'preset' ? slotConfig.presetDir : slotConfig.userDir;
   const targetPath = path.join(directoryPath, safeName);
@@ -227,16 +238,21 @@ function getBackgroundImageRecord(slotKey = 'primary', selection = null) {
     fileName: safeName,
     baseUrl,
     thumbnailDir,
+    fallbackThumbnailDir,
     thumbnailBaseUrl,
     canDelete: kind === 'user',
   });
 }
 
 module.exports = {
+  PUBLIC_PRESET_BACKGROUNDS_DIR,
+  PUBLIC_PRESET_BACKGROUND_THUMBS_DIR,
   USER_BACKGROUNDS_DIR,
   USER_BACKGROUND_THUMBS_DIR,
   PRESET_BACKGROUNDS_DIR,
   PRESET_BACKGROUND_THUMBS_DIR,
+  SECONDARY_PUBLIC_PRESET_BACKGROUNDS_DIR,
+  SECONDARY_PUBLIC_PRESET_BACKGROUND_THUMBS_DIR,
   SECONDARY_USER_BACKGROUNDS_DIR,
   SECONDARY_USER_BACKGROUND_THUMBS_DIR,
   SECONDARY_PRESET_BACKGROUNDS_DIR,

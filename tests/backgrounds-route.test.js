@@ -85,6 +85,31 @@ function loadBackgroundRouteTestContext() {
   };
 }
 
+function loadDefaultBackgroundRouteTestContext() {
+  const dataDir = makeTempDir('trackspot-bg-default-data-');
+
+  process.env.DATA_DIR = dataDir;
+  delete process.env.USER_BACKGROUNDS_DIR;
+  delete process.env.USER_BACKGROUND_THUMBS_DIR;
+  delete process.env.PRESET_BACKGROUNDS_DIR;
+  delete process.env.PRESET_BACKGROUND_THUMBS_DIR;
+  delete process.env.SECONDARY_USER_BACKGROUNDS_DIR;
+  delete process.env.SECONDARY_USER_BACKGROUND_THUMBS_DIR;
+  delete process.env.SECONDARY_PRESET_BACKGROUNDS_DIR;
+  delete process.env.SECONDARY_PRESET_BACKGROUND_THUMBS_DIR;
+
+  delete require.cache[require.resolve('../server/db.js')];
+  delete require.cache[require.resolve('../server/background-library.js')];
+  delete require.cache[require.resolve('../server/personalization-store.js')];
+  delete require.cache[require.resolve('../server/routes/backgrounds.js')];
+  const backgroundsRouter = require('../server/routes/backgrounds.js');
+
+  return {
+    backgroundsRouter,
+    dataDir,
+  };
+}
+
 function getRouteHandler(router, method, routePath) {
   const layer = router.stack.find(entry =>
     entry.route?.path === routePath && entry.route.methods?.[method]
@@ -323,6 +348,19 @@ describe('background route helpers', () => {
     expect(fs.existsSync(keptThumbPath)).toBe(true);
     expect(fs.existsSync(staleThumbPath)).toBe(false);
     expect(fs.existsSync(orphanThumbPath)).toBe(false);
+  });
+
+  it('uses data-backed mutable preset thumbnails with bundled thumbnails as a read-only fallback', () => {
+    const { backgroundsRouter, dataDir } = loadDefaultBackgroundRouteTestContext();
+
+    const library = backgroundsRouter.__private.listBackgroundLibrary('primary');
+    const bundledPreset = library.presetImages.find(image => image.fileName === 'Aurora 1.webp');
+
+    expect(backgroundsRouter.__private.PRESET_BACKGROUND_THUMBS_DIR)
+      .toBe(path.join(dataDir, 'background-presets-thumbs'));
+    expect(backgroundsRouter.__private.PUBLIC_PRESET_BACKGROUND_THUMBS_DIR)
+      .toBe(path.join(process.cwd(), 'public', 'background-presets-thumbs'));
+    expect(bundledPreset?.thumbnailUrl).toBe('/backgrounds/preset-thumbnails/Aurora%201.jpg');
   });
 
   it('lists the secondary background library with its own URLs', () => {

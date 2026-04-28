@@ -5,7 +5,8 @@ const fs       = require('fs');
 const archiver = require('archiver');
 const AdmZip   = require('adm-zip');
 const multer   = require('multer');
-const { db, IMAGES_DIR, replaceDatabaseFile } = require('../db');
+const { db, DATA_DIR, IMAGES_DIR, replaceDatabaseFile } = require('../db');
+const { getBackupUploadMaxBytes, getConfiguredPath } = require('../config');
 const {
   buildManagedAlbumImagePath,
   buildUniqueAlbumImagePath,
@@ -14,7 +15,6 @@ const {
 } = require('../album-image-paths');
 const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
-const DATA_DIR = path.join(IMAGES_DIR, '..');
 const BACKUP_MANIFEST_NAME = 'trackspot-backup.json';
 const BACKUP_MANIFEST_VERSION = 1;
 const RESTORE_JOURNAL_NAME = '_restore_journal.json';
@@ -33,6 +33,8 @@ const APP_STATE_BACKUP_ITEMS = [
   { zipPath: 'backgrounds-user-thumbs', type: 'directory' },
   { zipPath: 'backgrounds-user-secondary', type: 'directory' },
   { zipPath: 'backgrounds-user-secondary-thumbs', type: 'directory' },
+  { zipPath: 'background-presets-thumbs', type: 'directory' },
+  { zipPath: 'background-presets-secondary-thumbs', type: 'directory' },
 ];
 
 router.use((req, res, next) => {
@@ -307,6 +309,18 @@ function normalizeZipEntryName(entryName) {
   return String(entryName || '').replace(/\\/g, '/').replace(/^\/+/, '');
 }
 
+const WINDOWS_RESERVED_BASENAME_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+const WINDOWS_RESERVED_PATH_CHARS_RE = /[<>:"|?*\u0000-\u001F]/;
+
+function isWindowsReservedPathSegment(segment) {
+  if (!segment) return true;
+  if (WINDOWS_RESERVED_PATH_CHARS_RE.test(segment)) return true;
+  if (/[. ]$/.test(segment)) return true;
+
+  const windowsBaseName = segment.replace(/[. ]+$/g, '').split('.')[0];
+  return WINDOWS_RESERVED_BASENAME_RE.test(windowsBaseName);
+}
+
 function isSafeZipEntryName(entryName) {
   const normalized = normalizeZipEntryName(entryName).replace(/\/+$/, '');
   if (!normalized) return false;
@@ -315,10 +329,30 @@ function isSafeZipEntryName(entryName) {
 }
 
 function validateZipEntryNames(zip) {
+  const seenCaseInsensitivePaths = new Map();
+
   for (const entry of zip.getEntries()) {
+    const normalized = normalizeZipEntryName(entry.entryName).replace(/\/+$/, '');
     if (!isSafeZipEntryName(entry.entryName)) {
       throw new Error(`Unsafe backup path: ${entry.entryName}`);
     }
+
+    const reservedSegment = normalized.split('/').find(isWindowsReservedPathSegment);
+    if (reservedSegment) {
+      throw new Error(`Backup path is not portable to Windows: ${entry.entryName}`);
+    }
+
+    const caseInsensitiveKey = normalized.toLowerCase();
+    const previousPath = seenCaseInsensitivePaths.get(caseInsensitiveKey);
+    if (previousPath) {
+      if (previousPath === normalized) {
+        throw new Error(`Duplicate backup path: ${entry.entryName}`);
+      }
+      throw new Error(
+        `Backup paths collide on case-insensitive file systems: ${previousPath} and ${normalized}`
+      );
+    }
+    seenCaseInsensitivePaths.set(caseInsensitiveKey, normalized);
   }
 }
 
@@ -1496,8 +1530,40 @@ router.get('/export-csv', (req, res) => {
 // Upload middleware
 // ---------------------------------------------------------------------------
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
+const BACKUP_UPLOADS_DIR = getConfiguredPath('BACKUP_UPLOADS_DIR', path.join(DATA_DIR, '_backup_uploads'));
+const BACKUP_UPLOAD_MAX_BYTES = getBackupUploadMaxBytes();
+
+function createBackupUploadFileName(_req, file, callback) {
+  const ext = path.extname(file.originalname || '').toLowerCase() || '.zip';
+  const safeExt = ext === '.zip' ? ext : '.zip';
+  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  callback(null, `${unique}${safeExt}`);
+}
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination(_req, _file, callback) {
+      fs.mkdirSync(BACKUP_UPLOADS_DIR, { recursive: true });
+      callback(null, BACKUP_UPLOADS_DIR);
+    },
+    filename: createBackupUploadFileName,
+  }),
+  limits: { fileSize: BACKUP_UPLOAD_MAX_BYTES },
+});
 let mergeInProgress = false;
+
+function openUploadedBackupZip(uploadedFile) {
+  if (!uploadedFile?.path) {
+    throw new Error('No file uploaded.');
+  }
+  return new AdmZip(uploadedFile.path);
+}
+
+function cleanupUploadedBackup(uploadedFile) {
+  if (uploadedFile?.path) {
+    fs.rmSync(uploadedFile.path, { force: true });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // POST /api/backup/merge  — add albums from ZIP that don't already exist
@@ -1506,12 +1572,14 @@ let mergeInProgress = false;
 router.post('/merge', upload.single('backup'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
   try {
-    const zip    = new AdmZip(req.file.buffer);
+    const zip    = openUploadedBackupZip(req.file);
     const result = await importFromZip(zip, false);
     res.json(result);
   } catch (e) {
     console.error('Merge error:', e);
     res.status(500).json({ error: e.message });
+  } finally {
+    cleanupUploadedBackup(req.file);
   }
 });
 
@@ -1522,12 +1590,14 @@ router.post('/merge', upload.single('backup'), async (req, res) => {
 router.post('/restore', upload.single('backup'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
   try {
-    const zip = new AdmZip(req.file.buffer);
+    const zip = openUploadedBackupZip(req.file);
     const result = await restoreFromZip(zip);
     res.json(result);
   } catch (e) {
     console.error('Restore error:', e);
     res.status(500).json({ error: e.message });
+  } finally {
+    cleanupUploadedBackup(req.file);
   }
 });
 
@@ -1536,6 +1606,7 @@ router.post('/restore', upload.single('backup'), async (req, res) => {
 // ---------------------------------------------------------------------------
 
 async function importFromZip(zip) {
+  validateZipEntryNames(zip);
   const dbEntry = zip.getEntry('albums.db');
   if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
 
@@ -1759,12 +1830,17 @@ recoverInterruptedMergeAtStartup();
 router.__private = {
   APP_STATE_BACKUP_ITEMS,
   BACKUP_MANIFEST_NAME,
+  BACKUP_UPLOAD_MAX_BYTES,
+  BACKUP_UPLOADS_DIR,
   MERGE_JOURNAL_NAME,
   RESTORE_JOURNAL_NAME,
   buildBackupManifest,
+  cleanupUploadedBackup,
   createMergeTempPath,
   createRestoreTempPath,
+  isWindowsReservedPathSegment,
   importFromZip,
+  openUploadedBackupZip,
   readBackupManifest,
   readMergeJournal,
   readRestoreJournal,
@@ -1776,6 +1852,7 @@ router.__private = {
   restoreFromZip,
   sanitizeBackupAlbumImagePathValue,
   sanitizeBackupAlbumImagePaths,
+  validateZipEntryNames,
   writeMergeJournal,
   writeRestoreJournal,
 };

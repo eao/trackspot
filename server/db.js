@@ -10,8 +10,9 @@ const {
   parseJsonField,
 } = require('./album-helpers');
 const { normalizeAlbumImagePath } = require('./album-image-paths');
+const { getDataDir } = require('./config');
 
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+const DATA_DIR = getDataDir();
 const IMAGES_DIR = path.join(DATA_DIR, 'images');
 const DB_PATH = path.join(DATA_DIR, 'albums.db');
 

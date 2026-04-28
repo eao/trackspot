@@ -1,12 +1,8 @@
 const path = require('path');
 const Database = require('better-sqlite3');
-const dotenv = require('dotenv');
+const { getDataDir } = require('../server/config');
 
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
-
-const DATA_DIR = process.env.DATA_DIR
-  ? path.resolve(__dirname, '..', process.env.DATA_DIR)
-  : path.join(__dirname, '..', 'data');
+const DATA_DIR = getDataDir();
 const DB_PATH = path.join(DATA_DIR, 'albums.db');
 
 function quoteIdentifier(identifier) {
