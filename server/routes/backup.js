@@ -21,6 +21,8 @@ const RESTORE_JOURNAL_NAME = '_restore_journal.json';
 const RESTORE_JOURNAL_PATH = path.join(DATA_DIR, RESTORE_JOURNAL_NAME);
 const MERGE_JOURNAL_NAME = '_merge_journal.json';
 const MERGE_JOURNAL_PATH = path.join(DATA_DIR, MERGE_JOURNAL_NAME);
+const MERGE_TEMP_DB_PREFIX = '_import_tmp_';
+const MERGE_STAGING_IMAGES_PREFIX = '_import_images_';
 const APP_STATE_BACKUP_ITEMS = [
   { zipPath: 'preferences.json', type: 'file' },
   { zipPath: 'opacity-presets', type: 'directory' },
@@ -128,7 +130,7 @@ function createRestoreTempPath(prefix) {
 }
 
 function createMergeTempPath() {
-  return createRestoreTempPath('_import_tmp_');
+  return createRestoreTempPath(MERGE_TEMP_DB_PREFIX);
 }
 
 function fsyncDirectoryBestEffort(directoryPath) {
@@ -1097,21 +1099,85 @@ function cleanupCommittedMergeImages(committedImagePaths) {
 function runMergeCleanup(label, cleanup) {
   try {
     cleanup();
+    return true;
   } catch (error) {
     console.warn(`Merge cleanup failed for ${label}:`, error);
+    return false;
   }
 }
 
 function cleanupMergeImportArtifacts({ srcDb, tmpPath, stagingImagesDir }) {
+  let cleaned = true;
   if (srcDb) {
-    runMergeCleanup('temporary database handle', () => srcDb.close());
+    cleaned = runMergeCleanup('temporary database handle', () => srcDb.close()) && cleaned;
   }
-  runMergeCleanup('temporary database file', () => {
+  cleaned = runMergeCleanup('temporary database file', () => {
     if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-  });
+  }) && cleaned;
   if (stagingImagesDir) {
-    runMergeCleanup('staged images', () => fs.rmSync(stagingImagesDir, { recursive: true, force: true }));
+    cleaned = runMergeCleanup('staged images', () => {
+      fs.rmSync(stagingImagesDir, { recursive: true, force: true });
+    }) && cleaned;
   }
+  return cleaned;
+}
+
+function resolveMergeImportArtifact(artifactPath, expectedPrefix) {
+  if (!artifactPath) return null;
+  const resolved = path.resolve(artifactPath);
+  const resolvedDataDir = path.resolve(DATA_DIR);
+  if (resolved !== resolvedDataDir && !resolved.startsWith(`${resolvedDataDir}${path.sep}`)) {
+    return null;
+  }
+  if (!path.basename(resolved).startsWith(expectedPrefix)) return null;
+  return resolved;
+}
+
+function cleanupJournaledMergeImportArtifact(journal, fieldName, expectedPrefix, label) {
+  const artifactPath = journal?.[fieldName];
+  if (!artifactPath) return true;
+
+  const resolved = resolveMergeImportArtifact(artifactPath, expectedPrefix);
+  if (!resolved) {
+    console.warn(`Merge cleanup failed for ${label}: invalid artifact path.`);
+    return false;
+  }
+
+  return runMergeCleanup(label, () => fs.rmSync(resolved, { recursive: true, force: true }));
+}
+
+function cleanupJournaledMergeImportArtifacts(journal) {
+  let cleaned = true;
+  cleaned = cleanupJournaledMergeImportArtifact(
+    journal,
+    'tmpPath',
+    MERGE_TEMP_DB_PREFIX,
+    'interrupted merge temporary database',
+  ) && cleaned;
+  cleaned = cleanupJournaledMergeImportArtifact(
+    journal,
+    'stagingImagesDir',
+    MERGE_STAGING_IMAGES_PREFIX,
+    'interrupted merge staged images',
+  ) && cleaned;
+  return cleaned;
+}
+
+function cleanupOrphanedMergeImportArtifacts() {
+  if (!fs.existsSync(DATA_DIR)) return true;
+  let cleaned = true;
+  for (const dirent of fs.readdirSync(DATA_DIR, { withFileTypes: true })) {
+    const isMergeTempDb = dirent.isFile() && dirent.name.startsWith(MERGE_TEMP_DB_PREFIX);
+    const isMergeStagingDir = dirent.isDirectory() && dirent.name.startsWith(MERGE_STAGING_IMAGES_PREFIX);
+    if (!isMergeTempDb && !isMergeStagingDir) continue;
+
+    const artifactPath = path.join(DATA_DIR, dirent.name);
+    cleaned = runMergeCleanup(
+      `orphaned merge artifact ${dirent.name}`,
+      () => fs.rmSync(artifactPath, { recursive: true, force: true }),
+    ) && cleaned;
+  }
+  return cleaned;
 }
 
 function ensureMergeAssetFinalPath(asset, reservedFinalImagePaths) {
@@ -1173,6 +1239,8 @@ function recoverInterruptedMerge() {
     }
   }
 
+  cleanupFailed = !cleanupJournaledMergeImportArtifacts(journal) || cleanupFailed;
+
   if (!cleanupFailed) {
     try {
       removeMergeJournal();
@@ -1188,6 +1256,9 @@ function recoverInterruptedMerge() {
 function recoverInterruptedMergeAtStartup() {
   try {
     recoverInterruptedMerge();
+    if (!fs.existsSync(MERGE_JOURNAL_PATH)) {
+      cleanupOrphanedMergeImportArtifacts();
+    }
   } catch (error) {
     console.error('Interrupted merge recovery failed:', error);
   }
@@ -1426,6 +1497,7 @@ router.get('/export-csv', (req, res) => {
 // ---------------------------------------------------------------------------
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
+let mergeInProgress = false;
 
 // ---------------------------------------------------------------------------
 // POST /api/backup/merge  — add albums from ZIP that don't already exist
@@ -1467,66 +1539,93 @@ async function importFromZip(zip) {
   const dbEntry = zip.getEntry('albums.db');
   if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
 
-  recoverInterruptedRestore();
-  requireInterruptedMergeRecovered();
-
-  const BetterSqlite = require('better-sqlite3');
-  const tmpPath = createMergeTempPath();
-  let stagingImagesDir = null;
-  let srcDb = null;
-  const committedMergeImagePaths = [];
-  const mergeJournal = { operation: 'merge', imagePaths: [] };
-
-  let added = 0, skipped = 0, imagesCopied = 0, imagesRefetched = 0;
-  let sanitizedImagePaths = 0;
+  if (mergeInProgress) {
+    throw new Error('A backup merge is already in progress.');
+  }
+  mergeInProgress = true;
 
   try {
-    fs.writeFileSync(tmpPath, dbEntry.getData());
-    srcDb = new BetterSqlite(tmpPath);
+    recoverInterruptedRestore();
+    requireInterruptedMergeRecovered();
+    if (!cleanupOrphanedMergeImportArtifacts()) {
+      throw new Error('Could not finish cleanup for previous merge temporary files. Please retry after cleanup can complete.');
+    }
 
-    const tableCheck = srcDb.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='albums'"
-    ).get();
-    if (!tableCheck) throw new Error('Backup database does not contain an albums table.');
+    const BetterSqlite = require('better-sqlite3');
+    const tmpPath = createMergeTempPath();
+    let stagingImagesDir = null;
+    let srcDb = null;
+    const committedMergeImagePaths = [];
+    const mergeJournal = { operation: 'merge', imagePaths: [], tmpPath, stagingImagesDir };
+    let mergeSucceeded = false;
+    let mergeFailed = false;
 
-    sanitizedImagePaths = sanitizeBackupAlbumImagePaths(srcDb);
-    const backupAlbums = srcDb.prepare('SELECT * FROM albums').all().map(normalizeBackupAlbumRow);
-    const { insertColumns, statement: insertStmt } = buildAlbumInsertStatement(srcDb, {
-      extraColumns: ['image_path'],
-    });
-    const selectedRows = selectMergeCandidateRows(backupAlbums);
-    skipped = selectedRows.skipped;
+    let added = 0, skipped = 0, imagesCopied = 0, imagesRefetched = 0;
+    let sanitizedImagePaths = 0;
 
-    const manualDupCheck = db.prepare(
-      `SELECT id
-       FROM albums
-       WHERE (spotify_album_id IS NULL OR TRIM(spotify_album_id) = '')
-         AND album_name = ?
-         AND artists = ?`
-    );
+    try {
+      writeMergeJournal(mergeJournal);
+      fs.writeFileSync(tmpPath, dbEntry.getData());
+      srcDb = new BetterSqlite(tmpPath);
 
-    stagingImagesDir = createRestoreTempDir('_import_images_');
-    const preparedRows = await prepareMergeAlbumRows(selectedRows.candidateRows, zip, stagingImagesDir);
-    ({ added, skipped, imagesCopied, imagesRefetched } = commitMergeImportRows(
-      preparedRows,
-      insertColumns,
-      insertStmt,
-      manualDupCheck,
-      skipped,
-      committedMergeImagePaths,
-      mergeJournal,
-    ));
-    runMergeCleanup('merge journal', removeMergeJournal);
+      const tableCheck = srcDb.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='albums'"
+      ).get();
+      if (!tableCheck) throw new Error('Backup database does not contain an albums table.');
 
-  } catch (error) {
-    cleanupCommittedMergeImages(committedMergeImagePaths);
-    recoverInterruptedMerge();
-    throw error;
+      sanitizedImagePaths = sanitizeBackupAlbumImagePaths(srcDb);
+      const backupAlbums = srcDb.prepare('SELECT * FROM albums').all().map(normalizeBackupAlbumRow);
+      const { insertColumns, statement: insertStmt } = buildAlbumInsertStatement(srcDb, {
+        extraColumns: ['image_path'],
+      });
+      const selectedRows = selectMergeCandidateRows(backupAlbums);
+      skipped = selectedRows.skipped;
+
+      const manualDupCheck = db.prepare(
+        `SELECT id
+         FROM albums
+         WHERE (spotify_album_id IS NULL OR TRIM(spotify_album_id) = '')
+           AND album_name = ?
+           AND artists = ?`
+      );
+
+      stagingImagesDir = createRestoreTempPath(MERGE_STAGING_IMAGES_PREFIX);
+      mergeJournal.stagingImagesDir = stagingImagesDir;
+      writeMergeJournal(mergeJournal);
+      fs.mkdirSync(stagingImagesDir);
+      const preparedRows = await prepareMergeAlbumRows(selectedRows.candidateRows, zip, stagingImagesDir);
+      ({ added, skipped, imagesCopied, imagesRefetched } = commitMergeImportRows(
+        preparedRows,
+        insertColumns,
+        insertStmt,
+        manualDupCheck,
+        skipped,
+        committedMergeImagePaths,
+        mergeJournal,
+      ));
+      mergeSucceeded = true;
+
+    } catch (error) {
+      mergeFailed = true;
+      cleanupCommittedMergeImages(committedMergeImagePaths);
+      throw error;
+    } finally {
+      const artifactsCleaned = cleanupMergeImportArtifacts({ srcDb, tmpPath, stagingImagesDir });
+      if (mergeSucceeded) {
+        if (artifactsCleaned) runMergeCleanup('merge journal', removeMergeJournal);
+      } else if (mergeFailed && artifactsCleaned) {
+        runMergeCleanup('interrupted merge recovery', () => {
+          if (!recoverInterruptedMerge()) {
+            throw new Error('Could not finish interrupted merge cleanup.');
+          }
+        });
+      }
+    }
+
+    return { added, skipped, imagesCopied, imagesRefetched, sanitizedImagePaths };
   } finally {
-    cleanupMergeImportArtifacts({ srcDb, tmpPath, stagingImagesDir });
+    mergeInProgress = false;
   }
-
-  return { added, skipped, imagesCopied, imagesRefetched, sanitizedImagePaths };
 }
 
 async function restoreFromZip(zip) {

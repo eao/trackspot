@@ -1089,6 +1089,48 @@ describe('backup and restore', () => {
     expect(fs.existsSync(path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME))).toBe(false);
   });
 
+  it('recovers interrupted merge temp artifacts from the merge journal', () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const tmpPath = path.join(dataDir, '_import_tmp_journaled.db');
+    const stagingImagesDir = path.join(dataDir, '_import_images_journaled');
+    writeFileEnsured(tmpPath, Buffer.from('temporary backup db'));
+    writeFileEnsured(path.join(stagingImagesDir, 'staged-art.jpg'), Buffer.from('staged image'));
+
+    backupRouter.__private.writeMergeJournal({
+      operation: 'merge',
+      imagePaths: [],
+      tmpPath,
+      stagingImagesDir,
+    });
+
+    expect(backupRouter.__private.recoverInterruptedMerge()).toBe(true);
+    expect(fs.existsSync(tmpPath)).toBe(false);
+    expect(fs.existsSync(stagingImagesDir)).toBe(false);
+    expect(fs.existsSync(path.join(dataDir, backupRouter.__private.MERGE_JOURNAL_NAME))).toBe(false);
+  });
+
+  it('cleans unjournaled merge temp artifacts on startup', () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackspot-backup-test-'));
+    tempDirs.push(dataDir);
+    process.env.DATA_DIR = dataDir;
+    resetServerModules();
+
+    const tmpPath = path.join(dataDir, '_import_tmp_orphan.db');
+    const stagingImagesDir = path.join(dataDir, '_import_images_orphan');
+    writeFileEnsured(tmpPath, Buffer.from('orphan temporary backup db'));
+    writeFileEnsured(path.join(stagingImagesDir, 'staged-art.jpg'), Buffer.from('orphan staged image'));
+
+    const dbModule = require('../server/db.js');
+    const backupRouter = require('../server/routes/backup.js');
+    openDbs.push(dbModule.db);
+
+    expect(backupRouter.__private.MERGE_JOURNAL_NAME).toBe('_merge_journal.json');
+    expect(fs.existsSync(tmpPath)).toBe(false);
+    expect(fs.existsSync(stagingImagesDir)).toBe(false);
+  });
+
   it('blocks new merges when an interrupted merge journal is corrupt', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
@@ -1292,6 +1334,14 @@ describe('backup and restore', () => {
     });
     expect(restored.album_name).toBe('Cleanup Resilient Album');
     expect(warnings.some(args => String(args[0]).includes('Merge cleanup failed for staged images'))).toBe(true);
+
+    const journal = backupRouter.__private.readMergeJournal();
+    expect(journal?.stagingImagesDir).toContain('_import_images_');
+    expect(fs.existsSync(journal.stagingImagesDir)).toBe(true);
+
+    expect(backupRouter.__private.recoverInterruptedMerge()).toBe(true);
+    expect(fs.existsSync(journal.stagingImagesDir)).toBe(false);
+    expect(backupRouter.__private.readMergeJournal()).toBeNull();
   }, 15000);
 
   it('renames colliding backup image paths during merge and reuses the staged path for shared backup art', async () => {
