@@ -1102,7 +1102,6 @@ async function prepareMergeAlbumRows(rows, zip, stagingImagesDir) {
 }
 
 function commitMergeImageAsset(asset, committedImagePaths, mergeJournal) {
-  recordMergeJournalImagePath(mergeJournal, asset.finalImagePath);
   fs.mkdirSync(path.dirname(asset.finalFullPath), { recursive: true });
   const hadFinalBeforeCopy = fs.existsSync(asset.finalFullPath);
   try {
@@ -1118,6 +1117,7 @@ function commitMergeImageAsset(asset, committedImagePaths, mergeJournal) {
     throw error;
   }
   committedImagePaths.push(asset.finalFullPath);
+  recordMergeJournalImagePath(mergeJournal, asset.finalImagePath);
 }
 
 function cleanupCommittedMergeImages(committedImagePaths) {
@@ -1550,7 +1550,20 @@ const upload = multer({
   }),
   limits: { fileSize: BACKUP_UPLOAD_MAX_BYTES },
 });
-let mergeInProgress = false;
+let backupMutationInProgress = null;
+
+function beginBackupMutation(operation) {
+  if (backupMutationInProgress) {
+    throw new Error(`A backup ${backupMutationInProgress} is already in progress.`);
+  }
+  backupMutationInProgress = operation;
+}
+
+function endBackupMutation(operation) {
+  if (backupMutationInProgress === operation) {
+    backupMutationInProgress = null;
+  }
+}
 
 function openUploadedBackupZip(uploadedFile) {
   if (!uploadedFile?.path) {
@@ -1610,10 +1623,7 @@ async function importFromZip(zip) {
   const dbEntry = zip.getEntry('albums.db');
   if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
 
-  if (mergeInProgress) {
-    throw new Error('A backup merge is already in progress.');
-  }
-  mergeInProgress = true;
+  beginBackupMutation('merge');
 
   try {
     recoverInterruptedRestore();
@@ -1695,7 +1705,7 @@ async function importFromZip(zip) {
 
     return { added, skipped, imagesCopied, imagesRefetched, sanitizedImagePaths };
   } finally {
-    mergeInProgress = false;
+    endBackupMutation('merge');
   }
 }
 
@@ -1715,6 +1725,8 @@ async function restoreFromZip(zip) {
   let sanitizedImagePaths = 0;
   const manifest = readBackupManifest(zip);
   const shouldRestoreAppState = manifest?.includesAppState === true;
+
+  beginBackupMutation('restore');
 
   try {
     recoverInterruptedRestore();
@@ -1810,16 +1822,20 @@ async function restoreFromZip(zip) {
     }
     throw error;
   } finally {
-    backupDb?.close();
-    if (restoreSucceeded && journal) {
-      cleanupRestoreArtifacts(journal);
-      removeRestoreJournal();
-    } else if (!readRestoreJournal()) {
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-      if (fs.existsSync(rollbackDbPath)) fs.unlinkSync(rollbackDbPath);
-      if (stagingImagesDir) fs.rmSync(stagingImagesDir, { recursive: true, force: true });
-      if (stagingAppStateDir) fs.rmSync(stagingAppStateDir, { recursive: true, force: true });
-      if (appStateRollbackDir) fs.rmSync(appStateRollbackDir, { recursive: true, force: true });
+    try {
+      backupDb?.close();
+      if (restoreSucceeded && journal) {
+        cleanupRestoreArtifacts(journal);
+        removeRestoreJournal();
+      } else if (!readRestoreJournal()) {
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+        if (fs.existsSync(rollbackDbPath)) fs.unlinkSync(rollbackDbPath);
+        if (stagingImagesDir) fs.rmSync(stagingImagesDir, { recursive: true, force: true });
+        if (stagingAppStateDir) fs.rmSync(stagingAppStateDir, { recursive: true, force: true });
+        if (appStateRollbackDir) fs.rmSync(appStateRollbackDir, { recursive: true, force: true });
+      }
+    } finally {
+      endBackupMutation('restore');
     }
   }
 }

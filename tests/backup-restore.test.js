@@ -151,6 +151,16 @@ function addFullBackupManifest(zip, backupRouter) {
   );
 }
 
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 afterEach(async () => {
   vi.restoreAllMocks();
 
@@ -967,6 +977,90 @@ describe('backup and restore', () => {
     expect(fs.readdirSync(dataDir).filter(fileName => fileName.startsWith('_import_tmp_'))).toEqual([]);
   });
 
+  it('blocks merges while a restore is in progress', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const restoreZip = new AdmZip();
+    addLegacyAlbumsDatabaseWithoutImagePath(restoreZip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: 'restore-lock-album',
+        album_name: 'Restore Lock Album',
+        artists: JSON.stringify([{ name: 'Restore Artist' }]),
+        image_url_large: 'https://example.test/restore-lock.jpg',
+      },
+    ]);
+
+    const mergeZip = new AdmZip();
+    addLegacyAlbumsDatabase(mergeZip, dataDir, [
+      {
+        id: 201,
+        album_name: 'Blocked During Restore Album',
+        artists: JSON.stringify([{ name: 'Blocked Artist' }]),
+      },
+    ]);
+
+    const fetchDeferred = createDeferred();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockReturnValue(fetchDeferred.promise);
+    const restorePromise = backupRouter.__private.restoreFromZip(restoreZip);
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    await expect(backupRouter.__private.importFromZip(mergeZip))
+      .rejects.toThrow(/backup restore is already in progress/);
+
+    fetchDeferred.resolve({
+      ok: true,
+      arrayBuffer: async () => Buffer.from('restore-image'),
+    });
+    await expect(restorePromise).resolves.toMatchObject({
+      added: 1,
+      imagesRefetched: 1,
+    });
+  }, 15000);
+
+  it('blocks restores while a merge is in progress', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    const mergeZip = new AdmZip();
+    addLegacyAlbumsDatabaseWithoutImagePath(mergeZip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: 'merge-lock-album',
+        album_name: 'Merge Lock Album',
+        artists: JSON.stringify([{ name: 'Merge Artist' }]),
+        image_url_large: 'https://example.test/merge-lock.jpg',
+      },
+    ]);
+
+    const restoreZip = new AdmZip();
+    addLegacyAlbumsDatabase(restoreZip, dataDir, [
+      {
+        id: 201,
+        album_name: 'Blocked During Merge Album',
+        artists: JSON.stringify([{ name: 'Blocked Artist' }]),
+      },
+    ]);
+
+    const fetchDeferred = createDeferred();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockReturnValue(fetchDeferred.promise);
+    const mergePromise = backupRouter.__private.importFromZip(mergeZip);
+
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    await expect(backupRouter.__private.restoreFromZip(restoreZip))
+      .rejects.toThrow(/backup merge is already in progress/);
+
+    fetchDeferred.resolve({
+      ok: true,
+      arrayBuffer: async () => Buffer.from('merge-image'),
+    });
+    await expect(mergePromise).resolves.toMatchObject({
+      added: 1,
+      imagesRefetched: 1,
+    });
+  }, 15000);
+
   it('rolls back merge rows, cleans partial images, and retries cleanly when final image copy fails', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
@@ -1032,6 +1126,76 @@ describe('backup and restore', () => {
       image_path: 'images/backup-art.jpg',
     });
     expect(fs.readFileSync(path.join(dataDir, 'images', 'backup-art.jpg')).toString()).toBe('backup-image');
+  }, 15000);
+
+  it('does not delete a file that appears at the final merge image path before copy', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const imagePath = 'images/race-art.jpg';
+    writeFileEnsured(path.join(dataDir, imagePath), Buffer.from('backup-image'));
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, image_path, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      101,
+      'Racing Image Merge Album',
+      JSON.stringify([{ name: 'Race Artist' }]),
+      'completed',
+      imagePath,
+      'manual',
+      '2026-04-01 12:00:00',
+      '2026-04-01 12:00:00',
+    );
+
+    const zip = new AdmZip();
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addLocalFile(path.join(dataDir, imagePath), 'images', 'race-art.jpg');
+
+    db.prepare('DELETE FROM albums').run();
+    fs.rmSync(path.join(dataDir, 'images'), { recursive: true, force: true });
+
+    const originalCopyFileSync = fs.copyFileSync;
+    fs.copyFileSync = function copyFileSyncWithRacingFile(sourcePath, targetPath, mode) {
+      if (
+        String(sourcePath).includes('_import_images_')
+        && String(targetPath).endsWith(path.join('images', 'race-art.jpg'))
+      ) {
+        writeFileEnsured(String(targetPath), Buffer.from('racing-image'));
+        const error = new Error('simulated final image race');
+        error.code = 'EEXIST';
+        throw error;
+      }
+      return originalCopyFileSync.call(this, sourcePath, targetPath, mode);
+    };
+
+    try {
+      await expect(backupRouter.__private.importFromZip(zip))
+        .rejects.toThrow(/simulated final image race/);
+    } finally {
+      fs.copyFileSync = originalCopyFileSync;
+    }
+
+    expect(db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+    expect(fs.readFileSync(path.join(dataDir, imagePath)).toString()).toBe('racing-image');
+    expect(backupRouter.__private.readMergeJournal()).toBeNull();
+
+    const retryResult = await backupRouter.__private.importFromZip(zip);
+    const restored = db.prepare('SELECT album_name, image_path FROM albums').get();
+
+    expect(retryResult).toMatchObject({
+      added: 1,
+      skipped: 0,
+      imagesCopied: 1,
+      imagesRefetched: 0,
+    });
+    expect(restored.album_name).toBe('Racing Image Merge Album');
+    expect(restored.image_path).not.toBe(imagePath);
+    expect(restored.image_path).toMatch(/^images\/merge_race-art_/);
+    expect(fs.readFileSync(path.join(dataDir, imagePath)).toString()).toBe('racing-image');
+    expect(fs.readFileSync(path.join(dataDir, restored.image_path)).toString()).toBe('backup-image');
   }, 15000);
 
   it('recovers interrupted restores before merging backup albums', async () => {
