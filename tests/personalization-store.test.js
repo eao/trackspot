@@ -168,6 +168,124 @@ describe('personalization store', () => {
     expect(fs.existsSync(path.join(store.THEMES_DIR, `${theme.id}.json`))).toBe(true);
   });
 
+  it('keeps invalid user theme files and preview assets when listing themes', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const themeId = 'broken-theme';
+    const previewFileName = 'broken-preview.png';
+    const thumbnailFileName = 'broken-preview.jpg';
+    const themePath = path.join(store.THEMES_DIR, `${themeId}.json`);
+    const previewPath = path.join(store.THEME_PREVIEW_IMAGES_DIR, previewFileName);
+    const thumbnailPath = path.join(store.THEME_PREVIEW_IMAGES_THUMBS_DIR, thumbnailFileName);
+
+    fs.writeFileSync(themePath, JSON.stringify({
+      id: themeId,
+      name: 'Broken Theme',
+      description: 'References a missing color scheme.',
+      previewImage: { fileName: previewFileName },
+      colorSchemePresetId: 'missing-scheme',
+      opacityPresetId: 'default-opaque',
+      primaryBackgroundSelection: null,
+      secondaryBackgroundSelection: null,
+    }, null, 2));
+    fs.writeFileSync(previewPath, 'preview');
+    fs.writeFileSync(thumbnailPath, 'thumbnail');
+
+    const themes = store.listThemes();
+    const invalidTheme = themes.find(theme => theme.id === themeId);
+
+    expect(invalidTheme).toMatchObject({
+      id: themeId,
+      name: 'Broken Theme',
+      invalid: true,
+      invalidReason: 'Theme "Broken Theme" references a missing color scheme.',
+      canEdit: false,
+      canDelete: true,
+      colorSchemePresetId: 'missing-scheme',
+      opacityPresetId: 'default-opaque',
+    });
+    expect(invalidTheme.previewImage).toMatchObject({
+      fileName: previewFileName,
+      url: `/theme-previews/${encodeURIComponent(previewFileName)}`,
+      thumbnailUrl: `/theme-previews-thumbs/${thumbnailFileName}`,
+    });
+    expect(fs.existsSync(themePath)).toBe(true);
+    expect(fs.existsSync(previewPath)).toBe(true);
+    expect(fs.existsSync(thumbnailPath)).toBe(true);
+  });
+
+  it('deletes invalid user theme files and preview assets only through explicit delete', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const themeId = 'delete-broken-theme';
+    const previewFileName = 'delete-broken-preview.png';
+    const thumbnailFileName = 'delete-broken-preview.jpg';
+    const themePath = path.join(store.THEMES_DIR, `${themeId}.json`);
+    const previewPath = path.join(store.THEME_PREVIEW_IMAGES_DIR, previewFileName);
+    const thumbnailPath = path.join(store.THEME_PREVIEW_IMAGES_THUMBS_DIR, thumbnailFileName);
+
+    fs.writeFileSync(themePath, JSON.stringify({
+      id: themeId,
+      name: 'Delete Broken Theme',
+      previewImage: { fileName: previewFileName },
+      colorSchemePresetId: 'missing-scheme',
+      opacityPresetId: 'default-opaque',
+    }, null, 2));
+    fs.writeFileSync(previewPath, 'preview');
+    fs.writeFileSync(thumbnailPath, 'thumbnail');
+
+    expect(store.listThemes().find(theme => theme.id === themeId)?.invalid).toBe(true);
+
+    const deleted = store.deleteTheme(themeId);
+
+    expect(deleted.invalid).toBe(true);
+    expect(fs.existsSync(themePath)).toBe(false);
+    expect(fs.existsSync(previewPath)).toBe(false);
+    expect(fs.existsSync(thumbnailPath)).toBe(false);
+  });
+
+  it('includes invalid themes in explicit dependency cascade checks', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const preset = store.createOpacityPreset({
+      name: 'Cascade Test Preset',
+      opacity: {
+        header: 80,
+      },
+    });
+    const themeId = 'broken-dependent-theme';
+    const themePath = path.join(store.THEMES_DIR, `${themeId}.json`);
+
+    fs.writeFileSync(themePath, JSON.stringify({
+      id: themeId,
+      name: 'Broken Dependent Theme',
+      previewImage: { fileName: 'missing-preview.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: preset.id,
+    }, null, 2));
+
+    let error;
+    try {
+      store.deleteOpacityPreset(preset.id);
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error?.status).toBe(409);
+    expect(error?.code).toBe('DEPENDENT_THEMES');
+    expect(error?.dependentThemes?.[0]).toMatchObject({
+      id: themeId,
+      invalid: true,
+      opacityPresetId: preset.id,
+    });
+
+    const result = store.deleteOpacityPreset(preset.id, { cascadeThemes: true });
+
+    expect(result.deletedThemes[0]).toMatchObject({
+      id: themeId,
+      invalid: true,
+    });
+    expect(fs.existsSync(themePath)).toBe(false);
+    expect(store.findOpacityPresetById(preset.id)).toBeNull();
+  });
+
   it('creates user opacity presets in the data directory', () => {
     const { store } = loadPersonalizationStoreTestContext();
 

@@ -904,7 +904,7 @@ function syncAppliedThemeDirtyState() {
   }
 
   const activeTheme = state.personalization.themes.find(theme => theme.id === state.personalization.appliedThemeId) ?? null;
-  if (!activeTheme) {
+  if (!activeTheme || activeTheme.invalid) {
     state.personalization.appliedThemeDirty = false;
     if (state.personalization.appliedThemeId) {
       state.personalization.appliedThemeId = null;
@@ -974,11 +974,16 @@ function syncOpacityPresetUi() {
 
 function normalizeTheme(theme) {
   if (!theme || typeof theme !== 'object') return null;
-  const name = typeof theme.name === 'string' ? theme.name.trim() : '';
+  const id = typeof theme.id === 'string' ? theme.id : '';
+  const name = typeof theme.name === 'string' && theme.name.trim()
+    ? theme.name.trim()
+    : id;
   if (!name) return null;
+  const includedWithApp = !!theme.includedWithApp;
+  const invalid = !!theme.invalid;
 
   return {
-    id: typeof theme.id === 'string' ? theme.id : '',
+    id,
     name,
     description: typeof theme.description === 'string' ? theme.description.trim() : '',
     previewImage: theme.previewImage && typeof theme.previewImage === 'object'
@@ -1000,9 +1005,11 @@ function normalizeTheme(theme) {
     secondaryBackgroundImageBlur: clampOpacityValueForKey('secondaryBackgroundImageBlur', theme.secondaryBackgroundImageBlur),
     opacityPresetId: typeof theme.opacityPresetId === 'string' ? theme.opacityPresetId : '',
     opacityPresetName: typeof theme.opacityPresetName === 'string' ? theme.opacityPresetName : '',
-    includedWithApp: !!theme.includedWithApp,
-    canEdit: theme.canEdit ?? !theme.includedWithApp,
-    canDelete: theme.canDelete ?? !theme.includedWithApp,
+    includedWithApp,
+    canEdit: invalid ? false : (theme.canEdit ?? !includedWithApp),
+    canDelete: theme.canDelete ?? !includedWithApp,
+    invalid,
+    invalidReason: typeof theme.invalidReason === 'string' ? theme.invalidReason.trim() : '',
   };
 }
 
@@ -1155,7 +1162,7 @@ async function maybeApplySeasonalTheme(now = new Date()) {
   const history = getSeasonalThemeHistory();
   if (history[activeRule.key] === currentYear) return false;
 
-  const seasonalTheme = state.personalization.themes.find(theme => theme.name === activeRule.themeName) ?? null;
+  const seasonalTheme = state.personalization.themes.find(theme => !theme.invalid && theme.name === activeRule.themeName) ?? null;
   if (!seasonalTheme) return false;
 
   await applyTheme(seasonalTheme);
@@ -1208,7 +1215,8 @@ function syncThemeUi() {
     themes.forEach(theme => {
       const option = document.createElement('option');
       option.value = theme.id;
-      option.textContent = theme.name;
+      option.textContent = theme.invalid ? `${theme.name} (unavailable)` : theme.name;
+      option.disabled = !!theme.invalid;
       el.personalizationThemeSelect.appendChild(option);
     });
 
@@ -1221,16 +1229,21 @@ function syncThemeUi() {
   const selectedTheme = getSelectedTheme();
   const appliedTheme = themes.find(theme => theme.id === state.personalization.appliedThemeId) ?? null;
   const draftPreview = state.personalization.themeDraft.previewImage;
+  const isInvalidTheme = !!selectedTheme?.invalid;
   const isReadOnlyTheme = !!selectedTheme && !selectedTheme.canEdit;
 
   if (el.personalizationThemeDescription) {
-    el.personalizationThemeDescription.textContent = selectedTheme?.description
+    el.personalizationThemeDescription.textContent = isInvalidTheme
+      ? (selectedTheme.invalidReason || 'Theme is unavailable.')
+      : selectedTheme?.description
       || (selectedTheme ? 'No description.' : 'No theme selected.');
   }
 
   if (el.personalizationThemeStatus) {
     if (!selectedTheme) {
       el.personalizationThemeStatus.textContent = 'No theme is currently applied. Current personalization settings are being used directly.';
+    } else if (isInvalidTheme) {
+      el.personalizationThemeStatus.textContent = 'Theme is unavailable because one or more saved dependencies are missing.';
     } else if (isReadOnlyTheme && selectedTheme.id === appliedTheme?.id && state.personalization.appliedThemeDirty) {
       el.personalizationThemeStatus.textContent = 'Included with the app, currently applied, with manual changes that no longer match the saved theme.';
     } else if (isReadOnlyTheme && selectedTheme.id === appliedTheme?.id) {
@@ -1256,10 +1269,14 @@ function syncThemeUi() {
   }
 
   if (el.personalizationThemeEditorWarning) {
-    el.personalizationThemeEditorWarning.textContent = isReadOnlyTheme
-      ? 'Theme is bundled with the app so cannot be edited.'
-      : '';
-    el.personalizationThemeEditorWarning.style.color = isReadOnlyTheme
+    el.personalizationThemeEditorWarning.textContent = isInvalidTheme
+      ? (selectedTheme.invalidReason || 'Theme is unavailable.')
+      : isReadOnlyTheme
+        ? 'Theme is bundled with the app so cannot be edited.'
+        : '';
+    el.personalizationThemeEditorWarning.style.color = isInvalidTheme
+      ? 'var(--danger)'
+      : isReadOnlyTheme
       ? 'var(--warning, #d8b14a)'
       : 'var(--text-muted)';
   }
@@ -1302,11 +1319,37 @@ function setThemeEditorMessage(message = '', isError = false) {
   el.personalizationThemeEditorMessage.style.color = isError ? 'var(--danger)' : 'var(--text-muted)';
 }
 
+async function deleteThemeFromUi(theme) {
+  if (!theme?.canDelete) return;
+  if (!window.confirm(`Delete the "${theme.name}" theme?`)) return;
+
+  try {
+    setThemeEditorMessage('');
+    await apiFetch(`/api/themes/${encodeURIComponent(theme.id)}`, {
+      method: 'DELETE',
+    });
+    state.personalization.themes = state.personalization.themes.filter(item => item.id !== theme.id);
+    if (state.personalization.appliedThemeId === theme.id) {
+      setAppliedThemeId(null);
+    }
+    if (state.personalization.selectedThemeId === theme.id) {
+      startNewThemeDraft();
+    } else {
+      syncThemeUi();
+    }
+    setPersonalizationBackgroundStatus(`Deleted "${theme.name}".`);
+  } catch (error) {
+    setThemeEditorMessage(error.message, true);
+  }
+}
+
 function createThemePickerCard(theme) {
   const isSelected = theme?.id === state.personalization.selectedThemeId;
+  const isInvalid = !!theme?.invalid;
   const card = document.createElement('div');
   card.className = 'background-card';
   card.classList.toggle('active', isSelected);
+  card.classList.toggle('is-invalid', isInvalid);
 
   const previewUrl = theme?.previewImage?.thumbnailUrl || theme?.previewImage?.url || '';
   if (previewUrl) {
@@ -1320,7 +1363,7 @@ function createThemePickerCard(theme) {
   } else {
     const empty = document.createElement('div');
     empty.className = 'background-gallery-empty';
-    empty.textContent = 'No preview available.';
+    empty.textContent = isInvalid ? 'Theme unavailable.' : 'No preview available.';
     card.appendChild(empty);
   }
 
@@ -1332,20 +1375,40 @@ function createThemePickerCard(theme) {
   name.textContent = theme.name;
   info.appendChild(name);
 
+  if (isInvalid) {
+    const meta = document.createElement('div');
+    meta.className = 'background-card-meta';
+    meta.textContent = theme.invalidReason || 'Theme is unavailable.';
+    info.appendChild(meta);
+  }
+
   const actions = document.createElement('div');
   actions.className = 'background-card-actions';
 
   const useButton = document.createElement('button');
   useButton.className = `btn ${isSelected ? 'btn-primary' : 'btn-ghost'} btn-small`;
   useButton.type = 'button';
-  useButton.textContent = isSelected ? 'Selected' : 'Use';
-  useButton.disabled = isSelected;
-  useButton.addEventListener('click', () => {
-    applyTheme(theme).catch(error => {
-      setPersonalizationBackgroundStatus(`Could not apply "${theme.name}": ${error.message}`, true);
+  useButton.textContent = isInvalid ? 'Unavailable' : isSelected ? 'Selected' : 'Use';
+  useButton.disabled = isInvalid || isSelected;
+  if (!isInvalid) {
+    useButton.addEventListener('click', () => {
+      applyTheme(theme).catch(error => {
+        setPersonalizationBackgroundStatus(`Could not apply "${theme.name}": ${error.message}`, true);
+      });
     });
-  });
+  }
   actions.appendChild(useButton);
+
+  if (theme.canDelete) {
+    const deleteButton = document.createElement('button');
+    deleteButton.className = 'btn btn-ghost btn-small';
+    deleteButton.type = 'button';
+    deleteButton.textContent = 'Delete';
+    deleteButton.addEventListener('click', () => {
+      deleteThemeFromUi(theme).catch(() => {});
+    });
+    actions.appendChild(deleteButton);
+  }
 
   card.appendChild(info);
   card.appendChild(actions);
@@ -1489,14 +1552,15 @@ async function loadThemes(options = {}) {
     const data = await apiFetch('/api/themes');
     state.personalization.themes = (data.themes ?? []).map(normalizeTheme).filter(Boolean).sort(compareIncludedFirstByName);
     state.personalization.themesLoaded = true;
+    const isAvailableThemeId = themeId => state.personalization.themes.some(theme => theme.id === themeId && !theme.invalid);
 
     if (state.personalization.appliedThemeId
-      && !state.personalization.themes.some(theme => theme.id === state.personalization.appliedThemeId)) {
+      && !isAvailableThemeId(state.personalization.appliedThemeId)) {
       setAppliedThemeId(null);
     }
 
     if (state.personalization.selectedThemeId
-      && !state.personalization.themes.some(theme => theme.id === state.personalization.selectedThemeId)) {
+      && !isAvailableThemeId(state.personalization.selectedThemeId)) {
       state.personalization.selectedThemeId = null;
     }
 
@@ -1511,7 +1575,7 @@ async function loadThemes(options = {}) {
 
     if (shouldApplyInitialDefaultTheme()) {
       const defaultTheme = state.personalization.themes.find(theme => (
-        theme.includedWithApp && theme.name === DEFAULT_INCLUDED_THEME_NAME
+        !theme.invalid && theme.includedWithApp && theme.name === DEFAULT_INCLUDED_THEME_NAME
       )) ?? null;
 
       if (defaultTheme) {
@@ -1603,6 +1667,9 @@ function buildThemeFormData(options = {}) {
 export async function applyTheme(theme, options = {}) {
   const { persist = true } = options;
   if (!theme) return;
+  if (theme.invalid) {
+    throw new Error(theme.invalidReason || 'Theme is unavailable.');
+  }
 
   if (!state.personalization.opacityPresetsLoaded) {
     await loadOpacityPresets();
@@ -2122,6 +2189,12 @@ export function initPersonalizationSettings() {
       startNewThemeDraft();
       return;
     }
+    if (theme.invalid) {
+      state.personalization.selectedThemeId = null;
+      syncThemeUi();
+      setPersonalizationBackgroundStatus(`Could not apply "${theme.name}": ${theme.invalidReason || 'Theme is unavailable.'}`, true);
+      return;
+    }
 
     applyTheme(theme).catch(error => {
       setPersonalizationBackgroundStatus(`Could not apply "${theme.name}": ${error.message}`, true);
@@ -2215,23 +2288,7 @@ export function initPersonalizationSettings() {
 
   el.personalizationThemeDelete?.addEventListener('click', async () => {
     const selectedTheme = getSelectedTheme();
-    if (!selectedTheme?.canDelete) return;
-    if (!window.confirm(`Delete the "${selectedTheme.name}" theme?`)) return;
-
-    try {
-      setThemeEditorMessage('');
-      await apiFetch(`/api/themes/${encodeURIComponent(selectedTheme.id)}`, {
-        method: 'DELETE',
-      });
-      state.personalization.themes = state.personalization.themes.filter(theme => theme.id !== selectedTheme.id);
-      if (state.personalization.appliedThemeId === selectedTheme.id) {
-        setAppliedThemeId(null);
-      }
-      startNewThemeDraft();
-      setPersonalizationBackgroundStatus(`Deleted "${selectedTheme.name}".`);
-    } catch (error) {
-      setThemeEditorMessage(error.message, true);
-    }
+    await deleteThemeFromUi(selectedTheme);
   });
 
   el.personalizationColorSchemeSelect?.addEventListener('change', () => {

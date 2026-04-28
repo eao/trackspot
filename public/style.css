@@ -2786,6 +2786,15 @@ select.input {
   background: color-mix(in srgb, var(--bg-elevated) 78%, var(--accent-dim) 22%);
 }
 
+.background-card.is-invalid {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--bg-elevated) 86%, var(--danger) 14%);
+}
+
+.background-card.is-invalid .background-card-name {
+  color: var(--danger);
+}
+
 .background-card-preview {
   width: 100%;
   aspect-ratio: 16 / 10;

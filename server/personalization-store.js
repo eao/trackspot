@@ -374,8 +374,71 @@ function serializeThemePreview(fileName) {
   };
 }
 
+function serializeThemePreviewReference(fileName) {
+  const safeFileName = ensureSafeStoredName(fileName);
+  if (!safeFileName) return null;
+
+  return serializeThemePreview(safeFileName) || {
+    fileName: safeFileName,
+    url: '',
+    thumbnailUrl: null,
+  };
+}
+
 function getColorSchemePresetMap() {
   return new Map(loadColorSchemePresets().map(preset => [preset.id, preset]));
+}
+
+function attachThemeSourceFileName(theme, fileName) {
+  Object.defineProperty(theme, 'sourceFileName', {
+    value: fileName,
+    enumerable: false,
+    configurable: true,
+  });
+  return theme;
+}
+
+function buildInvalidUserThemeRecord(rawTheme, fileName, reason) {
+  const rawObject = rawTheme && typeof rawTheme === 'object' && !Array.isArray(rawTheme)
+    ? rawTheme
+    : {};
+  const fallbackName = path.parse(fileName).name;
+  const id = typeof rawObject.id === 'string' && rawObject.id.trim()
+    ? rawObject.id.trim()
+    : fallbackName;
+  const name = typeof rawObject.name === 'string' && rawObject.name.trim()
+    ? rawObject.name.trim()
+    : fallbackName;
+  const colorSchemePresetId = typeof rawObject.colorSchemePresetId === 'string'
+    ? rawObject.colorSchemePresetId.trim()
+    : '';
+  const opacityPresetId = typeof rawObject.opacityPresetId === 'string'
+    ? rawObject.opacityPresetId.trim()
+    : '';
+
+  return attachThemeSourceFileName({
+    id,
+    name,
+    description: typeof rawObject.description === 'string' ? rawObject.description.trim() : '',
+    previewImage: serializeThemePreviewReference(rawObject.previewImage?.fileName),
+    colorSchemePresetId,
+    colorSchemePresetName: '',
+    primaryBackgroundSelection: normalizeBackgroundReference(rawObject.primaryBackgroundSelection),
+    primaryBackgroundDisplay: normalizeBackgroundDisplay(rawObject.primaryBackgroundDisplay, DEFAULT_BACKGROUND_DISPLAY),
+    secondaryBackgroundSelection: normalizeBackgroundReference(rawObject.secondaryBackgroundSelection),
+    secondaryBackgroundDisplay: normalizeBackgroundDisplay(rawObject.secondaryBackgroundDisplay, DEFAULT_SECONDARY_BACKGROUND_DISPLAY),
+    backgroundImageOpacity: clampOpacityValue(rawObject.backgroundImageOpacity ?? DEFAULT_OPACITY.backgroundImage),
+    backgroundImageBlur: clampOpacityValue(rawObject.backgroundImageBlur ?? DEFAULT_OPACITY.backgroundImageBlur),
+    secondaryBackgroundImageOpacity: clampOpacityValue(rawObject.secondaryBackgroundImageOpacity ?? DEFAULT_OPACITY.secondaryBackgroundImage),
+    secondaryBackgroundImageBlur: clampOpacityValue(rawObject.secondaryBackgroundImageBlur ?? DEFAULT_OPACITY.secondaryBackgroundImageBlur),
+    opacityPresetId,
+    opacityPresetName: '',
+    includedWithApp: false,
+    canEdit: false,
+    canDelete: true,
+    invalid: true,
+    invalidReason: reason,
+  }, fileName);
 }
 
 function hydrateThemeRecord(rawTheme, fileName, options = {}) {
@@ -431,7 +494,7 @@ function hydrateThemeRecord(rawTheme, fileName, options = {}) {
 
   return {
     valid: true,
-    theme: {
+    theme: attachThemeSourceFileName({
       id,
       name,
       description: typeof rawTheme.description === 'string' ? rawTheme.description.trim() : '',
@@ -451,12 +514,17 @@ function hydrateThemeRecord(rawTheme, fileName, options = {}) {
       includedWithApp,
       canEdit: !includedWithApp,
       canDelete: !includedWithApp,
-    },
+      invalid: false,
+      invalidReason: '',
+    }, fileName),
   };
 }
 
-function removeThemeFile(themeId) {
-  const filePath = getThemeFilePath(themeId);
+function removeThemeFile(theme) {
+  const sourceFileName = ensureSafeStoredName(theme?.sourceFileName);
+  const filePath = sourceFileName && path.extname(sourceFileName).toLowerCase() === '.json'
+    ? path.join(THEMES_DIR, sourceFileName)
+    : getThemeFilePath(typeof theme === 'string' ? theme : theme?.id);
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
@@ -465,7 +533,21 @@ function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
 
   listJsonFileNames(directoryPath).forEach(fileName => {
     const filePath = path.join(directoryPath, fileName);
-    const raw = readJsonFile(filePath, `theme "${fileName}"`);
+    let raw;
+    try {
+      raw = readJsonFile(filePath, `theme "${fileName}"`);
+    } catch (error) {
+      if (options.forceIncludedWithApp) {
+        throw error;
+      }
+
+      const fallbackId = path.parse(fileName).name;
+      if (!options.ignoredIds?.has(fallbackId)) {
+        hydratedThemes.push(buildInvalidUserThemeRecord(null, fileName, error.message));
+      }
+      return;
+    }
+
     const rawId = typeof raw?.id === 'string' && raw.id.trim()
       ? raw.id.trim()
       : path.parse(fileName).name;
@@ -477,11 +559,7 @@ function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
         throw createStoreError(500, hydrated.reason);
       }
 
-      const invalidId = typeof raw?.id === 'string' && raw.id.trim()
-        ? raw.id.trim()
-        : path.parse(fileName).name;
-      deleteThemePreviewAssets(raw);
-      removeThemeFile(invalidId);
+      hydratedThemes.push(buildInvalidUserThemeRecord(raw, fileName, hydrated.reason));
       return;
     }
 
@@ -498,7 +576,7 @@ function listThemes() {
   const hydratedThemes = [...seedThemes, ...userThemes];
 
   const seenNames = new Map();
-  hydratedThemes.forEach(theme => {
+  hydratedThemes.filter(theme => !theme.invalid).forEach(theme => {
     const normalizedName = normalizeNameForUniqueness(theme.name);
     const duplicate = seenNames.get(normalizedName);
     if (duplicate) {
@@ -642,6 +720,9 @@ function updateTheme(themeId, input) {
   if (existing.includedWithApp) {
     throw createStoreError(403, 'Included-with-app themes cannot be edited.');
   }
+  if (existing.invalid) {
+    throw createStoreError(409, 'Invalid themes cannot be edited until their missing dependencies are restored.');
+  }
 
   const normalized = validateThemeInput(input, { currentThemeId: themeId });
   const previewImage = writePreviewFiles(input.previewImageFile, input.previewThumbnailFile, existing.previewImage);
@@ -666,7 +747,7 @@ function deleteTheme(themeId) {
   }
 
   deleteThemePreviewAssets(existing);
-  removeThemeFile(existing.id);
+  removeThemeFile(existing);
 
   return existing;
 }
@@ -690,7 +771,7 @@ function deleteThemes(themeIds) {
     const existing = findThemeById(themeId);
     if (!existing || existing.includedWithApp) return;
     deleteThemePreviewAssets(existing);
-    removeThemeFile(themeId);
+    removeThemeFile(existing);
     deletedThemes.push(existing);
   });
   return deletedThemes;

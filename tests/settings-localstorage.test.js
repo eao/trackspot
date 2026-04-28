@@ -2294,6 +2294,113 @@ describe('theme thumbnail picker', () => {
       .map(node => node.textContent)).toEqual(['Basic Blue']);
   });
 
+  it('renders invalid themes as unavailable but still deleteable', async () => {
+    localStorage.setItem('ts_headerScroll', 'smart');
+    localStorage.setItem('ts_appliedThemeId', 'broken-theme');
+    vi.stubGlobal('confirm', vi.fn(() => true));
+
+    const invalidTheme = {
+      id: 'broken-theme',
+      name: 'Broken Theme',
+      description: 'Missing dependency.',
+      previewImage: null,
+      colorSchemePresetId: 'missing-scheme',
+      opacityPresetId: 'default-opaque',
+      primaryBackgroundSelection: null,
+      primaryBackgroundDisplay: {
+        positionX: 'center',
+        positionY: 'center',
+        fill: 'cover',
+        customScale: 1,
+      },
+      secondaryBackgroundSelection: null,
+      secondaryBackgroundDisplay: {
+        positionX: 'right',
+        positionY: 'top',
+        fill: 'original-size',
+        customScale: 1,
+      },
+      backgroundImageOpacity: 45,
+      backgroundImageBlur: 0,
+      secondaryBackgroundImageOpacity: 100,
+      secondaryBackgroundImageBlur: 0,
+      includedWithApp: false,
+      canEdit: false,
+      canDelete: true,
+      invalid: true,
+      invalidReason: 'Theme "Broken Theme" references a missing color scheme.',
+    };
+    const basicTheme = {
+      ...invalidTheme,
+      id: 'basic-blue',
+      name: 'Basic Blue',
+      description: 'Default theme.',
+      previewImage: {
+        fileName: 'basic-blue.png',
+        url: '/theme-previews/basic-blue.png',
+        thumbnailUrl: '/theme-previews-thumbs/basic-blue.jpg',
+      },
+      colorSchemePresetId: 'bunan-blue',
+      includedWithApp: true,
+      canEdit: false,
+      canDelete: false,
+      invalid: false,
+      invalidReason: '',
+    };
+
+    const { apiFetch } = await import('../public/js/state.js');
+    apiFetch.mockImplementation(async (path, options = {}) => {
+      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/themes') return { themes: [basicTheme, invalidTheme] };
+      if (path === '/api/themes/broken-theme' && options.method === 'DELETE') {
+        return { ok: true, theme: invalidTheme };
+      }
+      throw new Error(`Unexpected apiFetch call: ${path}`);
+    });
+
+    const flushAsyncWork = async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+
+    const { initPersonalizationSettings, restorePersonalizationSettings } = await import('../public/js/settings.js');
+    restorePersonalizationSettings();
+    initPersonalizationSettings();
+    await flushAsyncWork();
+
+    const brokenOption = [...elMock.personalizationThemeSelect.querySelectorAll('option')]
+      .find(option => option.value === 'broken-theme');
+    const invalidCard = [...elMock.personalizationThemeGalleryUser.querySelectorAll('.background-card')]
+      .find(card => card.querySelector('.background-card-name')?.textContent === 'Broken Theme');
+    const unavailableButton = [...invalidCard.querySelectorAll('button')]
+      .find(button => button.textContent === 'Unavailable');
+    const deleteButton = [...invalidCard.querySelectorAll('button')]
+      .find(button => button.textContent === 'Delete');
+
+    expect(stateMock.personalization.appliedThemeId).toBeNull();
+    expect(localStorage.getItem('ts_appliedThemeId')).toBeNull();
+    expect(brokenOption?.textContent).toBe('Broken Theme (unavailable)');
+    expect(brokenOption?.disabled).toBe(true);
+    expect(invalidCard.classList.contains('is-invalid')).toBe(true);
+    expect(invalidCard.querySelector('.background-card-meta')?.textContent)
+      .toBe('Theme "Broken Theme" references a missing color scheme.');
+    expect(unavailableButton?.disabled).toBe(true);
+
+    unavailableButton.click();
+    await flushAsyncWork();
+
+    expect(stateMock.personalization.appliedThemeId).toBeNull();
+
+    deleteButton.click();
+    await flushAsyncWork();
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/themes/broken-theme', { method: 'DELETE' });
+    expect(stateMock.personalization.themes.some(theme => theme.id === 'broken-theme')).toBe(false);
+    expect(elMock.personalizationThemeGalleryUser.querySelector('.background-gallery-empty')?.textContent)
+      .toBe('You haven\'t made any themes.');
+  });
+
   it('shows an empty thumbnail in Your themes when no user-created themes exist and opens the lightbox from theme thumbnails', async () => {
     localStorage.setItem('ts_headerScroll', 'smart');
 
