@@ -2235,7 +2235,11 @@ select.input {
 
 .artist-chip {
   appearance: none;
+  display: inline;
   font: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  vertical-align: baseline;
   cursor: pointer;
   background: none;
   border: 0;
