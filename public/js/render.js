@@ -623,6 +623,7 @@ function animateFlyingFrame(frame, targetRect, targetBorderRadiusPx, targetInner
 export async function openArtLightbox(imageUrl, albumName, options = {}) {
   const {
     originEl = null,
+    animationOriginEl = originEl,
     albumId = null,
   } = options;
   if (!imageUrl) return;
@@ -638,7 +639,7 @@ export async function openArtLightbox(imageUrl, albumName, options = {}) {
   el.artLightboxOverlay.setAttribute('aria-hidden', 'false');
   openArtLightboxDialog(originEl);
 
-  const shouldAnimateFromOrigin = originEl instanceof Element;
+  const shouldAnimateFromOrigin = animationOriginEl instanceof Element;
   if (!shouldAnimateFromOrigin) {
     requestAnimationFrame(() => {
       if (animationToken !== _artLightboxAnimationToken) return;
@@ -650,7 +651,7 @@ export async function openArtLightbox(imageUrl, albumName, options = {}) {
   await waitForImageLoad(el.artLightboxImage);
   if (animationToken !== _artLightboxAnimationToken) return;
 
-  const originRect = originEl.getBoundingClientRect();
+  const originRect = animationOriginEl.getBoundingClientRect();
   el.artLightboxImage.classList.add('art-lightbox-image-hidden');
   const finalRect = el.artLightboxImage.getBoundingClientRect();
   if (!originRect.width || !originRect.height || !finalRect.width || !finalRect.height) {
@@ -664,12 +665,12 @@ export async function openArtLightbox(imageUrl, albumName, options = {}) {
 
   const naturalWidth = el.artLightboxImage.naturalWidth;
   const naturalHeight = el.artLightboxImage.naturalHeight;
-  const originBorderRadius = getElementBorderRadiusPx(originEl);
+  const originBorderRadius = getElementBorderRadiusPx(animationOriginEl);
   const finalBorderRadius = getElementBorderRadiusPx(el.artLightboxImage);
   const startInnerGeometry = getCoverInnerGeometry(originRect, naturalWidth, naturalHeight);
   const endInnerGeometry = getFillInnerGeometry(finalRect);
   const flyingFrame = createArtLightboxFlyingFrame(
-    originEl,
+    animationOriginEl,
     originRect,
     imageUrl,
     originBorderRadius,
@@ -909,7 +910,11 @@ function renderList(albums, startIndex = 0, options = {}) {
       const openRowArt = e => {
         if (!state.listArtClickToEnlarge) return;
         e.stopPropagation();
-        openArtLightbox(url, album.album_name, { originEl: img, albumId: album.id });
+        openArtLightbox(url, album.album_name, {
+          originEl: artWrap,
+          animationOriginEl: img,
+          albumId: album.id,
+        });
       };
       artWrap.addEventListener('click', openRowArt);
       artWrap.addEventListener('keydown', e => {

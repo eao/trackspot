@@ -61,6 +61,7 @@ let backgroundLoadedBySlot = {
 let earlyWrappedConfirmStepIndex = -1;
 let earlyWrappedUiInitialized = false;
 let earlyWrappedConfirmKeydownHandler = null;
+let earlyWrappedConfirmOpener = null;
 let earlyWrappedCheatToastTimeout = null;
 let earlyWrappedCheatToastFadeTimeout = null;
 let isSyncingThemeSelectUi = false;
@@ -3512,7 +3513,24 @@ function ensureEarlyWrappedConfirmationKeydown() {
   document.addEventListener('keydown', earlyWrappedConfirmKeydownHandler, true);
 }
 
-function closeEarlyWrappedConfirmation() {
+function rememberEarlyWrappedConfirmationOpener() {
+  const activeElement = document.activeElement;
+  earlyWrappedConfirmOpener = activeElement instanceof HTMLElement
+    && activeElement !== document.body
+    && !el.earlyWrappedConfirmOverlay?.contains(activeElement)
+    ? activeElement
+    : el.toggleEarlyWrapped;
+}
+
+function restoreEarlyWrappedConfirmationFocus() {
+  const target = earlyWrappedConfirmOpener;
+  earlyWrappedConfirmOpener = null;
+  if (target instanceof HTMLElement && target.isConnected && !target.disabled) {
+    target.focus();
+  }
+}
+
+function closeEarlyWrappedConfirmation(options = {}) {
   earlyWrappedConfirmStepIndex = -1;
   if (earlyWrappedConfirmKeydownHandler) {
     document.removeEventListener('keydown', earlyWrappedConfirmKeydownHandler, true);
@@ -3524,6 +3542,11 @@ function closeEarlyWrappedConfirmation() {
   hideEarlyWrappedCheatToast();
   if (el.btnEarlyWrappedConfirmLeft) el.btnEarlyWrappedConfirmLeft.dataset.action = '';
   if (el.btnEarlyWrappedConfirmRight) el.btnEarlyWrappedConfirmRight.dataset.action = '';
+  if (options.restoreFocus !== false) {
+    restoreEarlyWrappedConfirmationFocus();
+  } else {
+    earlyWrappedConfirmOpener = null;
+  }
 }
 
 function hideEarlyWrappedCheatToast() {
@@ -3592,6 +3615,7 @@ function renderEarlyWrappedConfirmationStep(stepIndex) {
 
 function openEarlyWrappedConfirmation() {
   syncEarlyWrappedToggle();
+  rememberEarlyWrappedConfirmationOpener();
   renderEarlyWrappedConfirmationStep(0);
 }
 

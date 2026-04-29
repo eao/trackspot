@@ -16,6 +16,7 @@ const headerTooltipEl = globalThis.document.createElement('div');
 const albumCountEl = globalThis.document.createElement('div');
 const artLightboxImageEl = globalThis.document.createElement('img');
 const artLightboxOverlayEl = globalThis.document.createElement('div');
+const artLightboxCloseEl = globalThis.document.createElement('button');
 const openEditModalMock = vi.fn();
 const apiFetchMock = vi.fn();
 
@@ -100,6 +101,7 @@ vi.mock('../public/js/state.js', () => ({
     albumCount: albumCountEl,
     artLightboxImage: artLightboxImageEl,
     artLightboxOverlay: artLightboxOverlayEl,
+    artLightboxClose: artLightboxCloseEl,
   },
   apiFetch: (...args) => apiFetchMock(...args),
   PAGE_ICON_FIRST: '',
@@ -113,7 +115,7 @@ vi.mock('../public/js/utils.js', () => ({
   formatRating: value => value === null || value === undefined ? '—' : String(value),
   formatDuration: () => '42:00',
   formatAlbumMetaTooltip: album => album.track_count != null ? `Album・${album.track_count} tracks` : '',
-  artUrl: () => null,
+  artUrl: imagePath => imagePath ? '/images/test.jpg' : null,
   escHtml: value => value,
   getSafeExternalHref: value => value || null,
   renderNotesHtml: value => value,
@@ -151,7 +153,13 @@ describe('list view responsive layout stages', () => {
   beforeEach(() => {
     vi.resetModules();
     viewListWidth = 950;
+    globalThis.document.body.innerHTML = '';
     globalThis.document.body.className = '';
+    if (!contentInnerEl.contains(viewListEl)) {
+      contentInnerEl.appendChild(viewListEl);
+    }
+    globalThis.document.body.appendChild(contentInnerEl);
+    globalThis.document.body.appendChild(artLightboxOverlayEl);
     viewListEl.innerHTML = '';
     viewListEl.className = '';
     viewGridEl.className = '';
@@ -160,6 +168,8 @@ describe('list view responsive layout stages', () => {
     pageCountEl.className = '';
     albumCountEl.textContent = '';
     headerTooltipEl.textContent = '';
+    artLightboxOverlayEl.className = 'hidden';
+    artLightboxImageEl.removeAttribute('src');
     openEditModalMock.mockReset();
     apiFetchMock.mockReset();
     apiFetchMock.mockResolvedValue({
@@ -411,6 +421,43 @@ describe('list view responsive layout stages', () => {
       cancelable: true,
     }));
     expect(openEditModalMock).toHaveBeenLastCalledWith(1);
+  });
+
+  it('returns focus to the list art button after keyboard-opening the art preview', async () => {
+    const { closeArtLightbox, render } = await import('../public/js/render.js');
+
+    stateMock.listArtClickToEnlarge = true;
+    stateMock.albums = [
+      {
+        id: 1,
+        album_name: 'Modal Soul',
+        artists: [{ name: 'Nujabes' }],
+        image_path: 'images/modal-soul.jpg',
+        album_type: 'ALBUM',
+        track_count: 20,
+        notes: '',
+        release_year: 2005,
+        listened_at: '2026-04-15',
+        duration_ms: 2520000,
+        rating: 95,
+      },
+    ];
+
+    render();
+
+    const artButton = viewListEl.querySelector('.row-art-wrap');
+    expect(artButton?.getAttribute('role')).toBe('button');
+
+    artButton.focus();
+    artButton.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    closeArtLightbox();
+
+    expect(document.activeElement).toBe(artButton);
   });
 
   it('does not open the album modal when keyboard events start inside a note link', async () => {

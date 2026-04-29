@@ -148,6 +148,7 @@ describe('early wrapped settings flow', () => {
     patchPreferencesMock.mockReset();
     patchPreferencesMock.mockResolvedValue({});
     localStorage.clear();
+    document.body.innerHTML = '';
     document.body.className = '';
 
     stateMock.earlyWrapped = false;
@@ -219,6 +220,34 @@ describe('early wrapped settings flow', () => {
     expect(elMock.toggleEarlyWrapped.checked).toBe(true);
     expect(elMock.earlyWrappedConfirmOverlay.classList.contains('hidden')).toBe(true);
     expect(patchPreferencesMock).toHaveBeenCalledWith({ earlyWrapped: true });
+  });
+
+  it('restores focus to the early wrapped toggle when Escape closes the confirmation', async () => {
+    const card = document.createElement('div');
+    card.className = 'early-wrapped-confirm-card';
+    card.appendChild(elMock.earlyWrappedConfirmText);
+    card.appendChild(elMock.btnEarlyWrappedConfirmLeft);
+    card.appendChild(elMock.btnEarlyWrappedConfirmRight);
+    elMock.earlyWrappedConfirmOverlay.appendChild(card);
+    document.body.appendChild(elMock.toggleEarlyWrapped);
+    document.body.appendChild(elMock.earlyWrappedConfirmOverlay);
+
+    const { initEarlyWrappedSettingsUi } = await import('../public/js/settings.js');
+    initEarlyWrappedSettingsUi();
+
+    elMock.toggleEarlyWrapped.focus();
+    elMock.toggleEarlyWrapped.checked = true;
+    elMock.toggleEarlyWrapped.dispatchEvent(new Event('change'));
+    elMock.btnEarlyWrappedConfirmLeft.focus();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    expect(elMock.earlyWrappedConfirmOverlay.classList.contains('hidden')).toBe(true);
+    expect(document.activeElement).toBe(elMock.toggleEarlyWrapped);
   });
 
   it('turns off without opening any confirmation flow', async () => {
