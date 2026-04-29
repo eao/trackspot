@@ -1363,6 +1363,8 @@ function openArtLightboxDialog(originEl = null) {
       return true;
     },
   });
+  el.artLightboxOverlay.inert = false;
+  el.artLightboxOverlay.setAttribute('aria-hidden', 'false');
   _artLightboxManagedOpen = true;
 }
 

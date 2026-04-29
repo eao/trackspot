@@ -158,6 +158,9 @@ describe('list view responsive layout stages', () => {
     if (!contentInnerEl.contains(viewListEl)) {
       contentInnerEl.appendChild(viewListEl);
     }
+    artLightboxOverlayEl.innerHTML = '';
+    artLightboxOverlayEl.appendChild(artLightboxCloseEl);
+    artLightboxOverlayEl.appendChild(artLightboxImageEl);
     globalThis.document.body.appendChild(contentInnerEl);
     globalThis.document.body.appendChild(artLightboxOverlayEl);
     viewListEl.innerHTML = '';
@@ -169,6 +172,9 @@ describe('list view responsive layout stages', () => {
     albumCountEl.textContent = '';
     headerTooltipEl.textContent = '';
     artLightboxOverlayEl.className = 'hidden';
+    artLightboxOverlayEl.inert = false;
+    artLightboxOverlayEl.setAttribute('aria-hidden', 'true');
+    artLightboxCloseEl.disabled = false;
     artLightboxImageEl.removeAttribute('src');
     openEditModalMock.mockReset();
     apiFetchMock.mockReset();
@@ -458,6 +464,30 @@ describe('list view responsive layout stages', () => {
     closeArtLightbox();
 
     expect(document.activeElement).toBe(artButton);
+  });
+
+  it('keeps the art preview exposed when opened over another managed modal', async () => {
+    const { closeManagedModal, openManagedModal } = await import('../public/js/modal-manager.js');
+    const { closeArtLightbox, openArtLightbox } = await import('../public/js/render.js');
+    const settingsOverlay = document.createElement('div');
+    settingsOverlay.innerHTML = '<div class="modal"><button type="button">Close</button></div>';
+    document.body.appendChild(settingsOverlay);
+
+    openManagedModal({
+      overlay: settingsOverlay,
+      dialog: settingsOverlay.querySelector('.modal'),
+    });
+
+    expect(artLightboxOverlayEl.inert).toBe(true);
+    expect(artLightboxOverlayEl.getAttribute('aria-hidden')).toBe('true');
+
+    await openArtLightbox('/images/test.jpg', 'Theme preview');
+
+    expect(artLightboxOverlayEl.inert).toBe(false);
+    expect(artLightboxOverlayEl.getAttribute('aria-hidden')).toBe('false');
+
+    closeArtLightbox();
+    closeManagedModal(settingsOverlay);
   });
 
   it('does not open the album modal when keyboard events start inside a note link', async () => {
