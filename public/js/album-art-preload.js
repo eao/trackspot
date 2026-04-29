@@ -1,5 +1,6 @@
 import { artUrl } from './utils.js';
 
+export const ALBUM_ART_PRELOAD_LIMIT = 54;
 const ALBUM_ART_PRELOAD_MAX_ENTRIES = 300;
 const albumArtPreloadCache = new Map();
 
@@ -20,7 +21,7 @@ export function clearAlbumArtPreloadCache() {
 
 export function selectAlbumArtPreloadUrls(albums, options = {}) {
   const {
-    limit = Number.POSITIVE_INFINITY,
+    limit = ALBUM_ART_PRELOAD_LIMIT,
     getArtUrl = album => artUrl(album.image_path),
   } = options;
 

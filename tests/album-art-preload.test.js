@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  ALBUM_ART_PRELOAD_LIMIT,
   clearAlbumArtPreloadCache,
   preloadAlbumArt,
   preloadAlbumArtUrls,
@@ -25,6 +26,18 @@ describe('album art preloading', () => {
       '/images/two.jpg',
       '/images/three.jpg',
     ]);
+  });
+
+  it('caps default album art preload selection to the preload budget', () => {
+    const albums = Array.from({ length: ALBUM_ART_PRELOAD_LIMIT + 6 }, (_, index) => ({
+      image_path: `images/${index + 1}.jpg`,
+    }));
+
+    const urls = selectAlbumArtPreloadUrls(albums);
+
+    expect(urls).toHaveLength(ALBUM_ART_PRELOAD_LIMIT);
+    expect(urls[0]).toBe('/images/1.jpg');
+    expect(urls.at(-1)).toBe(`/images/${ALBUM_ART_PRELOAD_LIMIT}.jpg`);
   });
 
   it('starts browser image preloads without reloading already warmed URLs', () => {
