@@ -181,6 +181,7 @@ export const state = {
     samplesAddedAt: null,
     sampleCount: 0,
     lockSessionId: null,
+    useRealDashboardData: false,
   },
 
   // Complex status filters (loaded from server preferences at init).

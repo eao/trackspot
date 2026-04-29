@@ -29,6 +29,7 @@ const stateMock = {
     replay: false,
     lockSessionId: null,
     sampleCount: 0,
+    useRealDashboardData: false,
   },
 };
 
@@ -49,6 +50,9 @@ async function defaultApiFetch(url) {
 const apiFetchMock = vi.fn(defaultApiFetch);
 
 const renderMock = vi.fn();
+const loadAlbumsMock = vi.fn(async () => true);
+const invalidateDashboardCacheMock = vi.fn();
+const refreshActiveDashboardPageMock = vi.fn(async () => ({ refreshed: true }));
 async function defaultSetPage(page) {
   stateMock.navigation.page = page;
   stateMock.view = stateMock.navigation.collectionView;
@@ -78,7 +82,7 @@ vi.mock('../public/js/state.js', () => ({
 
 vi.mock('../public/js/render.js', () => ({
   render: renderMock,
-  loadAlbums: vi.fn(),
+  loadAlbums: loadAlbumsMock,
 }));
 
 vi.mock('../public/js/navigation.js', () => ({
@@ -121,7 +125,8 @@ vi.mock('../public/js/preferences.js', () => ({
 }));
 
 vi.mock('../public/js/dashboard.js', () => ({
-  invalidateDashboardCache: vi.fn(),
+  invalidateDashboardCache: invalidateDashboardCacheMock,
+  refreshActiveDashboardPage: refreshActiveDashboardPageMock,
 }));
 
 vi.mock('../public/js/app-shell.js', () => ({
@@ -169,6 +174,11 @@ describe('welcome tour UI preparation', () => {
     apiFetchMock.mockClear();
     apiFetchMock.mockImplementation(defaultApiFetch);
     renderMock.mockClear();
+    loadAlbumsMock.mockClear();
+    loadAlbumsMock.mockResolvedValue(true);
+    invalidateDashboardCacheMock.mockClear();
+    refreshActiveDashboardPageMock.mockClear();
+    refreshActiveDashboardPageMock.mockResolvedValue({ refreshed: true });
     setPageMock.mockClear();
     setPageMock.mockImplementation(defaultSetPage);
     setUButtonsMock.mockClear();
@@ -211,6 +221,7 @@ describe('welcome tour UI preparation', () => {
       replay: false,
       lockSessionId: null,
       sampleCount: 0,
+      useRealDashboardData: false,
     };
   });
 
@@ -286,6 +297,39 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.querySelector('header')?.getAttribute('aria-hidden')).toBeNull();
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Tour could not start');
     expect(globalThis.document.querySelector('.welcome-tour-error')?.textContent).toBe('Another welcome tour is already active.');
+  });
+
+  it('shows a visible startup failure when the initial status request fails', async () => {
+    apiFetchMock.mockImplementation((url, options = {}) => {
+      if (url === '/api/welcome-tour/status') {
+        return Promise.reject(new Error('Status request failed.'));
+      }
+      return defaultApiFetch(url, options);
+    });
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    expect(stateMock.welcomeTour.active).toBe(false);
+    expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Tour could not start');
+    expect(globalThis.document.querySelector('.welcome-tour-error')?.textContent).toBe('Status request failed.');
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/lock', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('ignores auto-start status failures without rejecting initialization', async () => {
+    apiFetchMock.mockImplementation((url, options = {}) => {
+      if (url === '/api/welcome-tour/status') {
+        return Promise.reject(new Error('Status request failed.'));
+      }
+      return defaultApiFetch(url, options);
+    });
+    const { maybeStartWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await expect(maybeStartWelcomeTour()).resolves.toBeUndefined();
+
+    expect(stateMock.welcomeTour.active).toBe(false);
+    expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
   });
 
   it('wraps focus inside tour actions when tabbing forward and backward', async () => {
@@ -392,6 +436,24 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
   });
 
+  it('restores focus to the element that launched the tour after a normal finish', async () => {
+    const launcher = globalThis.document.querySelector('#btn-settings');
+    launcher.focus();
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    globalThis.document.querySelector('[data-action="skip"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="empty"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="finish"]')?.click();
+    await flushTourStep();
+
+    expect(globalThis.document.activeElement).toBe(launcher);
+  });
+
   it('defers the mobile warning tour to next visit without marking it complete or skipped', async () => {
     window.innerWidth = 500;
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
@@ -413,6 +475,24 @@ describe('welcome tour UI preparation', () => {
       method: 'DELETE',
       body: JSON.stringify({ sessionId: 'tour-session' }),
     }));
+  });
+
+  it('sends a best-effort lock release on page lifecycle events', async () => {
+    const sendBeacon = vi.fn(() => true);
+    Object.defineProperty(globalThis.navigator, 'sendBeacon', {
+      value: sendBeacon,
+      configurable: true,
+    });
+    const { initWelcomeTourEvents, startWelcomeTour } = await import('../public/js/welcome-tour.js');
+    initWelcomeTourEvents();
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    window.dispatchEvent(new Event('pagehide'));
+
+    expect(sendBeacon).toHaveBeenCalledWith('/api/welcome-tour/lock/release', expect.any(Blob));
+    expect(stateMock.welcomeTour.lockSessionId).toBeNull();
   });
 
   it('applies tour theme previews without persisting them', async () => {
@@ -945,6 +1025,31 @@ describe('welcome tour UI preparation', () => {
     expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/complete', expect.anything());
   });
 
+  it('awaits the collection reload after adding samples and preserves the current page', async () => {
+    const albumReload = createDeferred();
+    loadAlbumsMock.mockImplementationOnce(() => albumReload.promise);
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+    apiFetchMock.mockClear();
+
+    globalThis.document.querySelector('[data-action="skip"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="samples"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="finish"]')?.click();
+    await flushTourStep();
+
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+    expect(globalThis.document.querySelector('#welcome-tour-overlay')).not.toBeNull();
+
+    albumReload.resolve(true);
+    await flushTourStep();
+
+    expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
+  });
+
   it('keeps the lock and overlay until stats-page restore completes', async () => {
     const statsRestore = createDeferred();
     setPageMock.mockImplementation(async (page, options = {}) => {
@@ -984,6 +1089,40 @@ describe('welcome tour UI preparation', () => {
     expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/finish', expect.objectContaining({ method: 'POST' }));
     expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/lock', expect.objectContaining({ method: 'DELETE' }));
     expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
+  });
+
+  it('refreshes restored stats with real data after sample insertion', async () => {
+    const realDashboardFlags = [];
+    setPageMock.mockImplementation(async (page, options = {}) => {
+      if (page === 'stats' && options.initial) {
+        realDashboardFlags.push(stateMock.welcomeTour.useRealDashboardData);
+      }
+      await defaultSetPage(page, options);
+    });
+    stateMock.navigation = {
+      page: 'stats',
+      collectionView: 'list',
+      wrappedYear: null,
+    };
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    globalThis.document.querySelector('[data-action="skip"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="samples"]')?.click();
+    await flushTourStep();
+    globalThis.document.querySelector('[data-action="finish"]')?.click();
+    await flushTourStep();
+
+    expect(setPageMock).toHaveBeenCalledWith('stats', expect.objectContaining({
+      initial: true,
+      suppressTransitions: true,
+    }));
+    expect(realDashboardFlags).toEqual([true]);
+    expect(refreshActiveDashboardPageMock).toHaveBeenCalledOnce();
+    expect(stateMock.welcomeTour.useRealDashboardData).toBe(false);
   });
 
   it('keeps the wrapped restore overlay in place until personalization restore completes', async () => {

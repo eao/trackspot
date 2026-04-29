@@ -297,6 +297,19 @@ describe('welcome tour store', () => {
     expect(welcomeStore.getActiveWelcomeTourLockSessionId()).toBe(first.sessionId);
   });
 
+  it('supports beacon-style lock release requests', () => {
+    const { welcomeRouter, welcomeStore } = loadContext();
+    welcomeStore.upsertWelcomeTourLock('owner-session');
+    const releaseHandler = getRouteHandler(welcomeRouter, 'post', '/lock/release');
+    const releaseRes = createResponse();
+
+    releaseHandler({ body: { sessionId: 'owner-session' } }, releaseRes);
+
+    expect(releaseRes.statusCode).toBe(200);
+    expect(releaseRes.jsonBody.active).toBe(false);
+    expect(welcomeStore.getActiveWelcomeTourLockSessionId()).toBeNull();
+  });
+
   it('finishes with samples atomically for the active lock owner', () => {
     const { dbModule, welcomeStore } = loadContext();
     const { sessionId } = welcomeStore.upsertWelcomeTourLock('owner-session');
@@ -318,6 +331,8 @@ describe('welcome tour store', () => {
     expect(result.preferences.welcomeTourSkippedAt).toBeNull();
     expect(result.preferences.welcomeSamplesAddedAt).toBe(result.preferences.welcomeTourCompletedAt);
     expect(result.status.sampleCount).toBe(2);
+    expect(result.status.lockActive).toBe(false);
+    expect(welcomeStore.getActiveWelcomeTourLockSessionId()).toBeNull();
     expect(rows.map(row => row.welcome_sample_key)).toEqual([
       welcomeStore.SAMPLE_KEYS.SPOTIFY,
       welcomeStore.SAMPLE_KEYS.MANUAL,

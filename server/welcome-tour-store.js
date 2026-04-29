@@ -379,6 +379,7 @@ function finishWelcomeTour({ sessionId, skipped = false, addSamples = false } = 
   run();
 
   if (addSamples) cleanupWelcomeSampleImagesForRows(rowsToRemove);
+  releaseWelcomeTourLock(sessionId);
 
   const result = {
     preferences,

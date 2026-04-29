@@ -90,4 +90,8 @@ router.delete('/lock', (req, res) => {
   res.json(releaseWelcomeTourLock(req.body?.sessionId));
 });
 
+router.post('/lock/release', (req, res) => {
+  res.json(releaseWelcomeTourLock(req.body?.sessionId));
+});
+
 module.exports = router;

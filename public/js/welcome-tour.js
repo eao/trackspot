@@ -16,7 +16,7 @@ import {
   setUButtons,
 } from './settings.js';
 import { applyPreferencesToState } from './preferences.js';
-import { invalidateDashboardCache } from './dashboard.js';
+import { invalidateDashboardCache, refreshActiveDashboardPage } from './dashboard.js';
 import { syncAppShellLayout } from './app-shell.js';
 
 const MOBILE_WARNING_WIDTH = 780;
@@ -328,6 +328,8 @@ let stepTransitionToken = 0;
 let stepHighlightActionComplete = false;
 let completedRequiredStepIds = new Set();
 let endingSampleChoice = null;
+let focusRestoreTarget = null;
+let eventsInitialized = false;
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -616,6 +618,11 @@ function createOverlay() {
   document.body.appendChild(overlay);
 }
 
+function captureFocusRestoreTarget() {
+  const activeElement = document.activeElement;
+  focusRestoreTarget = activeElement instanceof HTMLElement ? activeElement : null;
+}
+
 function setAppInert(enabled) {
   if (!enabled) {
     inertSnapshots.forEach(({ element, inert, ariaHidden }) => {
@@ -660,6 +667,41 @@ function focusTourControl() {
     return;
   }
   focusable[0]?.focus();
+}
+
+function isRestorableFocusTarget(element) {
+  if (!(element instanceof HTMLElement) || !element.isConnected) return false;
+  if (element === document.body || element === document.documentElement) return false;
+  if (element.hasAttribute('disabled') || element.disabled || element.getAttribute('aria-disabled') === 'true') return false;
+  if (element.inert || element.closest('[inert], [hidden], .hidden, [aria-hidden="true"]')) return false;
+  return true;
+}
+
+function getFallbackFocusTarget() {
+  const page = state.navigation?.page || 'collection';
+  const selectors = [
+    page === 'stats' ? '#btn-stats' : null,
+    page === 'wrapped' ? '#btn-wrapped' : null,
+    page === 'collection' && (state.view || state.navigation?.collectionView) === 'grid' ? '#btn-view-grid' : null,
+    page === 'collection' ? '#btn-view-list' : null,
+    '#btn-settings',
+    '.content',
+    'main',
+  ].filter(Boolean);
+
+  for (const selector of selectors) {
+    const target = document.querySelector(selector);
+    if (isRestorableFocusTarget(target)) return target;
+  }
+  return null;
+}
+
+function restoreFocusAfterTour() {
+  const target = isRestorableFocusTarget(focusRestoreTarget)
+    ? focusRestoreTarget
+    : getFallbackFocusTarget();
+  focusRestoreTarget = null;
+  target?.focus?.({ preventScroll: true });
 }
 
 function trapTourTab(event) {
@@ -749,11 +791,15 @@ function setTourControlsDisabled(disabled) {
   card?.setAttribute('aria-busy', disabled ? 'true' : 'false');
 }
 
-function removeOverlay() {
+function removeOverlay(options = {}) {
+  const { restoreFocus = false } = options;
   overlay?.remove();
   overlay = null;
   card = null;
   highlightLayer = null;
+  if (restoreFocus) {
+    restoreFocusAfterTour();
+  }
 }
 
 function getStepHighlightSelectors(step) {
@@ -919,7 +965,38 @@ function renderStartupFailure(message) {
   `;
   const error = card.querySelector('.welcome-tour-error');
   if (error) error.textContent = message || 'Something went wrong. Please try again.';
-  card.querySelector('[data-action="close"]')?.addEventListener('click', () => removeOverlay());
+  card.querySelector('[data-action="close"]')?.addEventListener('click', () => removeOverlay({ restoreFocus: true }));
+  focusTourControl();
+}
+
+function getMissingRequiredHighlightSelectors(step) {
+  if (!step?.requireHighlightAction) return [];
+  return getStepHighlightSelectors(step)
+    .filter(selector => !(document.querySelector(selector) instanceof Element));
+}
+
+function renderStepFailure(step, message) {
+  positionHighlights(null);
+  card.className = 'welcome-tour-card welcome-tour-card-centered';
+  card.style.setProperty('--welcome-tour-card-bg-opacity', '96%');
+  card.setAttribute('aria-busy', 'false');
+  card.innerHTML = `
+    <div class="welcome-tour-kicker">Welcome tour</div>
+    <h2>Step could not load</h2>
+    <p class="welcome-tour-note welcome-tour-error" role="alert"></p>
+    <div class="welcome-tour-actions">
+      <button class="btn btn-ghost welcome-tour-skip" data-action="skip">Skip tour</button>
+      <button class="btn btn-ghost" data-action="back"${currentStepIndex === 0 ? ' disabled' : ''}>Back</button>
+      <button class="btn btn-primary" data-action="retry">Retry</button>
+    </div>
+  `;
+  const error = card.querySelector('.welcome-tour-error');
+  if (error) {
+    error.textContent = message || `Could not prepare "${step?.title || 'this step'}".`;
+  }
+  card.querySelector('[data-action="skip"]')?.addEventListener('click', () => skipTour());
+  card.querySelector('[data-action="back"]')?.addEventListener('click', () => showStep(currentStepIndex - 1));
+  card.querySelector('[data-action="retry"]')?.addEventListener('click', () => showStep(currentStepIndex));
   focusTourControl();
 }
 
@@ -990,6 +1067,7 @@ async function showStep(index) {
   isStepTransitioning = true;
   setTourControlsDisabled(true);
   positionHighlights(null);
+  let preparationError = null;
   try {
     await step.effect(step, {
       direction,
@@ -998,12 +1076,22 @@ async function showStep(index) {
     });
   } catch (error) {
     console.error('Welcome tour step failed:', error);
+    preparationError = error;
   } finally {
     if (token === stepTransitionToken) {
       isStepTransitioning = false;
     }
   }
   if (!state.welcomeTour.active || isFinishingTour || token !== stepTransitionToken) {
+    return;
+  }
+  if (preparationError) {
+    renderStepFailure(step, preparationError.message || 'This tour step could not be prepared.');
+    return;
+  }
+  const missingRequiredTargets = getMissingRequiredHighlightSelectors(step);
+  if (missingRequiredTargets.length) {
+    renderStepFailure(step, 'This tour step could not find the control it needs. You can retry, go back, or skip to the end.');
     return;
   }
   renderStep(step);
@@ -1060,12 +1148,16 @@ function startHeartbeat(generation = heartbeatGeneration) {
   }, LOCK_HEARTBEAT_MS);
 }
 
-async function releaseLock() {
+function stopLockHeartbeat() {
   heartbeatGeneration += 1;
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
   }
+}
+
+async function releaseLock() {
+  stopLockHeartbeat();
   if (!state.welcomeTour.lockSessionId) return;
   const sessionId = state.welcomeTour.lockSessionId;
   state.welcomeTour.lockSessionId = null;
@@ -1077,6 +1169,33 @@ async function releaseLock() {
   } catch (error) {
     console.warn('Welcome tour lock release failed:', error);
   }
+}
+
+function releaseLockOnPageLifecycle() {
+  if (!state.welcomeTour.lockSessionId) return;
+  const sessionId = state.welcomeTour.lockSessionId;
+  const body = JSON.stringify({ sessionId });
+  stopLockHeartbeat();
+  state.welcomeTour.lockSessionId = null;
+
+  if (typeof navigator !== 'undefined'
+    && typeof navigator.sendBeacon === 'function'
+    && typeof Blob !== 'undefined') {
+    const beaconBody = new Blob([body], { type: 'application/json' });
+    if (navigator.sendBeacon('/api/welcome-tour/lock/release', beaconBody)) {
+      return;
+    }
+  }
+
+  if (typeof fetch !== 'function') return;
+  fetch('/api/welcome-tour/lock', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(error => {
+    console.warn('Welcome tour lifecycle lock release failed:', error);
+  });
 }
 
 function captureSnapshot() {
@@ -1151,15 +1270,48 @@ async function restoreSnapshot() {
   if (targetPage === 'collection') {
     render();
   } else {
-    await setPage(targetPage, {
+    await withRealDashboardData(() => setPage(targetPage, {
       historyMode: null,
       year: targetNavigation.wrappedYear,
       initial: true,
       suppressTransitions: true,
-    });
+    }));
   }
   window.scrollTo(0, snapshot.scrollY);
   return targetPage;
+}
+
+async function withRealDashboardData(callback) {
+  state.welcomeTour.useRealDashboardData = true;
+  try {
+    return await callback();
+  } finally {
+    state.welcomeTour.useRealDashboardData = false;
+  }
+}
+
+async function loadWelcomeTourStatus(providedStatus = null) {
+  const status = providedStatus ?? await apiFetch('/api/welcome-tour/status');
+  statusCache = status;
+  if (status.preferences) {
+    applyPreferencesToState(status.preferences);
+  }
+  state.welcomeTour.sampleCount = status.sampleCount ?? 0;
+  return status;
+}
+
+async function refreshRestoredPageAfterFinish(restoredPage, { restoreOnly, shouldAddSamples }) {
+  if (restoreOnly || !shouldAddSamples) return;
+
+  invalidateDashboardCache();
+  if (restoredPage === 'collection') {
+    await loadAlbums({ preservePage: true });
+    return;
+  }
+
+  if (restoredPage === 'stats' || restoredPage === 'wrapped') {
+    await withRealDashboardData(() => refreshActiveDashboardPage());
+  }
 }
 
 async function finishTourOnServer({ shouldMarkComplete, shouldAddSamples }) {
@@ -1199,6 +1351,10 @@ async function finishTour(options = {}) {
       shouldMarkComplete,
       shouldAddSamples,
     });
+    await refreshRestoredPageAfterFinish(restoredPage, {
+      restoreOnly,
+      shouldAddSamples,
+    });
   } catch (error) {
     console.error('Welcome tour finish failed:', error);
     showTourError(error.message || 'Something went wrong. Please try again.');
@@ -1211,7 +1367,7 @@ async function finishTour(options = {}) {
   state.welcomeTour.active = false;
   document.body.classList.remove('welcome-tour-active');
   setAppInert(false);
-  removeOverlay();
+  removeOverlay({ restoreFocus: true });
   await releaseLock();
 
   try {
@@ -1219,13 +1375,9 @@ async function finishTour(options = {}) {
     skippedToFinal = false;
     endingSampleChoice = null;
     isStepTransitioning = false;
+    state.welcomeTour.useRealDashboardData = false;
     stepTransitionToken += 1;
     completedRequiredStepIds.clear();
-    if (!restoreOnly && shouldAddSamples && restoredPage === 'collection') {
-      Promise.resolve(loadAlbums()).catch(error => {
-        console.warn('Welcome tour post-finish album reload failed:', error);
-      });
-    }
   } finally {
     isFinishingTour = false;
     refreshWelcomeTourSettings().catch(() => {});
@@ -1240,17 +1392,14 @@ function skipTour() {
 }
 
 export async function startWelcomeTour(options = {}) {
-  const { replay = false } = options;
+  const { replay = false, initialStatus = null } = options;
   if (state.welcomeTour.active) return;
 
-  statusCache = await apiFetch('/api/welcome-tour/status');
-  if (statusCache.preferences) {
-    applyPreferencesToState(statusCache.preferences);
-  }
-  state.welcomeTour.sampleCount = statusCache.sampleCount ?? 0;
+  captureFocusRestoreTarget();
   state.welcomeTour.active = true;
   state.welcomeTour.replay = replay;
   state.welcomeTour.lockSessionId = null;
+  state.welcomeTour.useRealDashboardData = false;
   skippedToFinal = false;
   endingSampleChoice = null;
   isStepTransitioning = false;
@@ -1264,6 +1413,7 @@ export async function startWelcomeTour(options = {}) {
   renderStartupLoading();
 
   try {
+    await loadWelcomeTourStatus(initialStatus);
     const lockGeneration = await acquireInitialLock();
     startHeartbeat(lockGeneration);
     snapshot = captureSnapshot();
@@ -1283,6 +1433,7 @@ export async function startWelcomeTour(options = {}) {
     await releaseLock();
     state.welcomeTour.active = false;
     state.welcomeTour.lockSessionId = null;
+    state.welcomeTour.useRealDashboardData = false;
     document.body.classList.remove('welcome-tour-active');
     setAppInert(false);
     snapshot = null;
@@ -1295,21 +1446,26 @@ export async function startWelcomeTour(options = {}) {
 }
 
 export async function maybeStartWelcomeTour() {
-  const status = await apiFetch('/api/welcome-tour/status');
-  statusCache = status;
-  if (status.preferences) {
-    applyPreferencesToState(status.preferences);
+  let status;
+  try {
+    status = await loadWelcomeTourStatus();
+  } catch (error) {
+    console.warn('Welcome tour status check failed:', error);
+    return;
   }
-  state.welcomeTour.sampleCount = status.sampleCount ?? 0;
   if (status.shouldAutoStart) {
-    await startWelcomeTour({ replay: false });
+    await startWelcomeTour({ replay: false, initialStatus: status });
   }
 }
 
 export function initWelcomeTourEvents() {
+  if (eventsInitialized) return;
+  eventsInitialized = true;
   window.addEventListener('welcome-tour:replay', () => {
     void startWelcomeTour({ replay: true });
   });
+  window.addEventListener('pagehide', releaseLockOnPageLifecycle);
+  window.addEventListener('beforeunload', releaseLockOnPageLifecycle);
   window.addEventListener('resize', () => {
     const step = TOUR_STEPS[currentStepIndex];
     if (state.welcomeTour.active && step) {

@@ -10,6 +10,11 @@ const stateMock = {
   albumListMeta: {
     trackedListenedMs: 0,
   },
+  albums: [],
+  welcomeTour: {
+    active: false,
+    useRealDashboardData: false,
+  },
 };
 const elMock = {
   pageStats: null,
@@ -51,6 +56,11 @@ describe('dashboard wrapped year resolution', () => {
     stateMock.navigation = {
       page: 'collection',
       wrappedYear: null,
+    };
+    stateMock.albums = [];
+    stateMock.welcomeTour = {
+      active: false,
+      useRealDashboardData: false,
     };
     elMock.pageStats = document.createElement('section');
     elMock.pageWrapped = document.createElement('section');
@@ -149,6 +159,30 @@ describe('dashboard wrapped year resolution', () => {
     expect(stateMock.albumListMeta.filteredCount).toBe(7);
     expect(stateMock.albumListMeta.trackedListenedMs).toBe(17_999_999);
     expect(syncHeaderTooltipMock).toHaveBeenCalled();
+  });
+
+  it('loads real dashboard albums during welcome-tour restoration', async () => {
+    stateMock.welcomeTour = {
+      active: true,
+      useRealDashboardData: true,
+    };
+    stateMock.albums = [makeAlbum(2024, 'demo')];
+    apiFetchMock.mockResolvedValue({
+      albums: [makeAlbum(2025, 'real')],
+      meta: {
+        totalCount: 1,
+        filteredCount: 1,
+        trackedListenedMs: 42,
+      },
+    });
+
+    const { invalidateDashboardCache, loadAlbumsForDashboard } = await import('../public/js/dashboard.js');
+    invalidateDashboardCache();
+    const albums = await loadAlbumsForDashboard();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/albums');
+    expect(albums).toEqual([makeAlbum(2025, 'real')]);
+    expect(stateMock.albumListMeta.trackedListenedMs).toBe(42);
   });
 
   it('does not let stale dashboard renders write resolved content after loading', async () => {

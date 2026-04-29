@@ -84,7 +84,7 @@ function mergeDashboardAlbumListMeta(albums, meta = null) {
 }
 
 export async function loadAlbumsForDashboard() {
-  if (state.welcomeTour?.active) {
+  if (state.welcomeTour?.active && !state.welcomeTour?.useRealDashboardData) {
     const albums = normalizeAlbumsForStats(state.albums || []);
     mergeDashboardAlbumListMeta(albums);
     syncHeaderTooltip();
