@@ -213,12 +213,12 @@
     <aside class="sidebar" style="visibility:hidden">
 
       <section class="sidebar-section">
-        <label class="sidebar-label">Search</label>
+        <label class="sidebar-label" for="filter-search">Search</label>
         <input id="filter-search" class="input" type="text" placeholder="Album or artist…" autocomplete="off" />
       </section>
 
       <section class="sidebar-section">
-        <label class="sidebar-label">Artist</label>
+        <label class="sidebar-label" for="filter-artist">Artist</label>
         <input id="filter-artist" class="input" type="text" placeholder="Filter by artist…" autocomplete="off" />
         <label class="checkbox-label" style="margin-top: 5px;">
           <input type="checkbox" id="filter-artist-exact" />
@@ -227,12 +227,12 @@
       </section>
 
       <section class="sidebar-section">
-        <label class="sidebar-label">Year</label>
+        <label class="sidebar-label" for="filter-year">Year</label>
         <input id="filter-year" class="input" type="text" placeholder="e.g. 2000 or 2000-2009" />
       </section>
 
       <section class="sidebar-section">
-        <label class="sidebar-label">Rating</label>
+        <label class="sidebar-label" for="filter-rating-min">Rating</label>
         <div class="range-row">
           <input id="filter-rating-min" class="input input-small" type="number" placeholder="0" min="0" max="100" />
           <span class="range-sep">–</span>
@@ -258,7 +258,7 @@
       </section>
 
       <section class="sidebar-section">
-        <label class="sidebar-label">Import type</label>
+        <label class="sidebar-label" for="filter-import-type-btn">Import type</label>
         <div class="import-type-filter-wrap">
           <button id="filter-import-type-btn" class="btn btn-ghost import-type-filter-btn" type="button"></button>
           <div id="filter-import-type-dropdown" class="import-type-filter-dropdown hidden"></div>
@@ -266,7 +266,7 @@
       </section>
 
       <section class="sidebar-section">
-        <label class="sidebar-label">Album type</label>
+        <label class="sidebar-label" for="filter-type-btn">Album type</label>
         <div class="type-filter-wrap">
           <button id="filter-type-btn" class="btn btn-ghost type-filter-btn" type="button"></button>
           <div id="filter-type-dropdown" class="type-filter-dropdown hidden">
@@ -282,7 +282,7 @@
       </section>
 
       <section class="sidebar-section">
-        <label class="sidebar-label">Status</label>
+        <label class="sidebar-label" for="filter-status-btn">Status</label>
         <div class="status-filter-wrap">
           <button id="filter-status-btn" class="btn btn-ghost status-filter-btn" type="button"></button>
           <div id="filter-status-dropdown" class="status-filter-dropdown hidden"></div>
@@ -290,7 +290,7 @@
       </section>
 
       <section class="sidebar-section">
-        <label class="sidebar-label">Sort</label>
+        <label class="sidebar-label" for="sort-field-btn">Sort</label>
         <div class="sort-row">
           <div class="sort-field-wrap">
             <button id="sort-field-btn" class="btn btn-ghost sort-field-btn" type="button"></button>
@@ -345,6 +345,11 @@
           <!-- Empty state -->
           <div id="empty-state" class="empty-state hidden">
             <p>No albums match your filters.</p>
+            <div class="empty-state-actions">
+              <button class="btn btn-ghost hidden" type="button" data-empty-action="retry">Retry</button>
+              <button class="btn btn-ghost hidden" type="button" data-empty-action="clear-filters">Clear filters</button>
+              <button class="btn btn-primary hidden" type="button" data-empty-action="log-album">Log Album</button>
+            </div>
           </div>
         </div>
       </section>
@@ -380,11 +385,11 @@
             </div>
             <div class="metadata-main-fields">
               <div class="field-group">
-                <label class="field-label">Album name</label>
+                <label class="field-label" for="meta-album-name">Album name</label>
                 <input id="meta-album-name" class="input" type="text" />
               </div>
               <div class="field-group">
-                <label class="field-label">Artist(s)</label>
+                <label class="field-label" for="meta-artist-names">Artist(s)</label>
                 <input id="meta-artist-names" class="input" type="text"
                   list="artist-name-list"
                   placeholder="Separate multiple artists with commas" autocomplete="off" />
@@ -392,7 +397,7 @@
               </div>
             </div>
             <div id="metadata-art-actions" class="metadata-art-actions">
-              <label id="meta-art-upload-label" class="btn btn-ghost btn-full hidden">
+              <label id="meta-art-upload-label" class="btn btn-ghost btn-full hidden" for="meta-art-upload">
                 Upload art
                 <input id="meta-art-upload" type="file" accept="image/jpeg,image/png,image/webp"
                   class="hidden" />
@@ -413,16 +418,16 @@
             </div>
             <div class="meta-row modal-two-col-row">
               <div id="field-release-date" class="field-group field-group-small">
-                <label class="field-label">Release date</label>
+                <label class="field-label" for="meta-release-date">Release date</label>
                 <input id="meta-release-date" class="input" type="date" />
               </div>
               <div class="modal-two-col-split modal-two-col-split-right">
                 <div id="field-duration" class="field-group field-group-small">
-                  <label class="field-label">Duration</label>
+                  <label class="field-label" for="meta-duration">Duration</label>
                   <input id="meta-duration" class="input" type="text" placeholder="hh:mm:ss" />
                 </div>
                 <div id="field-track-count" class="field-group field-group-small hidden">
-                  <label class="field-label">Tracks</label>
+                  <label class="field-label" for="meta-track-count">Tracks</label>
                   <div class="spinner-input-wrap">
                     <input id="meta-track-count" class="input input-with-spinner" type="number"
                       min="0" />
@@ -445,7 +450,7 @@
           <!-- Album Type + Spotify Artist ID (manual entries only) -->
           <div id="field-manual-meta-row" class="user-fields-row modal-two-col-row">
             <div id="field-album-type" class="field-group hidden">
-              <label class="field-label">Album type</label>
+              <label class="field-label" for="meta-album-type">Album type</label>
               <input id="meta-album-type" class="input" type="text" list="album-type-list"
                 placeholder="Album, EP, Single, Compilation…" autocomplete="off" />
               <datalist id="album-type-list">
@@ -456,7 +461,7 @@
               </datalist>
             </div>
             <div id="field-artist-id" class="field-group hidden">
-              <label class="field-label">Spotify Artist ID</label>
+              <label class="field-label" for="meta-artist-id">Spotify Artist ID</label>
               <div class="fetch-row">
                 <input id="meta-artist-id" class="input" type="text"
                   placeholder="ID or https://open.spotify.com/artist/…" />
@@ -468,12 +473,12 @@
           <!-- Album Link + Artist Link (manual entries only) -->
           <div id="field-manual-links-row" class="user-fields-row modal-two-col-row">
             <div id="field-album-link" class="field-group hidden">
-              <label class="field-label">Album link</label>
+              <label class="field-label" for="meta-album-link">Album link</label>
               <input id="meta-album-link" class="input" type="text"
                 placeholder="https://…" />
             </div>
             <div id="field-artist-link" class="field-group hidden">
-              <label class="field-label">Artist link</label>
+              <label class="field-label" for="meta-artist-link">Artist link</label>
               <input id="meta-artist-link" class="input" type="text"
                 placeholder="https://…" />
             </div>
@@ -482,7 +487,7 @@
           <!-- Priority row -->
           <div id="field-priority-row" class="user-fields-row">
             <div class="field-group field-group-small">
-              <label class="field-label">Priority</label>
+              <label class="field-label" for="input-priority">Priority</label>
               <div class="spinner-input-wrap">
                 <input id="input-priority" class="input input-with-spinner" type="number" min="0" value="0" />
                 <div class="custom-spinner-group" aria-hidden="true">
@@ -501,7 +506,7 @@
 
           <div id="field-planned-at-row" class="user-fields-row hidden">
             <div class="field-group field-group-date">
-              <label class="field-label">Date planned</label>
+              <label class="field-label" for="input-planned-at">Date planned</label>
               <div class="date-row">
                 <input id="input-planned-at" class="input input-small" type="date" />
                 <button id="btn-planned-date-today" class="btn btn-ghost" type="button">Today</button>
@@ -514,7 +519,7 @@
           <div class="user-fields-row user-fields-row-status modal-two-col-row">
             <div class="modal-two-col-split modal-two-col-split-left">
               <div class="field-group field-group-status">
-                <label class="field-label">Status</label>
+                <label class="field-label" for="input-status">Status</label>
                 <select id="input-status" class="input">
                   <option value="completed">Completed</option>
                   <option value="dropped">Dropped</option>
@@ -522,7 +527,7 @@
                 </select>
               </div>
               <div id="field-repeats-row" class="field-group field-group-small field-group-repeats">
-                <label class="field-label">Repeat listens</label>
+                <label class="field-label" for="input-repeats">Repeat listens</label>
                 <div class="spinner-input-wrap">
                   <input id="input-repeats" class="input input-with-spinner" type="number" min="0" value="0" />
                   <div class="custom-spinner-group" aria-hidden="true">
@@ -539,7 +544,7 @@
               </div>
             </div>
             <div class="field-group field-group-date">
-              <label class="field-label">Date listened</label>
+              <label class="field-label" for="input-listened-at">Date listened</label>
               <div class="date-row">
                 <input id="input-listened-at" class="input input-small" type="date" />
                 <button id="btn-date-today" class="btn btn-ghost" type="button">Today</button>
@@ -551,7 +556,7 @@
           <!-- Rating row -->
           <div class="user-fields-row">
             <div class="field-group field-group-small">
-              <label class="field-label">Rating <span class="field-optional">(0–100)</span></label>
+              <label class="field-label" for="input-rating">Rating <span class="field-optional">(0–100)</span></label>
               <div class="rating-row">
                 <div class="spinner-input-wrap rating-input-wrap">
                   <input id="input-rating" class="input input-with-spinner input-with-double-spinner" type="number"
@@ -581,7 +586,7 @@
           </div>
 
           <div class="field-group">
-            <label class="field-label">Notes</label>
+            <label class="field-label" for="input-notes">Notes</label>
             <textarea id="input-notes" class="input textarea" rows="4"
               placeholder="Your thoughts…"></textarea>
           </div>
@@ -621,7 +626,10 @@
     </div>
   </div>
 
-  <div id="art-lightbox-overlay" class="art-lightbox-overlay hidden" aria-hidden="true">
+  <div id="art-lightbox-overlay" class="art-lightbox-overlay hidden" role="dialog" aria-modal="true" aria-label="Album art preview" aria-hidden="true" tabindex="-1">
+    <button id="art-lightbox-close" class="art-lightbox-close btn btn-icon" type="button" title="Close album art preview" aria-label="Close album art preview">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </button>
     <img id="art-lightbox-image" class="art-lightbox-image" src="" alt="" />
   </div>
 
@@ -879,6 +887,7 @@
             <div id="complex-status-form" class="complex-status-form hidden">
               <input id="complex-status-name-input" class="input" type="text" placeholder="Filter name…" maxlength="40" />
               <div id="complex-status-toggles" class="complex-status-toggles"></div>
+              <div id="complex-status-error" class="settings-status settings-status-inline hidden" role="alert"></div>
               <div class="complex-status-form-actions">
                 <button id="btn-complex-cancel" class="btn btn-ghost" type="button">Cancel</button>
                 <button id="btn-complex-save" class="btn btn-primary" type="button">Save</button>
@@ -1071,7 +1080,7 @@
 
       <div id="early-wrapped-confirm-overlay" class="early-wrapped-confirm-overlay hidden" aria-hidden="true">
         <div id="early-wrapped-confirm-floater" class="early-wrapped-confirm-floater">
-          <div class="early-wrapped-confirm-card" role="dialog" aria-modal="true" aria-labelledby="early-wrapped-confirm-text">
+          <div class="early-wrapped-confirm-card" role="dialog" aria-modal="true" aria-labelledby="early-wrapped-confirm-text" tabindex="-1">
             <p id="early-wrapped-confirm-text" class="early-wrapped-confirm-text"></p>
             <div class="early-wrapped-confirm-actions">
               <button id="btn-early-wrapped-confirm-left" class="btn btn-ghost" type="button"></button>

@@ -14,6 +14,8 @@ import { showArtButtons } from './modal-art.js';
 import { closeManagedModal, openManagedModal } from './modal-manager.js';
 
 let modalOpenRequestToken = 0;
+const FETCH_ERROR_ID = 'fetch-error';
+const invalidFieldHandlers = new WeakMap();
 
 // ---------------------------------------------------------------------------
 // Error display helpers
@@ -29,6 +31,75 @@ export function showError(msg) {
 export function hideError() {
   el.fetchError.textContent = '';
   el.fetchError.classList.add('hidden');
+  clearAllValidationErrors();
+}
+
+function getModalValidationFields() {
+  return [
+    el.metaAlbumName,
+    el.metaArtistNames,
+    el.inputRating,
+  ].filter(Boolean);
+}
+
+function removeFetchErrorDescribedBy(field) {
+  const describedBy = field.getAttribute('aria-describedby');
+  if (!describedBy) return;
+  const nextTokens = describedBy
+    .split(/\s+/)
+    .filter(token => token && token !== FETCH_ERROR_ID);
+  if (nextTokens.length) {
+    field.setAttribute('aria-describedby', nextTokens.join(' '));
+  } else {
+    field.removeAttribute('aria-describedby');
+  }
+}
+
+function addFetchErrorDescribedBy(field) {
+  const tokens = new Set(
+    (field.getAttribute('aria-describedby') || '')
+      .split(/\s+/)
+      .filter(Boolean)
+  );
+  tokens.add(FETCH_ERROR_ID);
+  field.setAttribute('aria-describedby', [...tokens].join(' '));
+}
+
+function clearValidationError(field) {
+  if (!field) return;
+  const existingHandler = invalidFieldHandlers.get(field);
+  if (existingHandler) {
+    field.removeEventListener('input', existingHandler);
+    field.removeEventListener('change', existingHandler);
+    invalidFieldHandlers.delete(field);
+  }
+  field.removeAttribute('aria-invalid');
+  removeFetchErrorDescribedBy(field);
+}
+
+function clearAllValidationErrors() {
+  getModalValidationFields().forEach(clearValidationError);
+}
+
+function showFieldError(message, field, isValid) {
+  showError(message);
+  if (!field) {
+    focusSaveError();
+    return;
+  }
+
+  clearValidationError(field);
+  field.setAttribute('aria-invalid', 'true');
+  addFetchErrorDescribedBy(field);
+
+  const handlePotentialFix = () => {
+    if (typeof isValid === 'function' && !isValid(field)) return;
+    clearValidationError(field);
+  };
+  invalidFieldHandlers.set(field, handlePotentialFix);
+  field.addEventListener('input', handlePotentialFix);
+  field.addEventListener('change', handlePotentialFix);
+  field.focus?.();
 }
 
 function getAlbumById(id) {
@@ -199,6 +270,8 @@ function createModalState(overrides = {}) {
     artUploadError: null,
     pendingUploadedArtPaths: [],
     pendingMeta: null,
+    initialSnapshot: null,
+    currentDateDefaults: null,
     ...overrides,
   };
 }
@@ -214,6 +287,42 @@ function focusSaveError() {
     return;
   }
   el.btnSave?.focus?.();
+}
+
+function getModalSnapshot() {
+  return JSON.stringify({
+    albumName: el.metaAlbumName?.value ?? '',
+    artistNames: el.metaArtistNames?.value ?? '',
+    releaseDate: el.metaReleaseDate?.value ?? '',
+    trackCount: el.metaTrackCount?.value ?? '',
+    duration: el.metaDuration?.value ?? '',
+    artistId: el.metaArtistId?.value ?? '',
+    albumType: el.metaAlbumType?.value ?? '',
+    albumLink: el.metaAlbumLink?.value ?? '',
+    artistLink: el.metaArtistLink?.value ?? '',
+    plannedAt: el.inputPlannedAt?.value ?? '',
+    listenedAt: el.inputListenedAt?.value ?? '',
+    rating: el.inputRating?.value ?? '',
+    notes: el.inputNotes?.value ?? '',
+    status: el.inputStatus?.value ?? '',
+    repeats: el.inputRepeats?.value ?? '',
+    priority: el.inputPriority?.value ?? '',
+    pendingImagePath: getPendingUploadedArtPath(),
+  });
+}
+
+function rememberAlbumModalSnapshot() {
+  state.modal.initialSnapshot = getModalSnapshot();
+}
+
+function isAlbumModalDirty() {
+  return !!state.modal?.initialSnapshot
+    && state.modal.initialSnapshot !== getModalSnapshot();
+}
+
+function confirmDiscardAlbumModalChanges() {
+  if (!isAlbumModalDirty()) return true;
+  return window.confirm('Discard unsaved album changes?');
 }
 
 async function waitForPendingArtUpload() {
@@ -282,6 +391,25 @@ function applyModalOpenDateDefaults(status) {
   const defaults = getModalDateDefaultsForStatus(status);
   el.inputPlannedAt.value = defaults.planned_at;
   el.inputListenedAt.value = defaults.listened_at;
+  state.modal.currentDateDefaults = defaults;
+}
+
+export function handleModalStatusChange() {
+  syncAlbumModalFieldVisibility();
+  if (state.modal.mode !== 'log') return;
+
+  const previousDefaults = state.modal.currentDateDefaults;
+  if (!previousDefaults) return;
+
+  const dateFieldsStillDefault = el.inputPlannedAt.value === previousDefaults.planned_at
+    && el.inputListenedAt.value === previousDefaults.listened_at;
+  const nextDefaults = getModalDateDefaultsForStatus(el.inputStatus.value || 'completed');
+
+  if (dateFieldsStillDefault) {
+    el.inputPlannedAt.value = nextDefaults.planned_at;
+    el.inputListenedAt.value = nextDefaults.listened_at;
+  }
+  state.modal.currentDateDefaults = nextDefaults;
 }
 
 function getArtistNameSuggestions() {
@@ -420,7 +548,8 @@ export function populateDetailsFields(album, isManual) {
 export function syncAlbumModalFieldVisibility() {
   const showRepeatsField = state.showRepeatsField !== false;
   const showPriorityField = state.showPriorityField === true;
-  const showPlannedAtField = state.showPlannedAtField === true;
+  const showPlannedAtField = state.showPlannedAtField === true
+    || (state.modal.open && el.inputStatus?.value === 'planned');
   const hideRepeats = !showRepeatsField;
   const hidePriority = !showPriorityField;
   const hidePlannedAt = !showPlannedAtField;
@@ -463,6 +592,7 @@ export function openLogModal() {
   syncAlbumModalFieldVisibility();
   syncAlbumModalDebugControls();
   syncAlbumModalBusyControls();
+  rememberAlbumModalSnapshot();
 
   el.modalOverlay.classList.remove('hidden');
   openManagedModal({
@@ -544,12 +674,19 @@ export async function handleImageUpload(file) {
 
 export async function handleSaveNew() {
   if (state.modal.isSaving) return;
+  hideError();
 
   const albumName   = el.metaAlbumName.value.trim();
   const artistInput = el.metaArtistNames.value.trim();
 
-  if (!albumName) { showError('Album name is required.'); return; }
-  if (!artistInput) { showError('Artist name is required.'); return; }
+  if (!albumName) {
+    showFieldError('Album name is required.', el.metaAlbumName, field => field.value.trim() !== '');
+    return;
+  }
+  if (!artistInput) {
+    showFieldError('Artist name is required.', el.metaArtistNames, field => field.value.trim() !== '');
+    return;
+  }
 
   const listenedAt = el.inputListenedAt.value;
   const plannedAt = el.inputPlannedAt.value;
@@ -557,7 +694,12 @@ export async function handleSaveNew() {
   const ratingRaw = el.inputRating.value.trim();
   const rating    = ratingRaw === '' ? null : parseInt(ratingRaw, 10);
   if (rating !== null && (isNaN(rating) || rating < 0 || rating > 100)) {
-    showError('Rating must be a number between 0 and 100.');
+    showFieldError('Rating must be a number between 0 and 100.', el.inputRating, field => {
+      const value = field.value.trim();
+      if (value === '') return true;
+      const nextRating = parseInt(value, 10);
+      return !isNaN(nextRating) && nextRating >= 0 && nextRating <= 100;
+    });
     return;
   }
 
@@ -599,7 +741,6 @@ export async function handleSaveNew() {
   state.modal.isSaving = true;
   el.btnSave.textContent = 'Saving…';
   syncAlbumModalBusyControls();
-  hideError();
 
   try {
     const pendingImagePath = getPendingUploadedArtPath();
@@ -671,6 +812,7 @@ export async function openEditModal(id) {
   showArtButtons();
   syncAlbumModalDebugControls();
   syncAlbumModalBusyControls();
+  rememberAlbumModalSnapshot();
 
   el.modalOverlay.classList.remove('hidden');
   openManagedModal({
@@ -756,6 +898,7 @@ export async function showAlbumInfoDebugWindow() {
 
 export async function handleSaveEdit() {
   if (state.modal.isSaving) return;
+  hideError();
 
   const listenedAt = el.inputListenedAt.value;
   const plannedAt = el.inputPlannedAt.value;
@@ -763,7 +906,12 @@ export async function handleSaveEdit() {
   const ratingRaw = el.inputRating.value.trim();
   const rating    = ratingRaw === '' ? null : parseInt(ratingRaw, 10);
   if (rating !== null && (isNaN(rating) || rating < 0 || rating > 100)) {
-    showError('Rating must be a number between 0 and 100.');
+    showFieldError('Rating must be a number between 0 and 100.', el.inputRating, field => {
+      const value = field.value.trim();
+      if (value === '') return true;
+      const nextRating = parseInt(value, 10);
+      return !isNaN(nextRating) && nextRating >= 0 && nextRating <= 100;
+    });
     return;
   }
 
@@ -782,8 +930,14 @@ export async function handleSaveEdit() {
   if (state.modal.isManual) {
     const albumName   = el.metaAlbumName.value.trim();
     const artistInput = el.metaArtistNames.value.trim();
-    if (!albumName)   { showError('Album name is required.'); return; }
-    if (!artistInput) { showError('Artist name is required.'); return; }
+    if (!albumName) {
+      showFieldError('Album name is required.', el.metaAlbumName, field => field.value.trim() !== '');
+      return;
+    }
+    if (!artistInput) {
+      showFieldError('Artist name is required.', el.metaArtistNames, field => field.value.trim() !== '');
+      return;
+    }
 
     const artistIdRaw = el.metaArtistId.value.trim();
     payload.album_name   = albumName;
@@ -811,7 +965,6 @@ export async function handleSaveEdit() {
   state.modal.isSaving = true;
   el.btnSave.textContent = 'Saving…';
   syncAlbumModalBusyControls();
-  hideError();
 
   try {
     const pendingImagePath = getPendingUploadedArtPath();
@@ -839,6 +992,9 @@ export async function handleSaveEdit() {
 
 export function closeModal(options = {}) {
   if ((state.modal.isSaving || state.modal.isUploadingArt) && !options.force) {
+    return false;
+  }
+  if (!options.force && !confirmDiscardAlbumModalChanges()) {
     return false;
   }
   nextModalOpenRequestToken();

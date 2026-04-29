@@ -33,7 +33,7 @@ import {
   openEditModal, closeModal,
   showAlbumInfoDebugWindow,
   openDeleteConfirm, closeDeleteConfirm, handleDeleteConfirm,
-  updateRatingDisplay, showError,
+  updateRatingDisplay, showError, handleModalStatusChange,
 } from './modal.js';
 import {
   closeSettings, setDebugMode, setUButtons,
@@ -182,6 +182,8 @@ function initEvents() {
     el.inputPlannedAt.value = '';
   });
 
+  el.inputStatus.addEventListener('change', handleModalStatusChange);
+
 
 
   // Header.
@@ -320,11 +322,12 @@ function initEvents() {
       closeArtLightbox();
     }
   });
+  el.artLightboxClose?.addEventListener('click', closeArtLightbox);
 
   // Close modals on Escape key.
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if (closeArtistPopover()) return;
+      if (closeArtistPopover({ restoreFocus: true })) return;
       if (!el.artLightboxOverlay.classList.contains('hidden')) { closeArtLightbox(); return; }
       if (requestCloseTopManagedModal()) return;
     }

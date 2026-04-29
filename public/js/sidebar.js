@@ -48,6 +48,10 @@ function syncCollectionViewButtons(view) {
   el.btnViewGrid?.classList.toggle('active', view === 'grid');
   el.btnStats?.classList.remove('active');
   el.btnWrapped?.classList.remove('active');
+  el.btnViewList?.setAttribute('aria-pressed', view === 'list' ? 'true' : 'false');
+  el.btnViewGrid?.setAttribute('aria-pressed', view === 'grid' ? 'true' : 'false');
+  el.btnStats?.setAttribute('aria-pressed', 'false');
+  el.btnWrapped?.setAttribute('aria-pressed', 'false');
 }
 
 function ensureSidebarVisibleForCollection(sidebarEl) {
@@ -63,6 +67,7 @@ function ensureSidebarVisibleForCollection(sidebarEl) {
 export function renderStatusDropdown() {
   const dd = el.filterStatusDropdown;
   dd.innerHTML = '';
+  dd.setAttribute('role', 'listbox');
 
   [
     { value: 'completed', label: 'Completed' },
@@ -74,12 +79,15 @@ export function renderStatusDropdown() {
     btn.dataset.value = s.value;
     btn.textContent = s.label;
     btn.classList.toggle('active', s.value === state.filters.statusFilter);
+    btn.setAttribute('role', 'option');
+    btn.setAttribute('aria-selected', s.value === state.filters.statusFilter ? 'true' : 'false');
     dd.appendChild(btn);
   });
 
   if (state.complexStatuses.length > 0) {
     const sep = document.createElement('div');
     sep.className = 'status-filter-sep';
+    sep.setAttribute('role', 'separator');
     dd.appendChild(sep);
 
     state.complexStatuses.forEach(cs => {
@@ -88,6 +96,8 @@ export function renderStatusDropdown() {
       btn.dataset.value = cs.id;
       btn.textContent = cs.name;
       btn.classList.toggle('active', cs.id === state.filters.statusFilter);
+      btn.setAttribute('role', 'option');
+      btn.setAttribute('aria-selected', cs.id === state.filters.statusFilter ? 'true' : 'false');
       dd.appendChild(btn);
     });
   }
@@ -99,13 +109,16 @@ export function updateStatusFilterBtn() {
     ? cs.name
     : (STATUS_FILTER_LABELS[state.filters.statusFilter] ?? state.filters.statusFilter);
   el.filterStatusDropdown.querySelectorAll('.status-filter-option').forEach(opt => {
-    opt.classList.toggle('active', opt.dataset.value === state.filters.statusFilter);
+    const selected = opt.dataset.value === state.filters.statusFilter;
+    opt.classList.toggle('active', selected);
+    opt.setAttribute('aria-selected', selected ? 'true' : 'false');
   });
 }
 
 export function renderImportTypeDropdown() {
   const dd = el.filterImportTypeDropdown;
   dd.innerHTML = '';
+  dd.setAttribute('role', 'listbox');
 
   [
     { value: 'spotify', label: 'Spotify' },
@@ -116,11 +129,14 @@ export function renderImportTypeDropdown() {
     btn.dataset.value = option.value;
     btn.textContent = option.label;
     btn.classList.toggle('active', option.value === state.filters.importTypeFilter);
+    btn.setAttribute('role', 'option');
+    btn.setAttribute('aria-selected', option.value === state.filters.importTypeFilter ? 'true' : 'false');
     dd.appendChild(btn);
   });
 
   const sep = document.createElement('div');
   sep.className = 'status-filter-sep';
+  sep.setAttribute('role', 'separator');
   dd.appendChild(sep);
 
   const allBtn = document.createElement('button');
@@ -128,6 +144,8 @@ export function renderImportTypeDropdown() {
   allBtn.dataset.value = 'all';
   allBtn.textContent = 'All';
   allBtn.classList.toggle('active', state.filters.importTypeFilter === 'all');
+  allBtn.setAttribute('role', 'option');
+  allBtn.setAttribute('aria-selected', state.filters.importTypeFilter === 'all' ? 'true' : 'false');
   dd.appendChild(allBtn);
 }
 
@@ -135,7 +153,9 @@ export function updateImportTypeFilterBtn() {
   const value = state.filters.importTypeFilter || 'all';
   el.filterImportTypeBtn.textContent = IMPORT_TYPE_FILTER_LABELS[value] ?? value;
   el.filterImportTypeDropdown.querySelectorAll('.import-type-filter-option').forEach(opt => {
-    opt.classList.toggle('active', opt.dataset.value === value);
+    const selected = opt.dataset.value === value;
+    opt.classList.toggle('active', selected);
+    opt.setAttribute('aria-selected', selected ? 'true' : 'false');
   });
 }
 
@@ -145,7 +165,9 @@ export function updateTypeFilterBtn() {
   el.filterTypeBtn.textContent = allOn ? 'All' : active.length === 0 ? 'None' : active.map(k => TYPE_FILTER_LABELS[k]).join(', ');
   el.filterTypeDropdown.querySelectorAll('.type-filter-option[data-type]').forEach(opt => {
     if (opt.dataset.type === 'all') return;
-    opt.classList.toggle('active', state.filters[opt.dataset.type]);
+    const selected = !!state.filters[opt.dataset.type];
+    opt.classList.toggle('active', selected);
+    opt.setAttribute('aria-pressed', selected ? 'true' : 'false');
   });
 }
 
@@ -182,6 +204,17 @@ export function genComplexStatusId() {
 
 function canDeleteComplexStatus(status) {
   return !status?.includedWithApp;
+}
+
+async function moveComplexStatus(index, direction) {
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= state.complexStatuses.length) return;
+  const [moved] = state.complexStatuses.splice(index, 1);
+  state.complexStatuses.splice(targetIndex, 0, moved);
+  renderComplexStatusList();
+  renderStatusDropdown();
+  updateStatusFilterBtn();
+  await saveComplexStatuses();
 }
 
 // Checks that the two built-in complex statuses exist and have correct contents.
@@ -256,9 +289,38 @@ export function renderComplexStatusList() {
     delBtn.setAttribute('aria-label', delBtn.title);
     delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
+    const reorderControls = document.createElement('span');
+    reorderControls.className = 'settings-reorder-controls';
+
+    const moveUpBtn = document.createElement('button');
+    moveUpBtn.type = 'button';
+    moveUpBtn.className = 'btn btn-icon settings-reorder-btn';
+    moveUpBtn.disabled = index === 0;
+    moveUpBtn.title = 'Move up';
+    moveUpBtn.setAttribute('aria-label', `Move ${cs.name} up`);
+    moveUpBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>';
+    moveUpBtn.addEventListener('click', () => {
+      void moveComplexStatus(index, -1);
+    });
+
+    const moveDownBtn = document.createElement('button');
+    moveDownBtn.type = 'button';
+    moveDownBtn.className = 'btn btn-icon settings-reorder-btn';
+    moveDownBtn.disabled = index === state.complexStatuses.length - 1;
+    moveDownBtn.title = 'Move down';
+    moveDownBtn.setAttribute('aria-label', `Move ${cs.name} down`);
+    moveDownBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+    moveDownBtn.addEventListener('click', () => {
+      void moveComplexStatus(index, 1);
+    });
+
+    reorderControls.appendChild(moveUpBtn);
+    reorderControls.appendChild(moveDownBtn);
+
     item.appendChild(dragHandle);
     item.appendChild(nameEl);
     item.appendChild(badgesEl);
+    item.appendChild(reorderControls);
     item.appendChild(delBtn);
     list.appendChild(item);
   });
@@ -277,13 +339,28 @@ export function initComplexStatuses() {
   const btnAdd    = document.getElementById('btn-add-complex-status');
   const btnCancel = document.getElementById('btn-complex-cancel');
   const btnSave   = document.getElementById('btn-complex-save');
+  const errorEl   = document.getElementById('complex-status-error');
 
   const TRUE_STATUSES = ['completed', 'dropped', 'planned'];
   let selectedStatuses = new Set();
 
+  function showComplexStatusError(message) {
+    if (!errorEl) return;
+    errorEl.textContent = message;
+    errorEl.classList.remove('hidden');
+    errorEl.style.color = 'var(--danger-hover)';
+  }
+
+  function clearComplexStatusError() {
+    if (!errorEl) return;
+    errorEl.textContent = '';
+    errorEl.classList.add('hidden');
+  }
+
   function showForm() {
     selectedStatuses = new Set();
     nameInput.value = '';
+    clearComplexStatusError();
     togglesCt.innerHTML = '';
     TRUE_STATUSES.forEach(s => {
       const btn = document.createElement('button');
@@ -291,14 +368,18 @@ export function initComplexStatuses() {
       btn.className = 'btn complex-status-toggle';
       btn.dataset.status = s;
       btn.textContent = STATUS_LABELS[s];
+      btn.setAttribute('aria-pressed', 'false');
       btn.addEventListener('click', () => {
         if (selectedStatuses.has(s)) {
           selectedStatuses.delete(s);
           btn.classList.remove('active');
+          btn.setAttribute('aria-pressed', 'false');
         } else {
           selectedStatuses.add(s);
           btn.classList.add('active');
+          btn.setAttribute('aria-pressed', 'true');
         }
+        if (selectedStatuses.size > 0) clearComplexStatusError();
       });
       togglesCt.appendChild(btn);
     });
@@ -310,6 +391,7 @@ export function initComplexStatuses() {
   function hideForm() {
     form.classList.add('hidden');
     btnAdd.classList.remove('hidden');
+    clearComplexStatusError();
   }
 
   btnAdd.addEventListener('click', showForm);
@@ -333,8 +415,17 @@ export function initComplexStatuses() {
 
   btnSave.addEventListener('click', async () => {
     const name = nameInput.value.trim();
-    if (!name) { nameInput.focus(); return; }
-    if (selectedStatuses.size === 0) return;
+    clearComplexStatusError();
+    if (!name) {
+      showComplexStatusError('Enter a filter name.');
+      nameInput.focus();
+      return;
+    }
+    if (selectedStatuses.size === 0) {
+      showComplexStatusError('Select at least one status.');
+      togglesCt.querySelector('button')?.focus();
+      return;
+    }
     state.complexStatuses.push({ id: genComplexStatusId(), name, statuses: [...selectedStatuses], includedWithApp: false });
     renderComplexStatusList();
     renderStatusDropdown();
@@ -451,6 +542,16 @@ export function saveUButtons() {
   });
 }
 
+function moveUButton(index, direction) {
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= state.uButtons.length) return;
+  const [moved] = state.uButtons.splice(index, 1);
+  state.uButtons.splice(targetIndex, 0, moved);
+  saveUButtons();
+  renderUButtonList();
+  renderUButtonBar();
+}
+
 // Re-renders the U-button bar DOM to match state.uButtons order/enabled.
 export function renderUButtonBar() {
   const uButtonsEl = document.getElementById('u-buttons');
@@ -524,8 +625,33 @@ export function renderUButtonList() {
     toggle.appendChild(checkbox);
     toggle.appendChild(track);
 
+    const reorderControls = document.createElement('span');
+    reorderControls.className = 'settings-reorder-controls';
+
+    const moveUpBtn = document.createElement('button');
+    moveUpBtn.type = 'button';
+    moveUpBtn.className = 'btn btn-icon settings-reorder-btn';
+    moveUpBtn.disabled = index === 0;
+    moveUpBtn.title = 'Move up';
+    moveUpBtn.setAttribute('aria-label', `Move ${def.label} up`);
+    moveUpBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>';
+    moveUpBtn.addEventListener('click', () => moveUButton(index, -1));
+
+    const moveDownBtn = document.createElement('button');
+    moveDownBtn.type = 'button';
+    moveDownBtn.className = 'btn btn-icon settings-reorder-btn';
+    moveDownBtn.disabled = index === state.uButtons.length - 1;
+    moveDownBtn.title = 'Move down';
+    moveDownBtn.setAttribute('aria-label', `Move ${def.label} down`);
+    moveDownBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+    moveDownBtn.addEventListener('click', () => moveUButton(index, 1));
+
+    reorderControls.appendChild(moveUpBtn);
+    reorderControls.appendChild(moveDownBtn);
+
     item.appendChild(dragHandle);
     item.appendChild(labelEl);
+    item.appendChild(reorderControls);
     item.appendChild(toggle);
     list.appendChild(item);
   });
@@ -585,13 +711,24 @@ export function initUButtons() {
 
 export function updateSortFieldBtn() {
   el.sortFieldBtn.textContent = SORT_FIELD_LABELS[state.sort.field] ?? state.sort.field;
+  el.sortFieldDropdown?.setAttribute('role', 'listbox');
   el.sortFieldDropdown.querySelectorAll('.sort-field-option').forEach(opt => {
-    opt.classList.toggle('active', opt.dataset.value === state.sort.field);
+    const selected = opt.dataset.value === state.sort.field;
+    opt.classList.toggle('active', selected);
+    opt.setAttribute('role', 'option');
+    opt.setAttribute('aria-selected', selected ? 'true' : 'false');
   });
 }
 
 export function updateRatedFilterBtn() {
   el.filterRatedBtn.innerHTML = RATED_FILTER_ICONS[state.filters.ratedFilter];
+  el.filterRatedDropdown?.setAttribute('role', 'listbox');
+  el.filterRatedDropdown?.querySelectorAll('.rated-filter-option').forEach(opt => {
+    const selected = opt.dataset.value === state.filters.ratedFilter;
+    opt.classList.toggle('active', selected);
+    opt.setAttribute('role', 'option');
+    opt.setAttribute('aria-selected', selected ? 'true' : 'false');
+  });
 }
 
 export function updateSortOrderBtn() {
@@ -599,8 +736,12 @@ export function updateSortOrderBtn() {
   const title = state.sort.order === 'asc' ? 'Ascending (click to switch)' : 'Descending (click to switch)';
   el.sortOrder.innerHTML     = svg;
   el.sortOrder.title         = title;
+  el.sortOrder.setAttribute('aria-label', title);
+  el.sortOrder.setAttribute('aria-pressed', state.sort.order === 'asc' ? 'true' : 'false');
   el.uBtnSortOrder.innerHTML = svg;
   el.uBtnSortOrder.title     = title;
+  el.uBtnSortOrder.setAttribute('aria-label', title);
+  el.uBtnSortOrder.setAttribute('aria-pressed', state.sort.order === 'asc' ? 'true' : 'false');
 }
 
 export function setSidebarCollapsed(collapsed) {
@@ -982,6 +1123,83 @@ export function initSidebarEvents() {
     loadAlbums();
   }
 
+  let activeStatusTrigger = null;
+  let activeSortTrigger = null;
+
+  function getDropdownOptions(dropdown) {
+    return Array.from(dropdown.querySelectorAll('button:not([disabled])'));
+  }
+
+  function focusDropdownOption(dropdown, direction = 0) {
+    const options = getDropdownOptions(dropdown);
+    if (!options.length) return;
+    const activeOption = dropdown.querySelector('.active');
+    const currentIndex = options.indexOf(document.activeElement);
+    let nextIndex = activeOption ? options.indexOf(activeOption) : 0;
+    if (currentIndex !== -1 && direction !== 0) {
+      nextIndex = (currentIndex + direction + options.length) % options.length;
+    }
+    if (direction === Infinity) nextIndex = options.length - 1;
+    if (direction === -Infinity) nextIndex = 0;
+    if (nextIndex < 0) nextIndex = 0;
+    window.setTimeout(() => options[nextIndex]?.focus(), 0);
+  }
+
+  function handleDropdownKeydown(event, closeDropdown, getTrigger) {
+    const dropdown = event.currentTarget;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeDropdown({ restoreFocus: true });
+      getTrigger()?.focus?.();
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      focusDropdownOption(dropdown, 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusDropdownOption(dropdown, -1);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      focusDropdownOption(dropdown, -Infinity);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      focusDropdownOption(dropdown, Infinity);
+    }
+  }
+
+  function handleDropdownTriggerKeydown(event, openDropdown, dropdown, last = false) {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    openDropdown();
+    focusDropdownOption(dropdown, event.key === 'ArrowUp' || last ? Infinity : 0);
+  }
+
+  function syncDropdownButton(button, dropdown, expanded) {
+    if (!button || !dropdown) return;
+    button.setAttribute('aria-haspopup', 'listbox');
+    button.setAttribute('aria-controls', dropdown.id);
+    button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  }
+
+  [
+    [el.filterStatusBtn, el.filterStatusDropdown],
+    [el.uBtnStatusFilter, el.filterStatusDropdown],
+    [el.filterImportTypeBtn, el.filterImportTypeDropdown],
+    [el.filterRatedBtn, el.filterRatedDropdown],
+    [el.filterTypeBtn, el.filterTypeDropdown],
+    [el.sortFieldBtn, el.sortFieldDropdown],
+    [el.uBtnSort, el.sortFieldDropdown],
+  ].forEach(([button, dropdown]) => syncDropdownButton(button, dropdown, false));
+
+  el.filterRatedDropdown?.setAttribute('role', 'listbox');
+  el.filterTypeDropdown?.querySelectorAll('.type-filter-option').forEach(button => {
+    button.type = 'button';
+    if (button.dataset.type !== 'all') {
+      button.setAttribute('aria-pressed', button.classList.contains('active') ? 'true' : 'false');
+    }
+  });
+
   el.filterSearch.addEventListener('input', e => {
     state.filters.search = e.target.value.trim();
     reloadWithPaginationReset();
@@ -1018,13 +1236,23 @@ export function initSidebarEvents() {
     if (!except.includes(el.filterStatusDropdown)) closeStatusDropdown();
     if (!except.includes(el.filterImportTypeDropdown)) closeImportTypeDropdown();
     if (!except.includes(el.sortFieldDropdown)) closeSortDropdown();
+    if (!except.includes(el.filterRatedDropdown)) {
+      el.filterRatedDropdown.classList.add('hidden');
+      syncDropdownButton(el.filterRatedBtn, el.filterRatedDropdown, false);
+    }
+    if (!except.includes(el.filterTypeDropdown)) {
+      el.filterTypeDropdown.classList.add('hidden');
+      syncDropdownButton(el.filterTypeBtn, el.filterTypeDropdown, false);
+    }
     [el.filterRatedDropdown, el.filterTypeDropdown]
       .filter(d => !except.includes(d))
       .forEach(d => d.classList.add('hidden'));
   }
 
-  function closeStatusDropdown() {
+  function closeStatusDropdown(options = {}) {
     el.filterStatusDropdown.classList.add('hidden');
+    syncDropdownButton(el.filterStatusBtn, el.filterStatusDropdown, false);
+    syncDropdownButton(el.uBtnStatusFilter, el.filterStatusDropdown, false);
     // Restore dropdown to sidebar if it was teleported to body.
     if (el.filterStatusDropdown.parentElement !== el.filterStatusWrap) {
       el.filterStatusDropdown.style.position = '';
@@ -1032,12 +1260,15 @@ export function initSidebarEvents() {
       el.filterStatusDropdown.style.left     = '';
       el.filterStatusWrap.appendChild(el.filterStatusDropdown);
     }
+    if (options.restoreFocus) activeStatusTrigger?.focus?.();
+    activeStatusTrigger = null;
   }
 
   function openStatusDropdown(anchorEl) {
     const isHidden = el.filterStatusDropdown.classList.contains('hidden');
     if (!isHidden) { closeStatusDropdown(); return; }
     closeSidebarDropdowns(el.filterStatusDropdown);
+    activeStatusTrigger = anchorEl;
     el.filterStatusDropdown.classList.remove('drop-up');
 
     if (anchorEl === el.filterStatusBtn) {
@@ -1058,32 +1289,43 @@ export function initSidebarEvents() {
       el.filterStatusDropdown.style.top  = top + 'px';
       el.filterStatusDropdown.style.left = btnRect.left + 'px';
     }
+    syncDropdownButton(el.filterStatusBtn, el.filterStatusDropdown, anchorEl === el.filterStatusBtn);
+    syncDropdownButton(el.uBtnStatusFilter, el.filterStatusDropdown, anchorEl === el.uBtnStatusFilter);
+    focusDropdownOption(el.filterStatusDropdown);
   }
 
   el.filterStatusBtn.addEventListener('click', e => {
     e.stopPropagation();
     openStatusDropdown(el.filterStatusBtn);
   });
+  el.filterStatusBtn.addEventListener('keydown', e => {
+    handleDropdownTriggerKeydown(e, () => openStatusDropdown(el.filterStatusBtn), el.filterStatusDropdown);
+  });
 
   el.filterStatusDropdown.addEventListener('click', e => {
     const opt = e.target.closest('.status-filter-option');
     if (!opt) return;
     state.filters.statusFilter = opt.dataset.value;
-    closeStatusDropdown();
+    closeStatusDropdown({ restoreFocus: true });
     updateStatusFilterBtn();
     reloadWithPaginationReset();
   });
 
   document.addEventListener('click', () => { closeStatusDropdown(); });
+  el.filterStatusDropdown.addEventListener('keydown', e => {
+    handleDropdownKeydown(e, closeStatusDropdown, () => activeStatusTrigger);
+  });
 
-  function closeImportTypeDropdown() {
+  function closeImportTypeDropdown(options = {}) {
     el.filterImportTypeDropdown.classList.add('hidden');
+    syncDropdownButton(el.filterImportTypeBtn, el.filterImportTypeDropdown, false);
     if (el.filterImportTypeDropdown.parentElement !== el.filterImportTypeWrap) {
       el.filterImportTypeDropdown.style.position = '';
       el.filterImportTypeDropdown.style.top      = '';
       el.filterImportTypeDropdown.style.left     = '';
       el.filterImportTypeWrap.appendChild(el.filterImportTypeDropdown);
     }
+    if (options.restoreFocus) el.filterImportTypeBtn.focus();
   }
 
   function openImportTypeDropdown() {
@@ -1094,23 +1336,31 @@ export function initSidebarEvents() {
     const rect = el.filterImportTypeDropdown.getBoundingClientRect();
     const spaceBelow = window.innerHeight - el.filterImportTypeBtn.getBoundingClientRect().bottom;
     el.filterImportTypeDropdown.classList.toggle('drop-up', rect.height > spaceBelow);
+    syncDropdownButton(el.filterImportTypeBtn, el.filterImportTypeDropdown, true);
+    focusDropdownOption(el.filterImportTypeDropdown);
   }
 
   el.filterImportTypeBtn.addEventListener('click', e => {
     e.stopPropagation();
     openImportTypeDropdown();
   });
+  el.filterImportTypeBtn.addEventListener('keydown', e => {
+    handleDropdownTriggerKeydown(e, openImportTypeDropdown, el.filterImportTypeDropdown);
+  });
 
   el.filterImportTypeDropdown.addEventListener('click', e => {
     const opt = e.target.closest('.import-type-filter-option');
     if (!opt) return;
     state.filters.importTypeFilter = opt.dataset.value;
-    closeImportTypeDropdown();
+    closeImportTypeDropdown({ restoreFocus: true });
     updateImportTypeFilterBtn();
     reloadWithPaginationReset();
   });
 
   document.addEventListener('click', () => { closeImportTypeDropdown(); });
+  el.filterImportTypeDropdown.addEventListener('keydown', e => {
+    handleDropdownKeydown(e, closeImportTypeDropdown, () => el.filterImportTypeBtn);
+  });
 
   el.filterRatedBtn.addEventListener('click', e => {
     e.stopPropagation();
@@ -1127,9 +1377,15 @@ export function initSidebarEvents() {
         el.filterRatedDropdown.style.top    = (btnRect.bottom + 4) + 'px';
       }
       el.filterRatedDropdown.style.left = (btnRect.right - ddRect.width) + 'px';
+      syncDropdownButton(el.filterRatedBtn, el.filterRatedDropdown, true);
+      focusDropdownOption(el.filterRatedDropdown);
     } else {
       el.filterRatedDropdown.classList.add('hidden');
+      syncDropdownButton(el.filterRatedBtn, el.filterRatedDropdown, false);
     }
+  });
+  el.filterRatedBtn.addEventListener('keydown', e => {
+    handleDropdownTriggerKeydown(e, () => el.filterRatedBtn.click(), el.filterRatedDropdown);
   });
 
   el.filterRatedDropdown.addEventListener('click', e => {
@@ -1137,12 +1393,21 @@ export function initSidebarEvents() {
     if (!opt) return;
     state.filters.ratedFilter = opt.dataset.value;
     el.filterRatedDropdown.classList.add('hidden');
+    syncDropdownButton(el.filterRatedBtn, el.filterRatedDropdown, false);
+    el.filterRatedBtn.focus();
     updateRatedFilterBtn();
     reloadWithPaginationReset();
   });
 
   document.addEventListener('click', () => {
     el.filterRatedDropdown.classList.add('hidden');
+    syncDropdownButton(el.filterRatedBtn, el.filterRatedDropdown, false);
+  });
+  el.filterRatedDropdown.addEventListener('keydown', e => {
+    handleDropdownKeydown(e, () => {
+      el.filterRatedDropdown.classList.add('hidden');
+      syncDropdownButton(el.filterRatedBtn, el.filterRatedDropdown, false);
+    }, () => el.filterRatedBtn);
   });
 
   el.filterTypeBtn.addEventListener('click', e => {
@@ -1154,9 +1419,15 @@ export function initSidebarEvents() {
       const rect = el.filterTypeDropdown.getBoundingClientRect();
       const spaceBelow = window.innerHeight - el.filterTypeBtn.getBoundingClientRect().bottom;
       el.filterTypeDropdown.classList.toggle('drop-up', rect.height > spaceBelow);
+      syncDropdownButton(el.filterTypeBtn, el.filterTypeDropdown, true);
+      focusDropdownOption(el.filterTypeDropdown);
     } else {
       el.filterTypeDropdown.classList.add('hidden');
+      syncDropdownButton(el.filterTypeBtn, el.filterTypeDropdown, false);
     }
+  });
+  el.filterTypeBtn.addEventListener('keydown', e => {
+    handleDropdownTriggerKeydown(e, () => el.filterTypeBtn.click(), el.filterTypeDropdown);
   });
 
   el.filterTypeDropdown.addEventListener('click', e => {
@@ -1174,22 +1445,36 @@ export function initSidebarEvents() {
     reloadWithPaginationReset();
   });
 
-  document.addEventListener('click', () => { el.filterTypeDropdown.classList.add('hidden'); });
+  document.addEventListener('click', () => {
+    el.filterTypeDropdown.classList.add('hidden');
+    syncDropdownButton(el.filterTypeBtn, el.filterTypeDropdown, false);
+  });
+  el.filterTypeDropdown.addEventListener('keydown', e => {
+    handleDropdownKeydown(e, () => {
+      el.filterTypeDropdown.classList.add('hidden');
+      syncDropdownButton(el.filterTypeBtn, el.filterTypeDropdown, false);
+    }, () => el.filterTypeBtn);
+  });
 
-  function closeSortDropdown() {
+  function closeSortDropdown(options = {}) {
     el.sortFieldDropdown.classList.add('hidden');
+    syncDropdownButton(el.sortFieldBtn, el.sortFieldDropdown, false);
+    syncDropdownButton(el.uBtnSort, el.sortFieldDropdown, false);
     if (el.sortFieldDropdown.parentElement !== el.sortFieldWrap) {
       el.sortFieldDropdown.style.position = '';
       el.sortFieldDropdown.style.top      = '';
       el.sortFieldDropdown.style.left     = '';
       el.sortFieldWrap.appendChild(el.sortFieldDropdown);
     }
+    if (options.restoreFocus) activeSortTrigger?.focus?.();
+    activeSortTrigger = null;
   }
 
   function openSortDropdown(anchorEl) {
     const isHidden = el.sortFieldDropdown.classList.contains('hidden');
     if (!isHidden) { closeSortDropdown(); return; }
     closeSidebarDropdowns(el.sortFieldDropdown);
+    activeSortTrigger = anchorEl;
     el.sortFieldDropdown.classList.remove('drop-up');
 
     if (anchorEl === el.sortFieldBtn) {
@@ -1208,24 +1493,33 @@ export function initSidebarEvents() {
       el.sortFieldDropdown.style.top  = top + 'px';
       el.sortFieldDropdown.style.left = btnRect.left + 'px';
     }
+    syncDropdownButton(el.sortFieldBtn, el.sortFieldDropdown, anchorEl === el.sortFieldBtn);
+    syncDropdownButton(el.uBtnSort, el.sortFieldDropdown, anchorEl === el.uBtnSort);
+    focusDropdownOption(el.sortFieldDropdown);
   }
 
   el.sortFieldBtn.addEventListener('click', e => {
     e.stopPropagation();
     openSortDropdown(el.sortFieldBtn);
   });
+  el.sortFieldBtn.addEventListener('keydown', e => {
+    handleDropdownTriggerKeydown(e, () => openSortDropdown(el.sortFieldBtn), el.sortFieldDropdown);
+  });
 
   el.sortFieldDropdown.addEventListener('click', e => {
     const opt = e.target.closest('.sort-field-option');
     if (!opt) return;
     state.sort.field = opt.dataset.value;
-    closeSortDropdown();
+    closeSortDropdown({ restoreFocus: true });
     updateSortFieldBtn();
     resetPagination();
     loadAlbums();
   });
 
   document.addEventListener('click', () => { closeSortDropdown(); });
+  el.sortFieldDropdown.addEventListener('keydown', e => {
+    handleDropdownKeydown(e, closeSortDropdown, () => activeSortTrigger);
+  });
 
   // Sort order is now a toggle button (↓ desc / ↑ asc).
   el.sortOrder.addEventListener('click', () => {
@@ -1282,10 +1576,16 @@ export function initSidebarEvents() {
     e.stopPropagation();
     openStatusDropdown(el.uBtnStatusFilter);
   });
+  el.uBtnStatusFilter.addEventListener('keydown', e => {
+    handleDropdownTriggerKeydown(e, () => openStatusDropdown(el.uBtnStatusFilter), el.filterStatusDropdown);
+  });
 
   el.uBtnSort.addEventListener('click', e => {
     e.stopPropagation();
     openSortDropdown(el.uBtnSort);
+  });
+  el.uBtnSort.addEventListener('keydown', e => {
+    handleDropdownTriggerKeydown(e, () => openSortDropdown(el.uBtnSort), el.sortFieldDropdown);
   });
 
   el.uBtnSortOrder.addEventListener('click', () => {

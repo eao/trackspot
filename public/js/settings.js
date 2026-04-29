@@ -60,6 +60,7 @@ let backgroundLoadedBySlot = {
 };
 let earlyWrappedConfirmStepIndex = -1;
 let earlyWrappedUiInitialized = false;
+let earlyWrappedConfirmKeydownHandler = null;
 let earlyWrappedCheatToastTimeout = null;
 let earlyWrappedCheatToastFadeTimeout = null;
 let isSyncingThemeSelectUi = false;
@@ -95,6 +96,13 @@ const EARLY_WRAPPED_CONFIRM_STEPS = [
     moving: true,
   },
 ];
+const EARLY_WRAPPED_FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
 
 function invalidateAlbumDerivedState(options = {}) {
   const { clearDetails = true } = options;
@@ -3440,8 +3448,76 @@ function syncEarlyWrappedToggle() {
   }
 }
 
+function getEarlyWrappedConfirmCard() {
+  return el.earlyWrappedConfirmOverlay?.querySelector('.early-wrapped-confirm-card') ?? null;
+}
+
+function getEarlyWrappedFocusableElements() {
+  return Array.from(el.earlyWrappedConfirmOverlay?.querySelectorAll(EARLY_WRAPPED_FOCUSABLE_SELECTOR) || [])
+    .filter(element => element instanceof HTMLElement
+      && !element.disabled
+      && !element.closest('.hidden, [hidden]'));
+}
+
+function focusEarlyWrappedConfirmation() {
+  window.setTimeout(() => {
+    if (earlyWrappedConfirmStepIndex < 0) return;
+    const target = el.btnEarlyWrappedConfirmLeft
+      || getEarlyWrappedFocusableElements()[0]
+      || getEarlyWrappedConfirmCard();
+    target?.focus?.();
+  }, 0);
+}
+
+function trapEarlyWrappedConfirmationFocus(event) {
+  const focusable = getEarlyWrappedFocusableElements();
+  if (!focusable.length) {
+    event.preventDefault();
+    getEarlyWrappedConfirmCard()?.focus?.();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable.at(-1);
+  const active = document.activeElement;
+  if (!el.earlyWrappedConfirmOverlay?.contains(active)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+    return;
+  }
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function ensureEarlyWrappedConfirmationKeydown() {
+  if (earlyWrappedConfirmKeydownHandler) return;
+  earlyWrappedConfirmKeydownHandler = event => {
+    if (earlyWrappedConfirmStepIndex < 0) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeEarlyWrappedConfirmation();
+      syncEarlyWrappedToggle();
+      return;
+    }
+    if (event.key === 'Tab') {
+      trapEarlyWrappedConfirmationFocus(event);
+    }
+  };
+  document.addEventListener('keydown', earlyWrappedConfirmKeydownHandler, true);
+}
+
 function closeEarlyWrappedConfirmation() {
   earlyWrappedConfirmStepIndex = -1;
+  if (earlyWrappedConfirmKeydownHandler) {
+    document.removeEventListener('keydown', earlyWrappedConfirmKeydownHandler, true);
+    earlyWrappedConfirmKeydownHandler = null;
+  }
   el.earlyWrappedConfirmOverlay?.classList.add('hidden');
   el.earlyWrappedConfirmOverlay?.setAttribute('aria-hidden', 'true');
   el.earlyWrappedConfirmFloater?.classList.remove('early-wrapped-confirm-moving');
@@ -3510,6 +3586,8 @@ function renderEarlyWrappedConfirmationStep(stepIndex) {
   el.earlyWrappedConfirmFloater?.classList.toggle('early-wrapped-confirm-moving', !!step.moving);
   el.earlyWrappedConfirmOverlay?.classList.remove('hidden');
   el.earlyWrappedConfirmOverlay?.setAttribute('aria-hidden', 'false');
+  ensureEarlyWrappedConfirmationKeydown();
+  focusEarlyWrappedConfirmation();
 }
 
 function openEarlyWrappedConfirmation() {

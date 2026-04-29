@@ -400,6 +400,7 @@ export const el = {
   btnDeleteConfirm:document.getElementById('btn-delete-confirm'),
   artLightboxOverlay: document.getElementById('art-lightbox-overlay'),
   artLightboxImage: document.getElementById('art-lightbox-image'),
+  artLightboxClose: document.getElementById('art-lightbox-close'),
 
   // Settings modal
   settingsOverlay:   document.getElementById('settings-overlay'),

@@ -86,6 +86,10 @@ function syncTopBarState() {
   el.btnViewGrid?.classList.toggle('active', page === 'collection' && collectionView === 'grid');
   el.btnStats?.classList.toggle('active', page === 'stats');
   el.btnWrapped?.classList.toggle('active', page === 'wrapped');
+  el.btnViewList?.setAttribute('aria-pressed', page === 'collection' && collectionView === 'list' ? 'true' : 'false');
+  el.btnViewGrid?.setAttribute('aria-pressed', page === 'collection' && collectionView === 'grid' ? 'true' : 'false');
+  el.btnStats?.setAttribute('aria-pressed', page === 'stats' ? 'true' : 'false');
+  el.btnWrapped?.setAttribute('aria-pressed', page === 'wrapped' ? 'true' : 'false');
 
   if (el.btnToggleSidebar) {
     el.btnToggleSidebar.disabled = !collectionControlsEnabled;

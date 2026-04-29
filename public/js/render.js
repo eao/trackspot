@@ -19,6 +19,7 @@ import {
   getArtLightboxFallbackTargetRect,
   maybeDesyncArtLightboxClose,
 } from './art-lightbox-close.js';
+import { closeManagedModal, openManagedModal } from './modal-manager.js';
 
 const LIST_LAYOUT_COMPACT_MAIN_TRIGGER_WIDTH_PX = 820;
 const LIST_HIDE_LISTENED_TRIGGER_WIDTH_PX = 700;
@@ -356,6 +357,7 @@ let _artLightboxAnimationToken = 0;
 let _artLightboxFlyingFrameEl = null;
 let _artLightboxAlbumId = null;
 let _artLightboxCloseSession = null;
+let _artLightboxManagedOpen = false;
 
 function clearArtLightboxCloseSession() {
   if (!_artLightboxCloseSession) return;
@@ -634,6 +636,7 @@ export async function openArtLightbox(imageUrl, albumName, options = {}) {
   el.artLightboxImage.alt = albumName ? `${albumName} album art` : 'Album art';
   el.artLightboxOverlay.classList.remove('hidden');
   el.artLightboxOverlay.setAttribute('aria-hidden', 'false');
+  openArtLightboxDialog(originEl);
 
   const shouldAnimateFromOrigin = originEl instanceof Element;
   if (!shouldAnimateFromOrigin) {
@@ -700,13 +703,8 @@ export function closeArtLightbox() {
 
   if (_artLightboxAlbumId === null || _artLightboxAlbumId === undefined) {
     clearArtLightboxAnimation();
-    el.artLightboxOverlay.classList.add('hidden');
     el.artLightboxOverlay.classList.remove('art-lightbox-visible');
-    el.artLightboxOverlay.setAttribute('aria-hidden', 'true');
-    el.artLightboxImage.classList.remove('art-lightbox-image-hidden');
-    el.artLightboxImage.removeAttribute('src');
-    el.artLightboxImage.alt = '';
-    _artLightboxAlbumId = null;
+    finalizeArtLightboxClosed();
     return;
   }
 
@@ -723,11 +721,7 @@ export function closeArtLightbox() {
   clearArtLightboxAnimation();
 
   if (!shouldAnimate) {
-    el.artLightboxOverlay.classList.add('hidden');
-    el.artLightboxOverlay.setAttribute('aria-hidden', 'true');
-    el.artLightboxImage.removeAttribute('src');
-    el.artLightboxImage.alt = '';
-    _artLightboxAlbumId = null;
+    finalizeArtLightboxClosed();
     return;
   }
 
@@ -784,12 +778,7 @@ export function closeArtLightbox() {
     if (_artLightboxFlyingFrameEl === flyingFrame) {
       _artLightboxFlyingFrameEl = null;
     }
-    el.artLightboxOverlay.classList.add('hidden');
-    el.artLightboxOverlay.setAttribute('aria-hidden', 'true');
-    el.artLightboxImage.classList.remove('art-lightbox-image-hidden');
-    el.artLightboxImage.removeAttribute('src');
-    el.artLightboxImage.alt = '';
-    _artLightboxAlbumId = null;
+    finalizeArtLightboxClosed();
     _artLightboxAnimationTimeoutId = null;
   }, Math.max(ART_LIGHTBOX_CLOSE_FADE_DURATION_MS, closeMotionDurationMs) + 50);
 }
@@ -917,12 +906,23 @@ function renderList(albums, startIndex = 0, options = {}) {
       img.alt = '';
       img.loading = 'lazy';
       artWrap.appendChild(img);
-      artWrap.addEventListener('click', e => {
+      const openRowArt = e => {
         if (!state.listArtClickToEnlarge) return;
         e.stopPropagation();
         openArtLightbox(url, album.album_name, { originEl: img, albumId: album.id });
+      };
+      artWrap.addEventListener('click', openRowArt);
+      artWrap.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        openRowArt(e);
       });
       artWrap.classList.toggle('row-art-wrap-clickable', state.listArtClickToEnlarge);
+      if (state.listArtClickToEnlarge) {
+        artWrap.tabIndex = 0;
+        artWrap.setAttribute('role', 'button');
+        artWrap.setAttribute('aria-label', `Open ${album.album_name || 'album'} art preview`);
+      }
     } else {
       const ph = document.createElement('div');
       ph.className = 'row-art-placeholder';
@@ -1138,6 +1138,33 @@ function renderGrid(albums, options = {}) {
 // Called whenever state changes. Filters the album list, updates both views,
 // shows/hides the empty state, and updates the status count.
 
+function syncEmptyStateActions({ hasError, isLoading, totalCount }) {
+  const retryButton = el.emptyState?.querySelector('[data-empty-action="retry"]');
+  const clearFiltersButton = el.emptyState?.querySelector('[data-empty-action="clear-filters"]');
+  const logAlbumButton = el.emptyState?.querySelector('[data-empty-action="log-album"]');
+  if (!retryButton && !clearFiltersButton && !logAlbumButton) return;
+
+  retryButton?.classList.toggle('hidden', !hasError);
+  clearFiltersButton?.classList.toggle('hidden', hasError || isLoading || totalCount === 0);
+  logAlbumButton?.classList.toggle('hidden', hasError || isLoading || totalCount !== 0);
+
+  if (retryButton) {
+    retryButton.onclick = () => {
+      void loadAlbums({ preservePage: true });
+    };
+  }
+  if (clearFiltersButton) {
+    clearFiltersButton.onclick = () => {
+      el.btnClearFilters?.click();
+    };
+  }
+  if (logAlbumButton) {
+    logAlbumButton.onclick = () => {
+      el.btnLogNew?.click();
+    };
+  }
+}
+
 export function render() {
   const isCollectionPage = isCollectionPageActive();
   const meta = state.albumListMeta ?? getDefaultAlbumListMeta();
@@ -1145,6 +1172,7 @@ export function render() {
   const collectionView = getCurrentCollectionView();
   const isLoading = isCollectionPage && state.albumsLoading;
   const hasError = isCollectionPage && !!state.albumsError;
+  el.pageCollection?.setAttribute('aria-busy', isLoading ? 'true' : 'false');
 
   if (isCollectionPage && !hasError) {
     const startupAnimatedView = _initialRender ? collectionView : null;
@@ -1171,6 +1199,7 @@ export function render() {
           ? 'No albums logged yet.'
           : 'No albums match your filters.';
   }
+  syncEmptyStateActions({ hasError, isLoading, totalCount: meta.totalCount });
   el.emptyState.classList.toggle('hidden', !showEmptyState);
   el.viewList.classList.toggle('hidden', !isCollectionPage || showEmptyState || collectionView !== 'list');
   el.viewGrid.classList.toggle('hidden', !isCollectionPage || showEmptyState || collectionView !== 'grid');
@@ -1315,4 +1344,35 @@ export async function loadAlbums(options = {}) {
     renderAlbums();
     return true;
   }
+}
+
+function openArtLightboxDialog(originEl = null) {
+  if (_artLightboxManagedOpen) return;
+  openManagedModal({
+    overlay: el.artLightboxOverlay,
+    dialog: el.artLightboxOverlay,
+    initialFocus: el.artLightboxClose || el.artLightboxOverlay,
+    opener: originEl,
+    onRequestClose: () => {
+      closeArtLightbox();
+      return true;
+    },
+  });
+  _artLightboxManagedOpen = true;
+}
+
+function closeArtLightboxDialog(options = {}) {
+  if (!_artLightboxManagedOpen) return;
+  closeManagedModal(el.artLightboxOverlay, options);
+  _artLightboxManagedOpen = false;
+}
+
+function finalizeArtLightboxClosed() {
+  closeArtLightboxDialog();
+  el.artLightboxOverlay.classList.add('hidden');
+  el.artLightboxOverlay.setAttribute('aria-hidden', 'true');
+  el.artLightboxImage.classList.remove('art-lightbox-image-hidden');
+  el.artLightboxImage.removeAttribute('src');
+  el.artLightboxImage.alt = '';
+  _artLightboxAlbumId = null;
 }

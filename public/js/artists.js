@@ -10,7 +10,7 @@ import { loadAlbums, resetPagination } from './render.js';
 // Artist name chips
 // ---------------------------------------------------------------------------
 // Returns a <span> containing individual artist name chips separated by commas.
-// Each chip opens a popover on click.
+// Each chip opens a popover on click or keyboard activation.
 
 export function renderArtistSpans(artists, manualLink = null) {
   const wrap = document.createElement('span');
@@ -24,19 +24,22 @@ export function renderArtistSpans(artists, manualLink = null) {
     const link   = getSafeExternalHref(
       typeof a === 'object' ? (a.manual_link || manualLink || null) : manualLink
     );
-    const chipEl = document.createElement('span');
+    const chipEl = document.createElement('button');
+    chipEl.type = 'button';
     chipEl.className = 'artist-chip';
     chipEl.textContent = name;
     chipEl.dataset.artistName = name;
+    chipEl.setAttribute('aria-haspopup', 'menu');
+    chipEl.setAttribute('aria-expanded', 'false');
     if (id) chipEl.dataset.artistId = id;
     if (link) chipEl.dataset.artistLink = link;
 
     chipEl.addEventListener('click', e => {
       e.stopPropagation();
       if (_popoverAnchor === chipEl) {
-        closeArtistPopover();
+        closeArtistPopover({ restoreFocus: e.detail === 0 });
       } else {
-        openArtistPopover(chipEl, name, id, link);
+        openArtistPopover(chipEl, name, id, link, { focusFirstAction: e.detail === 0 });
       }
     });
 
@@ -61,6 +64,7 @@ let _popoverEl = null;
 let _popoverOutsideHandler = null;
 let _popoverAnchor = null;
 let _popoverViewportHandler = null;
+let _popoverIdCounter = 0;
 
 function positionArtistPopover(pop, anchorEl) {
   const rect = anchorEl.getBoundingClientRect();
@@ -89,15 +93,18 @@ function positionArtistPopover(pop, anchorEl) {
   pop.style.left = `${left}px`;
 }
 
-function openArtistPopover(anchorEl, artistName, artistId, artistLink) {
+function openArtistPopover(anchorEl, artistName, artistId, artistLink, options = {}) {
   closeArtistPopover();
 
   const pop = document.createElement('div');
+  const popoverId = `artist-popover-${++_popoverIdCounter}`;
   pop.className = 'artist-popover';
+  pop.id = popoverId;
+  pop.setAttribute('role', 'menu');
   pop.innerHTML = `
     <span class="artist-popover-name">${escHtml(artistName)}</span>
     <div class="artist-popover-actions">
-      <button class="artist-popover-btn" data-action="filter" title="Filter by this artist">
+      <button class="artist-popover-btn" data-action="filter" role="menuitem" title="Filter by this artist">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
              fill="none" stroke="currentColor" stroke-width="2.5"
              stroke-linecap="round" stroke-linejoin="round">
@@ -106,7 +113,7 @@ function openArtistPopover(anchorEl, artistName, artistId, artistLink) {
         Filter
       </button>
       ${artistLink ? `
-      <button class="artist-popover-btn" data-action="link" title="Open artist link">
+      <button class="artist-popover-btn" data-action="link" role="menuitem" title="Open artist link">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
              fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round">
@@ -114,7 +121,7 @@ function openArtistPopover(anchorEl, artistName, artistId, artistLink) {
         </svg>
         Link
       </button>` : artistId ? `
-      <button class="artist-popover-btn" data-action="spotify" title="Open in Spotify">
+      <button class="artist-popover-btn" data-action="spotify" role="menuitem" title="Open in Spotify">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
              fill="currentColor">
           <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
@@ -128,9 +135,14 @@ function openArtistPopover(anchorEl, artistName, artistId, artistLink) {
   document.body.appendChild(pop);
   _popoverEl = pop;
   _popoverAnchor = anchorEl;
+  anchorEl.setAttribute('aria-expanded', 'true');
+  anchorEl.setAttribute('aria-controls', popoverId);
 
   positionArtistPopover(pop, anchorEl);
   pop.style.visibility = '';
+  if (options.focusFirstAction) {
+    pop.querySelector('.artist-popover-btn')?.focus();
+  }
 
   // Button actions.
   pop.querySelectorAll('.artist-popover-btn').forEach(btn => {
@@ -166,13 +178,20 @@ function openArtistPopover(anchorEl, artistName, artistId, artistLink) {
   window.addEventListener('scroll', _popoverViewportHandler, true);
 }
 
-export function closeArtistPopover() {
+export function closeArtistPopover(options = {}) {
   const hadPopover = !!_popoverEl;
+  const restoreFocus = options.restoreFocus
+    ?? !!(_popoverEl && _popoverEl.contains(document.activeElement));
+  const anchor = _popoverAnchor;
   if (_popoverEl) {
     _popoverEl.remove();
     _popoverEl = null;
-    _popoverAnchor = null;
   }
+  if (anchor) {
+    anchor.setAttribute('aria-expanded', 'false');
+    anchor.removeAttribute('aria-controls');
+  }
+  _popoverAnchor = null;
   if (_popoverOutsideHandler) {
     document.removeEventListener('click', _popoverOutsideHandler);
     _popoverOutsideHandler = null;
@@ -181,6 +200,9 @@ export function closeArtistPopover() {
     window.removeEventListener('resize', _popoverViewportHandler);
     window.removeEventListener('scroll', _popoverViewportHandler, true);
     _popoverViewportHandler = null;
+  }
+  if (restoreFocus && anchor?.isConnected) {
+    anchor.focus();
   }
   return hadPopover;
 }
