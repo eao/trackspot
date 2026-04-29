@@ -1023,6 +1023,120 @@ describe('personalization store', () => {
     expect(fs.existsSync(path.join(store.THEMES_DIR, 'first-duplicate-id.json'))).toBe(true);
   });
 
+  it('keeps source-file repair ids distinct from existing user ids', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'real-repair-collision.json'), JSON.stringify({
+      id: 'opacity-file-first-duplicate-id',
+      name: 'Real Repair Collision Opacity',
+      opacity: {
+        header: 60,
+      },
+    }, null, 2));
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'first-duplicate-id.json'), JSON.stringify({
+      id: 'duplicate-opacity-id',
+      name: 'First Duplicate Opacity',
+      opacity: {
+        header: 70,
+      },
+    }, null, 2));
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'second-duplicate-id.json'), JSON.stringify({
+      id: 'duplicate-opacity-id',
+      name: 'Second Duplicate Opacity',
+      opacity: {
+        header: 80,
+      },
+    }, null, 2));
+
+    [
+      ['real-repair-collision', 'theme-file-first-duplicate-id', 'Real Repair Collision Theme'],
+      ['first-duplicate-id', 'duplicate-theme-id', 'First Duplicate Id Theme'],
+      ['second-duplicate-id', 'duplicate-theme-id', 'Second Duplicate Id Theme'],
+    ].forEach(([fileBase, id, name]) => {
+      const previewFileName = `${fileBase}.png`;
+      fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, previewFileName), 'preview');
+      fs.writeFileSync(path.join(store.THEMES_DIR, `${fileBase}.json`), JSON.stringify({
+        id,
+        name,
+        previewImage: { fileName: previewFileName },
+        colorSchemePresetId: 'bunan-blue',
+        opacityPresetId: 'default-opaque',
+      }, null, 2));
+    });
+
+    const collisionPresets = store.listOpacityPresets()
+      .filter(preset => preset.name.includes('Repair Collision Opacity') || preset.name.includes('Duplicate Opacity'));
+    const collisionThemes = store.listThemes()
+      .filter(theme => theme.name.includes('Repair Collision Theme') || theme.name.includes('Duplicate Id Theme'));
+
+    expect(new Set(collisionPresets.map(preset => preset.id)).size).toBe(collisionPresets.length);
+    expect(collisionPresets.find(preset => preset.name === 'Real Repair Collision Opacity')).toMatchObject({
+      id: 'opacity-file-first-duplicate-id',
+      invalid: false,
+    });
+    expect(collisionPresets.find(preset => preset.name === 'First Duplicate Opacity')).toMatchObject({
+      id: 'opacity-file-first-duplicate-id-2',
+      invalid: true,
+    });
+    expect(collisionPresets.find(preset => preset.name === 'Second Duplicate Opacity')).toMatchObject({
+      id: 'opacity-file-second-duplicate-id',
+      invalid: true,
+    });
+
+    expect(new Set(collisionThemes.map(theme => theme.id)).size).toBe(collisionThemes.length);
+    expect(collisionThemes.find(theme => theme.name === 'Real Repair Collision Theme')).toMatchObject({
+      id: 'theme-file-first-duplicate-id',
+      invalid: false,
+    });
+    expect(collisionThemes.find(theme => theme.name === 'First Duplicate Id Theme')).toMatchObject({
+      id: 'theme-file-first-duplicate-id-2',
+      invalid: true,
+    });
+    expect(collisionThemes.find(theme => theme.name === 'Second Duplicate Id Theme')).toMatchObject({
+      id: 'theme-file-second-duplicate-id',
+      invalid: true,
+    });
+  });
+
+  it('deletes duplicate-id theme repair records from dependency cascades', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const preset = store.createOpacityPreset({
+      name: 'Cascade Repair Opacity',
+      opacity: {
+        header: 70,
+      },
+    });
+
+    ['first-cascade-duplicate', 'second-cascade-duplicate'].forEach((fileBase, index) => {
+      const previewFileName = `${fileBase}.png`;
+      fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, previewFileName), 'preview');
+      fs.writeFileSync(path.join(store.THEMES_DIR, `${fileBase}.json`), JSON.stringify({
+        id: 'duplicate-cascade-theme-id',
+        name: index === 0 ? 'First Cascade Duplicate Theme' : 'Second Cascade Duplicate Theme',
+        previewImage: { fileName: previewFileName },
+        colorSchemePresetId: 'bunan-blue',
+        opacityPresetId: preset.id,
+      }, null, 2));
+    });
+
+    const dependentIds = store.getThemesReferencingOpacityPreset(preset.id)
+      .map(theme => theme.id)
+      .sort();
+
+    expect(dependentIds).toEqual([
+      'theme-file-first-cascade-duplicate',
+      'theme-file-second-cascade-duplicate',
+    ]);
+
+    const result = store.deleteOpacityPreset(preset.id, { cascadeThemes: true });
+
+    expect(result.deletedThemes.map(theme => theme.id).sort()).toEqual(dependentIds);
+    expect(fs.existsSync(path.join(store.THEMES_DIR, 'first-cascade-duplicate.json'))).toBe(false);
+    expect(fs.existsSync(path.join(store.THEMES_DIR, 'second-cascade-duplicate.json'))).toBe(false);
+    expect(store.findOpacityPresetById(preset.id)).toBeNull();
+    expect(store.listThemes().filter(theme => theme.name.includes('Cascade Duplicate Theme'))).toEqual([]);
+  });
+
   it('keeps runtime records with seed IDs visible as invalid deleteable repair records', () => {
     const { store } = loadPersonalizationStoreTestContext();
     const seedTheme = readSeedThemes()[0];

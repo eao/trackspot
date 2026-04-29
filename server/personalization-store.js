@@ -209,6 +209,7 @@ function createSourceFileRepairId(fileName, prefix, usedIds = new Set(), reserve
   }
 
   usedIds.add(candidate);
+  reservedIds.add(candidate);
   return candidate;
 }
 
@@ -219,6 +220,14 @@ function countSafeRecordIds(entries) {
     counts.set(entry.safeRawId, (counts.get(entry.safeRawId) ?? 0) + 1);
   });
   return counts;
+}
+
+function collectReservedRecordIds(entries, ignoredIds = new Set()) {
+  const reservedIds = new Set(ignoredIds ?? []);
+  entries.forEach(entry => {
+    if (entry.safeRawId) reservedIds.add(entry.safeRawId);
+  });
+  return reservedIds;
 }
 
 function buildStoredPreviewImageName(originalName, mimeType) {
@@ -374,7 +383,7 @@ function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
   }
 
   const repairIds = new Set();
-  const reservedIds = new Set(options.ignoredIds ?? []);
+  const reservedIds = collectReservedRecordIds(entries, options.ignoredIds);
 
   return entries.map(entry => {
     const { fileName, raw, readError, safeRawId } = entry;
@@ -872,7 +881,7 @@ function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
 
   const hydratedThemes = [];
   const repairIds = new Set();
-  const reservedIds = new Set(options.ignoredIds ?? []);
+  const reservedIds = collectReservedRecordIds(entries, options.ignoredIds);
 
   entries.forEach(entry => {
     const { fileName, raw, readError, safeRawId } = entry;
@@ -1167,6 +1176,17 @@ function updateTheme(themeId, input) {
   return findThemeById(existing.id);
 }
 
+function deleteThemeRecord(existing) {
+  const cleanupWarnings = [];
+  removeThemeFile(existing);
+  deleteThemePreviewAssets(existing, { cleanupWarnings });
+
+  return {
+    ...existing,
+    ...(cleanupWarnings.length ? { cleanupWarnings } : {}),
+  };
+}
+
 function deleteTheme(themeId) {
   const existing = findThemeById(themeId);
   if (!existing) {
@@ -1176,14 +1196,7 @@ function deleteTheme(themeId) {
     throw createStoreError(403, 'Included-with-app themes cannot be deleted.');
   }
 
-  const cleanupWarnings = [];
-  removeThemeFile(existing);
-  deleteThemePreviewAssets(existing, { cleanupWarnings });
-
-  return {
-    ...existing,
-    ...(cleanupWarnings.length ? { cleanupWarnings } : {}),
-  };
+  return deleteThemeRecord(existing);
 }
 
 function getThemesReferencingOpacityPreset(opacityPresetId) {
@@ -1200,19 +1213,11 @@ function getThemesReferencingBackground(slotKey, imageId, kind) {
 }
 
 function deleteThemes(themeIds) {
-  const deletedThemes = [];
-  themeIds.forEach(themeId => {
-    const existing = findThemeById(themeId);
-    if (!existing || existing.includedWithApp) return;
-    const cleanupWarnings = [];
-    removeThemeFile(existing);
-    deleteThemePreviewAssets(existing, { cleanupWarnings });
-    deletedThemes.push({
-      ...existing,
-      ...(cleanupWarnings.length ? { cleanupWarnings } : {}),
-    });
-  });
-  return deletedThemes;
+  const themeIdSet = new Set(themeIds);
+  return listThemes()
+    .filter(theme => themeIdSet.has(theme.id))
+    .filter(theme => !theme.includedWithApp)
+    .map(deleteThemeRecord);
 }
 
 function deleteOpacityPreset(presetId, options = {}) {
