@@ -193,6 +193,26 @@ describe('applyPaginationSetting', () => {
     expect(elMock.pageModeGrid.value).toBe('suggested');
   });
 
+  it('shows the grid custom pagination input from the grid mode selector', async () => {
+    const { initPaginationSettings } = await import('../public/js/settings.js');
+    initPaginationSettings();
+    const onGridModeChange = elMock.pageModeGrid.addEventListener.mock.calls
+      .find(([eventName]) => eventName === 'change')?.[1];
+    expect(onGridModeChange).toEqual(expect.any(Function));
+    elMock.pageCustomWrapList.classList.remove.mockClear();
+    elMock.pageCustomWrapGrid.classList.remove.mockClear();
+    elMock.pageSuggestedGrid.classList.add.mockClear();
+    elMock.pageCustomGrid.focus.mockClear();
+
+    elMock.pageModeGrid.value = 'custom';
+    onGridModeChange();
+
+    expect(elMock.pageCustomWrapGrid.classList.remove).toHaveBeenCalledWith('hidden');
+    expect(elMock.pageSuggestedGrid.classList.add).toHaveBeenCalledWith('hidden');
+    expect(elMock.pageCustomGrid.focus).toHaveBeenCalledOnce();
+    expect(elMock.pageCustomWrapList.classList.remove).not.toHaveBeenCalled();
+  });
+
   it('defaults quick actions toolbar visibility to visible when nothing is stored', async () => {
     const { initQuickActionsToolbarSettings } = await import('../public/js/settings.js');
 

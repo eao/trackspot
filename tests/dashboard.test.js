@@ -1,14 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const apiFetchMock = vi.fn();
+const renderStatsViewMock = vi.fn();
+const cleanupStatsViewMock = vi.fn();
+const renderWrappedViewMock = vi.fn();
 const stateMock = {
   earlyWrapped: false,
   albumListMeta: {
     trackedListenedMs: 0,
   },
 };
+const elMock = {
+  pageStats: null,
+  pageWrapped: null,
+};
 
 vi.mock('../public/js/state.js', () => ({
-  apiFetch: vi.fn(),
+  apiFetch: apiFetchMock,
+  el: elMock,
   state: stateMock,
 }));
 
@@ -18,12 +27,12 @@ vi.mock('../public/js/stats-compute.js', () => ({
 }));
 
 vi.mock('../public/js/stats-view.js', () => ({
-  renderStatsView: vi.fn(),
-  cleanupStatsView: vi.fn(),
+  renderStatsView: renderStatsViewMock,
+  cleanupStatsView: cleanupStatsViewMock,
 }));
 
 vi.mock('../public/js/wrapped-view.js', () => ({
-  renderWrappedView: vi.fn(),
+  renderWrappedView: renderWrappedViewMock,
 }));
 
 const syncHeaderTooltipMock = vi.fn();
@@ -38,6 +47,16 @@ describe('dashboard wrapped year resolution', () => {
     stateMock.albumListMeta = {
       trackedListenedMs: 0,
     };
+    stateMock.navigation = {
+      page: 'collection',
+      wrappedYear: null,
+    };
+    elMock.pageStats = document.createElement('section');
+    elMock.pageWrapped = document.createElement('section');
+    apiFetchMock.mockReset();
+    renderStatsViewMock.mockReset();
+    cleanupStatsViewMock.mockReset();
+    renderWrappedViewMock.mockReset();
     syncHeaderTooltipMock.mockReset();
   });
 
@@ -109,8 +128,7 @@ describe('dashboard wrapped year resolution', () => {
   });
 
   it('updates the header tooltip source when dashboard albums load on non-collection pages', async () => {
-    const { apiFetch } = await import('../public/js/state.js');
-    apiFetch.mockResolvedValue({
+    apiFetchMock.mockResolvedValue({
       albums: [makeAlbum(2025, 1)],
       meta: {
         totalCount: 7,
@@ -123,11 +141,43 @@ describe('dashboard wrapped year resolution', () => {
 
     const albums = await loadAlbumsForDashboard();
 
-    expect(apiFetch).toHaveBeenCalledWith('/api/albums');
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/albums');
     expect(albums).toHaveLength(1);
     expect(stateMock.albumListMeta.totalCount).toBe(7);
     expect(stateMock.albumListMeta.filteredCount).toBe(7);
     expect(stateMock.albumListMeta.trackedListenedMs).toBe(17_999_999);
     expect(syncHeaderTooltipMock).toHaveBeenCalled();
+  });
+
+  it('does not let stale dashboard renders write resolved content after loading', async () => {
+    let resolveAlbums;
+    apiFetchMock.mockImplementation(() => new Promise(resolve => {
+      resolveAlbums = resolve;
+    }));
+    const container = document.createElement('section');
+    let isFresh = true;
+
+    const { invalidateDashboardCache, renderDashboardPage } = await import('../public/js/dashboard.js');
+    invalidateDashboardCache();
+    const renderPromise = renderDashboardPage({
+      page: 'stats',
+      container,
+      isFresh: () => isFresh,
+    });
+
+    expect(container.textContent).toBe('Loading…');
+    isFresh = false;
+    resolveAlbums({
+      albums: [makeAlbum(2025, 1)],
+      meta: {
+        totalCount: 1,
+        filteredCount: 1,
+        trackedListenedMs: 0,
+      },
+    });
+
+    await expect(renderPromise).resolves.toMatchObject({ stale: true });
+    expect(renderStatsViewMock).not.toHaveBeenCalled();
+    expect(container.textContent).toBe('Loading…');
   });
 });

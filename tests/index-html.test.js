@@ -26,6 +26,12 @@ describe('index.html boot assets', () => {
     expect(new URL('/js/app.js', 'http://localhost:1060/wrapped/2025').pathname).toBe('/js/app.js');
     expect(new URL('/style.css', 'http://localhost:1060/collection/grid').pathname).toBe('/style.css');
   });
+
+  it('bootstraps grid sidebar state from the grid storage key before modules load', () => {
+    expect(indexHtml).toContain("var _sKey=_cv==='grid'?'ts_sidebarCollapsedGrid':'ts_sidebarCollapsedList'");
+    expect(indexHtml).toContain("if(_s===null&&_cv==='grid') _s='1'");
+    expect(indexHtml).toContain("document.body.classList.add('collection-view-grid','view-grid')");
+  });
 });
 
 describe('index.html DOM contract', () => {

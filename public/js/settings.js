@@ -29,7 +29,7 @@ import {
 } from './layout-width.js';
 import { syncHeaderScrollBaseline } from './header-scroll.js';
 import { syncAppShellLayout } from './app-shell.js';
-import { invalidateDashboardCache } from './dashboard.js';
+import { invalidateDashboardCache, refreshActiveDashboardPage } from './dashboard.js';
 import { closeManagedModal, openManagedModal } from './modal-manager.js';
 import {
   saveComplexStatuses, renderComplexStatusList, renderStatusDropdown,
@@ -102,6 +102,34 @@ function invalidateAlbumDerivedState(options = {}) {
   state.albumsError = null;
   if (clearDetails) {
     state.albumDetailsCache = {};
+  }
+}
+
+async function refreshAlbumDependentViews(options = {}) {
+  const {
+    clearDetails = true,
+    preservePage = true,
+    reloadCollection = true,
+  } = options;
+  const activePage = state.navigation?.page || 'collection';
+
+  invalidateAlbumDerivedState({ clearDetails });
+
+  if (reloadCollection) {
+    if (activePage === 'collection') {
+      await loadAlbums({ preservePage });
+    } else {
+      await loadAlbums({
+        preservePage,
+        renderAlbums: () => {},
+      });
+    }
+  } else if (activePage === 'collection') {
+    render();
+  }
+
+  if (activePage === 'stats' || activePage === 'wrapped') {
+    await refreshActiveDashboardPage();
   }
 }
 const EARLY_WRAPPED_CHEAT_TOAST_MESSAGE = "Nope. You'll have to click the button the old-fashioned way.";
@@ -2671,8 +2699,7 @@ export async function removeWelcomeSampleAlbums() {
     state.welcomeTour.sampleCount = result.status?.sampleCount ?? 0;
     el.welcomeSamplesRow?.classList.toggle('hidden', !(state.welcomeTour.sampleCount > 0));
     setSettingsStatus(`Removed ${result.removedCount ?? 0} sample album${result.removedCount === 1 ? '' : 's'}.`);
-    invalidateAlbumDerivedState();
-    await loadAlbums({ preservePage: true });
+    await refreshAlbumDependentViews({ preservePage: true });
   } catch (error) {
     setSettingsStatus(error.message, true);
   }
@@ -2802,8 +2829,7 @@ export async function refreshCsvImportJob() {
   renderCsvImportJob(job);
 
   if (shouldRefreshAlbumsAfterCsvJob(previousJob, job)) {
-    invalidateAlbumDerivedState();
-    await loadAlbums({ preservePage: true });
+    await refreshAlbumDependentViews({ preservePage: true });
   }
 
   if (job && (job.status === 'queued' || job.status === 'processing')) {
@@ -2877,8 +2903,7 @@ async function cancelCsvImport() {
     clearCsvImportPoll();
     setSettingsStatus('CSV import canceled. Already imported albums were kept.');
     if (shouldRefreshAlbumsAfterCsvJob(previousJob, data.job)) {
-      invalidateAlbumDerivedState();
-      await loadAlbums({ preservePage: true });
+      await refreshAlbumDependentViews({ preservePage: true });
     }
   } catch (error) {
     setSettingsStatus(error.message, true);
@@ -3334,7 +3359,7 @@ export function initPaginationSettings() {
 
   el.pageModeGrid?.addEventListener('change', () => {
     if (el.pageModeGrid.value === 'custom') {
-      showCustomPageInput('list');
+      showCustomPageInput('grid');
       el.pageCustomGrid.focus();
       return;
     }
@@ -4004,8 +4029,7 @@ export async function mergeBackup() {
       if (data.imagesRefetched) imgParts.push(`${data.imagesRefetched} image${data.imagesRefetched!==1?'s':''} re-fetched`);
       const imgMsg = imgParts.length ? `, ${imgParts.join(', ')}` : '';
       setSettingsStatus(`Done — added ${data.added}, skipped ${data.skipped}${imgMsg}.`);
-      invalidateAlbumDerivedState();
-      await loadAlbums();
+      await refreshAlbumDependentViews({ preservePage: false });
     } catch (e) {
       setSettingsStatus(e.message, true);
     } finally {
@@ -4037,8 +4061,7 @@ export async function restoreBackup() {
         return;
       }
       setSettingsStatus(doneMessage);
-      invalidateAlbumDerivedState();
-      await loadAlbums();
+      await refreshAlbumDependentViews({ preservePage: false });
     } catch (e) {
       setSettingsStatus(e.message, true);
     } finally {
@@ -4074,8 +4097,7 @@ export async function wipeDatabase() {
       pageCount: 0,
       trackedListenedMs: 0,
     };
-    invalidateAlbumDerivedState();
-    render();
+    await refreshAlbumDependentViews({ reloadCollection: false });
     setSettingsStatus('Database wiped.');
   } catch (e) {
     setSettingsStatus(e.message, true);

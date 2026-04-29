@@ -5,6 +5,8 @@ const apiFetchMock = vi.fn();
 const stateMock = {
   albums: [],
   albumsLoaded: false,
+  albumsLoading: false,
+  albumsError: null,
   albumDetailsCache: {},
   albumListMeta: {
     totalCount: 0,
@@ -88,6 +90,8 @@ describe('loadAlbums startup gating', () => {
     window.scrollTo = vi.fn();
     stateMock.albums = [];
     stateMock.albumsLoaded = false;
+    stateMock.albumsLoading = false;
+    stateMock.albumsError = null;
     stateMock.albumDetailsCache = {};
     stateMock.complexStatuses = [];
     stateMock.albumListMeta = {
@@ -270,6 +274,44 @@ describe('loadAlbums startup gating', () => {
     expect(stateMock.albums).toEqual([{ id: 2, album_name: 'Newest Result' }]);
     expect(stateMock.pagination.currentPage).toBe(3);
     expect(firstRender).not.toHaveBeenCalled();
+  });
+
+  it('can render an active loading state before a collection reload resolves', async () => {
+    const { loadAlbums } = await import('../public/js/render.js');
+    let resolveRequest;
+    apiFetchMock.mockImplementation(() => new Promise(resolve => {
+      resolveRequest = resolve;
+    }));
+    const renderAlbums = vi.fn();
+
+    const loadPromise = loadAlbums({
+      preservePage: true,
+      renderAlbums,
+      showLoading: true,
+    });
+
+    expect(stateMock.albumsLoading).toBe(true);
+    expect(renderAlbums).toHaveBeenCalledOnce();
+
+    resolveRequest({
+      albums: [{ id: 3, album_name: 'Loaded' }],
+      meta: {
+        totalCount: 1,
+        filteredCount: 1,
+        currentPage: 9,
+        totalPages: 1,
+        startIndex: 0,
+        endIndex: 1,
+        isPaged: false,
+        perPage: 2,
+        pageCount: 1,
+        trackedListenedMs: 0,
+      },
+    });
+    await expect(loadPromise).resolves.toBe(true);
+
+    expect(stateMock.albumsLoading).toBe(false);
+    expect(renderAlbums).toHaveBeenCalledTimes(2);
   });
 
   it('scrolls to the top when requested for pagination navigation loads', async () => {

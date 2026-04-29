@@ -1208,6 +1208,7 @@ export async function loadAlbums(options = {}) {
     renderAlbums = render,
     preservePage = false,
     scrollToTop = false,
+    showLoading = renderAlbums === render,
   } = options;
 
   if (!preservePage) {
@@ -1276,6 +1277,10 @@ export async function loadAlbums(options = {}) {
   params.set('include_other', state.filters.typeOther ? '1' : '0');
   const requestId = ++latestAlbumLoadRequestId;
   state.albumsError = null;
+  state.albumsLoading = true;
+  if (showLoading) {
+    renderAlbums();
+  }
 
   try {
     const response = await apiFetch(`/api/albums?${params}`);

@@ -13,6 +13,10 @@ const stateMock = {
   welcomeTour: {
     sampleCount: 0,
   },
+  navigation: {
+    page: 'collection',
+    wrappedYear: null,
+  },
 };
 
 function makeElement(tagName = 'div') {
@@ -40,6 +44,7 @@ const apiFetchMock = vi.fn();
 const loadAlbumsMock = vi.fn(async () => true);
 const renderMock = vi.fn();
 const invalidateDashboardCacheMock = vi.fn();
+const refreshActiveDashboardPageMock = vi.fn(async () => ({ refreshed: true }));
 
 vi.mock('../public/js/state.js', () => ({
   state: stateMock,
@@ -146,6 +151,7 @@ vi.mock('../public/js/sidebar.js', () => ({
 
 vi.mock('../public/js/dashboard.js', () => ({
   invalidateDashboardCache: invalidateDashboardCacheMock,
+  refreshActiveDashboardPage: refreshActiveDashboardPageMock,
 }));
 
 async function flushAsyncWork() {
@@ -187,6 +193,10 @@ function resetState() {
   stateMock.welcomeTour = {
     sampleCount: 2,
   };
+  stateMock.navigation = {
+    page: 'collection',
+    wrappedYear: null,
+  };
 }
 
 function mockBackupFilePicker() {
@@ -225,6 +235,7 @@ describe('settings album mutation invalidation', () => {
     loadAlbumsMock.mockResolvedValue(true);
     renderMock.mockReset();
     invalidateDashboardCacheMock.mockReset();
+    refreshActiveDashboardPageMock.mockReset();
     globalThis.fetch = vi.fn();
     vi.stubGlobal('confirm', vi.fn(() => true));
     Object.values(elMock).forEach(resetElement);
@@ -268,6 +279,25 @@ describe('settings album mutation invalidation', () => {
     expect(invalidateDashboardCacheMock).toHaveBeenCalledOnce();
     expect(stateMock.albumDetailsCache).toEqual({});
     expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+  });
+
+  it('refreshes the active stats dashboard after settings-side album mutations', async () => {
+    stateMock.navigation.page = 'stats';
+    apiFetchMock.mockResolvedValue({
+      removedCount: 2,
+      status: { sampleCount: 0 },
+    });
+
+    const { removeWelcomeSampleAlbums } = await import('../public/js/settings.js');
+    await removeWelcomeSampleAlbums();
+
+    expect(invalidateDashboardCacheMock).toHaveBeenCalledOnce();
+    expect(loadAlbumsMock).toHaveBeenCalledWith({
+      preservePage: true,
+      renderAlbums: expect.any(Function),
+    });
+    expect(refreshActiveDashboardPageMock).toHaveBeenCalledOnce();
+    expect(renderMock).not.toHaveBeenCalled();
   });
 
   it('does not invalidate album state when welcome sample removal is locked', async () => {
@@ -339,5 +369,20 @@ describe('settings album mutation invalidation', () => {
     expect(stateMock.albumListMeta.totalCount).toBe(0);
     expect(invalidateDashboardCacheMock).toHaveBeenCalledOnce();
     expect(renderMock).toHaveBeenCalledOnce();
+  });
+
+  it('refreshes the active wrapped dashboard after wiping the database', async () => {
+    stateMock.navigation = {
+      page: 'wrapped',
+      wrappedYear: 2025,
+    };
+    apiFetchMock.mockResolvedValue({});
+
+    const { wipeDatabase } = await import('../public/js/settings.js');
+    await wipeDatabase();
+
+    expect(loadAlbumsMock).not.toHaveBeenCalled();
+    expect(renderMock).not.toHaveBeenCalled();
+    expect(refreshActiveDashboardPageMock).toHaveBeenCalledOnce();
   });
 });

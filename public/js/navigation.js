@@ -285,6 +285,14 @@ async function performNavigation(nextNavigation, options = {}) {
   const targetContainer = normalized.page === 'stats' ? el.pageStats : el.pageWrapped;
   const inactiveContainer = normalized.page === 'stats' ? el.pageWrapped : el.pageStats;
   cleanupDashboardPage(inactiveContainer);
+  const isDashboardNavigationFresh = () => (
+    renderToken === navigationRenderToken
+    && state.navigation?.page === normalized.page
+    && (
+      normalized.page !== 'wrapped'
+      || state.navigation?.wrappedYear === normalized.wrappedYear
+    )
+  );
 
   const result = await renderDashboardPage({
     page: normalized.page,
@@ -293,9 +301,10 @@ async function performNavigation(nextNavigation, options = {}) {
     onYearChange: year => {
       void setPage('wrapped', { year, historyMode: 'push' });
     },
+    isFresh: isDashboardNavigationFresh,
   });
 
-  if (renderToken !== navigationRenderToken) return;
+  if (renderToken !== navigationRenderToken || result?.stale) return;
 
   if (normalized.page === 'wrapped' && result.resolvedYear !== normalized.wrappedYear) {
     state.navigation.wrappedYear = result.resolvedYear;

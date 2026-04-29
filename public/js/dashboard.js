@@ -2,7 +2,7 @@
 // Stats / Wrapped page rendering and shared album-data cache.
 // =============================================================================
 
-import { apiFetch, state } from './state.js';
+import { apiFetch, el, state } from './state.js';
 import { computeStats, normalizeAlbumsForStats } from './stats-compute.js';
 import { renderStatsView, cleanupStatsView } from './stats-view.js';
 import { renderWrappedView } from './wrapped-view.js';
@@ -113,16 +113,26 @@ export async function renderDashboardPage({
   container,
   year = null,
   onYearChange = () => {},
+  isFresh = () => true,
 }) {
   if (!container || (page !== 'stats' && page !== 'wrapped')) {
     return { resolvedYear: null, yearsAvailable: [] };
   }
+  if (!isFresh()) {
+    return { resolvedYear: null, yearsAvailable: [], stale: true };
+  }
 
   cleanupDashboardView(container);
+  if (!isFresh()) {
+    return { resolvedYear: null, yearsAvailable: [], stale: true };
+  }
   showLoading(container);
 
   try {
     const albums = await loadAlbumsForDashboard();
+    if (!isFresh()) {
+      return { resolvedYear: null, yearsAvailable: [], stale: true };
+    }
     if (page === 'stats') {
       renderStatsView(container, computeStats(albums));
       return { resolvedYear: null, yearsAvailable: [] };
@@ -142,6 +152,9 @@ export async function renderDashboardPage({
     });
     return { resolvedYear, yearsAvailable };
   } catch (error) {
+    if (!isFresh()) {
+      return { resolvedYear: null, yearsAvailable: [], stale: true };
+    }
     console.error('Dashboard page render failed:', error);
     showError(container, 'Failed to load album data.');
     return { resolvedYear: null, yearsAvailable: [] };
@@ -157,4 +170,45 @@ export function cleanupDashboardPage(container) {
 export function invalidateDashboardCache() {
   dashboardState.albums = null;
   dashboardState.loadingPromise = null;
+}
+
+export async function refreshActiveDashboardPage() {
+  const page = state.navigation?.page;
+  if (page !== 'stats' && page !== 'wrapped') {
+    return { refreshed: false };
+  }
+
+  const container = page === 'stats' ? el.pageStats : el.pageWrapped;
+  const requestedYear = state.navigation?.wrappedYear ?? null;
+  const navigation = await import('./navigation.js');
+  const navigationRevision = navigation.getNavigationRevision();
+  const isFresh = () => (
+    navigation.getNavigationRevision() === navigationRevision
+    && state.navigation?.page === page
+    && (
+      page !== 'wrapped'
+      || (state.navigation?.wrappedYear ?? null) === requestedYear
+    )
+  );
+
+  const result = await renderDashboardPage({
+    page,
+    container,
+    year: requestedYear,
+    onYearChange: year => {
+      void navigation.setPage('wrapped', { year, historyMode: 'push' });
+    },
+    isFresh,
+  });
+
+  if (!isFresh() || result?.stale) {
+    return { refreshed: false, stale: true };
+  }
+
+  if (page === 'wrapped' && result.resolvedYear !== requestedYear) {
+    state.navigation.wrappedYear = result.resolvedYear;
+    navigation.writeNavigationToLocation('replace', state.navigation);
+  }
+
+  return { refreshed: true, ...result };
 }

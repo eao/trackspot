@@ -428,6 +428,31 @@ describe('modal save payloads', () => {
     expect(elMock.deleteOverlay.classList.contains('hidden')).toBe(true);
   });
 
+  it('ignores an uncached edit modal fetch after the modal is closed', async () => {
+    let resolveFetch;
+    apiFetchMock.mockImplementationOnce(() => new Promise(resolve => {
+      resolveFetch = resolve;
+    }));
+
+    const { openEditModal, closeModal } = await import('../public/js/modal.js');
+    const editPromise = openEditModal(99);
+    await Promise.resolve();
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/albums/99');
+
+    closeModal({ force: true });
+    resolveFetch({
+      id: 99,
+      album_name: 'Late Album',
+      artists: [],
+      spotify_url: null,
+    });
+
+    await expect(editPromise).resolves.toBe(false);
+    expect(stateMock.modal.open).toBe(false);
+    expect(stateMock.albumDetailsCache[99]).toBeUndefined();
+    expect(elMock.modalOverlay.classList.contains('hidden')).toBe(true);
+  });
+
   it('waits for pending art upload before saving with the uploaded image path', async () => {
     const { handleImageUpload, handleSaveNew } = await import('../public/js/modal.js');
     fillManualFields();

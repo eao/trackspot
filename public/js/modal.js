@@ -13,6 +13,8 @@ import { invalidateDashboardCache } from './dashboard.js';
 import { showArtButtons } from './modal-art.js';
 import { closeManagedModal, openManagedModal } from './modal-manager.js';
 
+let modalOpenRequestToken = 0;
+
 // ---------------------------------------------------------------------------
 // Error display helpers
 // ---------------------------------------------------------------------------
@@ -199,6 +201,11 @@ function createModalState(overrides = {}) {
     pendingMeta: null,
     ...overrides,
   };
+}
+
+function nextModalOpenRequestToken() {
+  modalOpenRequestToken += 1;
+  return modalOpenRequestToken;
 }
 
 function focusSaveError() {
@@ -434,6 +441,7 @@ export function syncAlbumModalDebugControls() {
 // ---------------------------------------------------------------------------
 
 export function openLogModal() {
+  nextModalOpenRequestToken();
   state.modal = createModalState({
     mode: 'log',
     albumId: null,
@@ -619,14 +627,18 @@ export async function handleSaveNew() {
 // ---------------------------------------------------------------------------
 
 export async function openEditModal(id) {
+  const requestToken = nextModalOpenRequestToken();
   let album = getAlbumById(id);
   if (!album) {
     try {
-      album = storeAlbumDetails(normalizeAlbumClientShape(await apiFetch(`/api/albums/${id}`)));
+      const fetchedAlbum = normalizeAlbumClientShape(await apiFetch(`/api/albums/${id}`));
+      if (requestToken !== modalOpenRequestToken) return false;
+      album = storeAlbumDetails(fetchedAlbum);
     } catch {
       return false;
     }
   }
+  if (requestToken !== modalOpenRequestToken) return false;
 
   state.modal = createModalState({
     mode: 'edit',
@@ -829,6 +841,7 @@ export function closeModal(options = {}) {
   if ((state.modal.isSaving || state.modal.isUploadingArt) && !options.force) {
     return false;
   }
+  nextModalOpenRequestToken();
   state.modal.open = false;
   el.modalOverlay.classList.add('hidden');
   el.btnModalDelete.classList.add('hidden');

@@ -13,7 +13,7 @@
     var _spc={};try{_spc=JSON.parse(localStorage.getItem('ts_startupPreferencesCache')||'{}')||{};}catch(_e0){}
     var _v=localStorage.getItem(_cv==='grid'?'ts_uButtonsEnabledGrid':'ts_uButtonsEnabledList');if(_v==='1') document.body.classList.add('u-buttons-enabled');
     var _qav=localStorage.getItem('ts_quickActionsVisibility');if(_qav===null&&(_spc.quickActionsToolbarVisibility==='hover'||_spc.quickActionsToolbarVisibility==='visible')) _qav=_spc.quickActionsToolbarVisibility;if(_qav==='hover') document.body.classList.add('u-buttons-hover-only');
-    var _s=localStorage.getItem('ts_sidebarCollapsedList');if(_s==='1') document.body.classList.add('sidebar-collapsed');
+    var _sKey=_cv==='grid'?'ts_sidebarCollapsedGrid':'ts_sidebarCollapsedList';var _s=localStorage.getItem(_sKey);if(_s===null&&_cv==='grid') _s='1';if(_s==='1') document.body.classList.add('sidebar-collapsed');
     var _r=localStorage.getItem('ts_reserveSidebarSpace');if(_r===null&&typeof _spc.reserveSidebarSpace==='boolean') _r=_spc.reserveSidebarSpace?'1':'0';if(_r==='1') document.body.classList.add('reserve-sidebar-space');
     var _ap=localStorage.getItem('ts_accentPeriod');if(_ap!=='0') document.body.classList.add('accent-period-enabled');
     var _po={};try{_po=JSON.parse(localStorage.getItem('ts_personalizationOpacity')||'{}')||{};}catch(_e){}
@@ -128,7 +128,7 @@
     else if(_path[0]==='wrapped'&&_path.length<=2) _pg='wrapped';
     document.body.classList.remove('page-collection','page-stats','page-wrapped');
     document.body.classList.add('page-'+_pg);
-    if(_pg==='collection'&&_cv==='grid') document.body.classList.add('collection-view-grid');
+    if(_pg==='collection'&&_cv==='grid') document.body.classList.add('collection-view-grid','view-grid');
     var _cm=_pg==='collection'?(_cw===0?'none':_cw+'px'):'none';
     var _initialInset=_pg==='collection'?_ci:0;
     document.body.style.setProperty('--app-content-max-width', _cm);

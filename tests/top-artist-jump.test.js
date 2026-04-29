@@ -14,6 +14,15 @@ const stateMock = {
   ],
   filters: {},
   sort: {},
+  albums: [],
+  albumsLoaded: true,
+  albumsLoading: false,
+  albumsError: null,
+  albumListMeta: { totalCount: 1 },
+  albumDetailsCache: {},
+  pagination: {
+    currentPage: 3,
+  },
 };
 
 const loadAlbumsMock = vi.fn();
@@ -66,6 +75,15 @@ describe('stats top artist jump', () => {
     ];
     stateMock.filters = {};
     stateMock.sort = {};
+    stateMock.albums = [{ id: 1, album_name: 'Original' }];
+    stateMock.albumsLoaded = true;
+    stateMock.albumsLoading = false;
+    stateMock.albumsError = null;
+    stateMock.albumListMeta = { totalCount: 1 };
+    stateMock.albumDetailsCache = { 1: { id: 1, album_name: 'Original' } };
+    stateMock.pagination = {
+      currentPage: 3,
+    };
     navigationRevision = 1;
     loadAlbumsMock.mockReset();
     resetPaginationMock.mockReset();
@@ -91,6 +109,12 @@ describe('stats top artist jump', () => {
 
     await expect(jumpPromise).resolves.toBe(false);
     expect(setPageMock).not.toHaveBeenCalled();
+    expect(stateMock.filters).toEqual({});
+    expect(stateMock.sort).toEqual({});
+    expect(stateMock.navigation.scrollPositions.collection).toBe(120);
+    expect(stateMock.albums).toEqual([{ id: 1, album_name: 'Original' }]);
+    expect(stateMock.albumDetailsCache).toEqual({ 1: { id: 1, album_name: 'Original' } });
+    expect(stateMock.pagination.currentPage).toBe(3);
   });
 
   it('opens collection after the current top-artist load applies', async () => {
