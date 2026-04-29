@@ -10,6 +10,7 @@ const {
   sanitizeFileNamePart,
   buildThumbnailFileName,
   getBackgroundImageRecord,
+  getExistingFileStats,
 } = require('./background-library');
 
 const OPACITY_PRESETS_DIR = getConfiguredPath('OPACITY_PRESETS_DIR', path.join(DATA_DIR, 'opacity-presets'));
@@ -193,6 +194,33 @@ function getSafeFallbackIdFromFileName(fileName, prefix) {
   return safeBase ? `${prefix}-${safeBase}` : prefix;
 }
 
+function createSourceFileRepairId(fileName, prefix, usedIds = new Set(), reservedIds = new Set()) {
+  const baseName = path.parse(fileName).name.trim();
+  const safeBase = baseName
+    .replace(/[^A-Za-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'record';
+  const baseId = `${prefix}-${safeBase}`;
+  let candidate = baseId;
+  let suffix = 2;
+
+  while (usedIds.has(candidate) || reservedIds.has(candidate)) {
+    candidate = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  usedIds.add(candidate);
+  return candidate;
+}
+
+function countSafeRecordIds(entries) {
+  const counts = new Map();
+  entries.forEach(entry => {
+    if (!entry.safeRawId) return;
+    counts.set(entry.safeRawId, (counts.get(entry.safeRawId) ?? 0) + 1);
+  });
+  return counts;
+}
+
 function buildStoredPreviewImageName(originalName, mimeType) {
   const parsed = path.parse(originalName || 'theme-preview');
   const ext = ALLOWED_IMAGE_TYPES.get(mimeType) || parsed.ext || '.jpg';
@@ -290,15 +318,15 @@ function attachOpacityPresetSourceFileName(preset, fileName) {
   return preset;
 }
 
-function buildInvalidUserOpacityPresetRecord(rawPreset, fileName, reason) {
+function buildInvalidUserOpacityPresetRecord(rawPreset, fileName, reason, options = {}) {
   const rawObject = rawPreset && typeof rawPreset === 'object' && !Array.isArray(rawPreset)
     ? rawPreset
     : {};
   const fallbackName = path.parse(fileName).name;
   const rawId = getRawRecordId(rawObject, fileName);
-  const id = isSafePersonalizationId(rawId)
-    ? rawId.trim()
-    : getSafeFallbackIdFromFileName(fileName, 'invalid-opacity');
+  let id = getSafeFallbackIdFromFileName(fileName, 'invalid-opacity');
+  if (isSafePersonalizationId(rawId)) id = rawId.trim();
+  if (isSafePersonalizationId(options.id)) id = options.id.trim();
   const name = typeof rawObject.name === 'string' && rawObject.name.trim()
     ? rawObject.name.trim()
     : fallbackName;
@@ -316,63 +344,114 @@ function buildInvalidUserOpacityPresetRecord(rawPreset, fileName, reason) {
 }
 
 function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
-  return listJsonFileNames(directoryPath)
-    .map(fileName => {
-      const filePath = path.join(directoryPath, fileName);
-      let raw;
-      try {
-        raw = readJsonFile(filePath, `opacity preset "${fileName}"`);
-      } catch (error) {
-        if (options.forceIncludedWithApp) {
-          throw error;
-        }
+  const entries = listJsonFileNames(directoryPath).map(fileName => {
+    const filePath = path.join(directoryPath, fileName);
+    let raw = null;
+    let readError = null;
+    try {
+      raw = readJsonFile(filePath, `opacity preset "${fileName}"`);
+    } catch (error) {
+      readError = error;
+    }
 
-        const fallbackId = path.parse(fileName).name;
-        if (options.ignoredIds?.has(fallbackId)) return null;
-        return buildInvalidUserOpacityPresetRecord(null, fileName, error.message);
+    const rawId = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? getRawRecordId(raw, fileName)
+      : path.parse(fileName).name;
+
+    return {
+      fileName,
+      raw,
+      readError,
+      safeRawId: isSafePersonalizationId(rawId) ? rawId.trim() : null,
+    };
+  });
+  const idCounts = countSafeRecordIds(entries);
+  const duplicateSeedId = options.forceIncludedWithApp
+    ? [...idCounts].find(([, count]) => count > 1)?.[0]
+    : null;
+  if (duplicateSeedId) {
+    throw createStoreError(500, `Opacity preset id "${duplicateSeedId}" is defined more than once.`);
+  }
+
+  const repairIds = new Set();
+  const reservedIds = new Set(options.ignoredIds ?? []);
+
+  return entries.map(entry => {
+    const { fileName, raw, readError, safeRawId } = entry;
+    const shadowedId = !!safeRawId && options.ignoredIds?.has(safeRawId);
+    const duplicateUserId = !!safeRawId
+      && !options.forceIncludedWithApp
+      && idCounts.get(safeRawId) > 1;
+    const repairId = shadowedId || duplicateUserId
+      ? createSourceFileRepairId(fileName, 'opacity-file', repairIds, reservedIds)
+      : null;
+
+    if (readError) {
+      if (options.forceIncludedWithApp) {
+        throw readError;
       }
 
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        const reason = `Opacity preset file "${fileName}" must contain a JSON object.`;
-        if (options.forceIncludedWithApp) {
-          throw createStoreError(500, reason);
-        }
-        return buildInvalidUserOpacityPresetRecord(raw, fileName, reason);
-      }
+      return buildInvalidUserOpacityPresetRecord(null, fileName, readError.message, {
+        id: repairId,
+      });
+    }
 
-      const rawId = getRawRecordId(raw, fileName);
-      if (!isSafePersonalizationId(rawId)) {
-        if (options.forceIncludedWithApp) {
-          throw createStoreError(500, `Opacity preset file "${fileName}" has an invalid id.`);
-        }
-        const fallbackId = getSafeFallbackIdFromFileName(fileName, 'invalid-opacity');
-        if (options.ignoredIds?.has(fallbackId)) return null;
-        return buildInvalidUserOpacityPresetRecord(raw, fileName, `Opacity preset file "${fileName}" has an invalid id.`);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      const reason = `Opacity preset file "${fileName}" must contain a JSON object.`;
+      if (options.forceIncludedWithApp) {
+        throw createStoreError(500, reason);
       }
-      const id = rawId.trim();
-      if (options.ignoredIds?.has(id)) return null;
+      return buildInvalidUserOpacityPresetRecord(raw, fileName, reason, {
+        id: repairId,
+      });
+    }
 
-      const name = typeof raw.name === 'string' ? raw.name.trim() : '';
-      if (!name) {
-        const reason = `Opacity preset file "${fileName}" is missing a non-empty "name".`;
-        if (options.forceIncludedWithApp) {
-          throw createStoreError(500, reason);
-        }
-        return buildInvalidUserOpacityPresetRecord(raw, fileName, reason);
+    const rawId = getRawRecordId(raw, fileName);
+    if (!isSafePersonalizationId(rawId)) {
+      if (options.forceIncludedWithApp) {
+        throw createStoreError(500, `Opacity preset file "${fileName}" has an invalid id.`);
       }
+      const fallbackId = getSafeFallbackIdFromFileName(fileName, 'invalid-opacity');
+      const invalidRecordId = repairId || (reservedIds.has(fallbackId)
+        ? createSourceFileRepairId(fileName, 'opacity-file', repairIds, reservedIds)
+        : null);
+      return buildInvalidUserOpacityPresetRecord(raw, fileName, `Opacity preset file "${fileName}" has an invalid id.`, {
+        id: invalidRecordId,
+      });
+    }
+    const id = rawId.trim();
 
-      return attachOpacityPresetSourceFileName({
-        id,
-        name,
-        includedWithApp: !!options.forceIncludedWithApp,
-        canEdit: !options.forceIncludedWithApp,
-        canDelete: !options.forceIncludedWithApp,
-        invalid: false,
-        invalidReason: '',
-        opacity: normalizeOpacityValues(raw.opacity),
-      }, fileName);
-    })
-    .filter(Boolean);
+    if (shadowedId) {
+      return buildInvalidUserOpacityPresetRecord(raw, fileName, 'This opacity preset uses an id reserved by an included-with-app preset.', {
+        id: repairId,
+      });
+    }
+    if (duplicateUserId) {
+      return buildInvalidUserOpacityPresetRecord(raw, fileName, 'Another opacity preset already uses this id.', {
+        id: repairId,
+      });
+    }
+
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    if (!name) {
+      const reason = `Opacity preset file "${fileName}" is missing a non-empty "name".`;
+      if (options.forceIncludedWithApp) {
+        throw createStoreError(500, reason);
+      }
+      return buildInvalidUserOpacityPresetRecord(raw, fileName, reason);
+    }
+
+    return attachOpacityPresetSourceFileName({
+      id,
+      name,
+      includedWithApp: !!options.forceIncludedWithApp,
+      canEdit: !options.forceIncludedWithApp,
+      canDelete: !options.forceIncludedWithApp,
+      invalid: false,
+      invalidReason: '',
+      opacity: normalizeOpacityValues(raw.opacity),
+    }, fileName);
+  }).filter(Boolean);
 }
 
 function loadOpacityPresetRecords() {
@@ -504,7 +583,7 @@ function deleteThemePreviewAssets(theme, options = {}) {
   }
 
   const removePreviewAsset = (filePath, label) => {
-    if (!fs.existsSync(filePath)) return;
+    if (!getExistingFileStats(filePath)) return;
     try {
       fs.unlinkSync(filePath);
     } catch (error) {
@@ -530,7 +609,7 @@ function findExistingFilePath(fileName, directoryPaths) {
 
   for (const directoryPath of directoryPaths) {
     const filePath = path.join(directoryPath, safeFileName);
-    if (fs.existsSync(filePath)) return filePath;
+    if (getExistingFileStats(filePath)) return filePath;
   }
 
   return null;
@@ -585,15 +664,15 @@ function attachThemeSourceFileName(theme, fileName) {
   return theme;
 }
 
-function buildInvalidUserThemeRecord(rawTheme, fileName, reason) {
+function buildInvalidUserThemeRecord(rawTheme, fileName, reason, options = {}) {
   const rawObject = rawTheme && typeof rawTheme === 'object' && !Array.isArray(rawTheme)
     ? rawTheme
     : {};
   const fallbackName = path.parse(fileName).name;
   const rawId = getRawRecordId(rawObject, fileName);
-  const id = isSafePersonalizationId(rawId)
-    ? rawId.trim()
-    : getSafeFallbackIdFromFileName(fileName, 'invalid-theme');
+  let id = getSafeFallbackIdFromFileName(fileName, 'invalid-theme');
+  if (isSafePersonalizationId(rawId)) id = rawId.trim();
+  if (isSafePersonalizationId(options.id)) id = options.id.trim();
   const name = typeof rawObject.name === 'string' && rawObject.name.trim()
     ? rawObject.name.trim()
     : fallbackName;
@@ -627,6 +706,20 @@ function buildInvalidUserThemeRecord(rawTheme, fileName, reason) {
     invalid: true,
     invalidReason: reason,
   }, fileName);
+}
+
+function markUserThemeRecordInvalid(theme, reason, options = {}) {
+  const sourceFileName = getThemeSourceFileName(theme);
+  const id = isSafePersonalizationId(options.id) ? options.id.trim() : theme.id;
+  return attachThemeSourceFileName({
+    ...theme,
+    id,
+    includedWithApp: false,
+    canEdit: true,
+    canDelete: true,
+    invalid: true,
+    invalidReason: reason,
+  }, sourceFileName);
 }
 
 function hydrateThemeRecord(rawTheme, fileName, options = {}) {
@@ -748,27 +841,72 @@ function getThemeWritePath(theme) {
 }
 
 function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
-  const hydratedThemes = [];
-
-  listJsonFileNames(directoryPath).forEach(fileName => {
+  const entries = listJsonFileNames(directoryPath).map(fileName => {
     const filePath = path.join(directoryPath, fileName);
-    let raw;
+    let raw = null;
+    let readError = null;
     try {
       raw = readJsonFile(filePath, `theme "${fileName}"`);
     } catch (error) {
+      readError = error;
+    }
+
+    const rawId = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? getRawRecordId(raw, fileName)
+      : path.parse(fileName).name;
+
+    return {
+      fileName,
+      raw,
+      readError,
+      safeRawId: isSafePersonalizationId(rawId) ? rawId.trim() : null,
+    };
+  });
+  const idCounts = countSafeRecordIds(entries);
+  const duplicateSeedId = options.forceIncludedWithApp
+    ? [...idCounts].find(([, count]) => count > 1)?.[0]
+    : null;
+  if (duplicateSeedId) {
+    throw createStoreError(500, `Theme id "${duplicateSeedId}" is defined more than once.`);
+  }
+
+  const hydratedThemes = [];
+  const repairIds = new Set();
+  const reservedIds = new Set(options.ignoredIds ?? []);
+
+  entries.forEach(entry => {
+    const { fileName, raw, readError, safeRawId } = entry;
+    const shadowedId = !!safeRawId && options.ignoredIds?.has(safeRawId);
+    const duplicateUserId = !!safeRawId
+      && !options.forceIncludedWithApp
+      && idCounts.get(safeRawId) > 1;
+    const repairId = shadowedId || duplicateUserId
+      ? createSourceFileRepairId(fileName, 'theme-file', repairIds, reservedIds)
+      : null;
+
+    if (readError) {
       if (options.forceIncludedWithApp) {
-        throw error;
+        throw readError;
       }
 
-      const fallbackId = path.parse(fileName).name;
-      if (!options.ignoredIds?.has(fallbackId)) {
-        hydratedThemes.push(buildInvalidUserThemeRecord(null, fileName, error.message));
-      }
+      hydratedThemes.push(buildInvalidUserThemeRecord(null, fileName, readError.message, {
+        id: repairId,
+      }));
       return;
     }
 
-    const rawId = getRawRecordId(raw, fileName);
-    if (isSafePersonalizationId(rawId) && options.ignoredIds?.has(rawId.trim())) return;
+    if (shadowedId) {
+      hydratedThemes.push(buildInvalidUserThemeRecord(raw, fileName, 'This theme uses an id reserved by an included-with-app theme.', {
+        id: repairId,
+      }));
+      return;
+    }
+    if (duplicateUserId) {
+      hydratedThemes.push(buildInvalidUserThemeRecord(raw, fileName, 'Another theme already uses this id.', {
+        id: repairId,
+      }));
+      return;
+    }
 
     const hydrated = hydrateThemeRecord(raw, fileName, options);
     if (!hydrated.valid) {
@@ -776,7 +914,16 @@ function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
         throw createStoreError(500, hydrated.reason);
       }
 
-      hydratedThemes.push(buildInvalidUserThemeRecord(raw, fileName, hydrated.reason));
+      const rawId = raw && typeof raw === 'object' && !Array.isArray(raw)
+        ? getRawRecordId(raw, fileName)
+        : '';
+      const fallbackId = getSafeFallbackIdFromFileName(fileName, 'invalid-theme');
+      const invalidRecordId = !isSafePersonalizationId(rawId) && reservedIds.has(fallbackId)
+        ? createSourceFileRepairId(fileName, 'theme-file', repairIds, reservedIds)
+        : null;
+      hydratedThemes.push(buildInvalidUserThemeRecord(raw, fileName, hydrated.reason, {
+        id: invalidRecordId,
+      }));
       return;
     }
 
@@ -789,18 +936,36 @@ function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
 function listThemes() {
   const seedThemes = loadThemeRecordsFromDirectory(SEED_THEMES_DIR, { forceIncludedWithApp: true });
   const seedIds = new Set(seedThemes.map(theme => theme.id));
-  const userThemes = loadThemeRecordsFromDirectory(THEMES_DIR, { ignoredIds: seedIds });
-  const hydratedThemes = [...seedThemes, ...userThemes];
-
-  const seenNames = new Map();
-  hydratedThemes.filter(theme => !theme.invalid).forEach(theme => {
+  const seedNames = new Map();
+  seedThemes.filter(theme => !theme.invalid).forEach(theme => {
     const normalizedName = normalizeNameForUniqueness(theme.name);
-    const duplicate = seenNames.get(normalizedName);
+    const duplicate = seedNames.get(normalizedName);
     if (duplicate) {
       throw createStoreError(500, `Theme names must be unique, but both "${duplicate.name}" and "${theme.name}" exist.`);
     }
-    seenNames.set(normalizedName, theme);
+    seedNames.set(normalizedName, theme);
   });
+
+  const userThemes = loadThemeRecordsFromDirectory(THEMES_DIR, { ignoredIds: seedIds });
+  const validUserNameCounts = new Map();
+  userThemes.filter(theme => !theme.invalid).forEach(theme => {
+    const normalizedName = normalizeNameForUniqueness(theme.name);
+    validUserNameCounts.set(normalizedName, (validUserNameCounts.get(normalizedName) ?? 0) + 1);
+  });
+
+  const hydratedUserThemes = userThemes.map(theme => {
+    if (theme.invalid) return theme;
+
+    const normalizedName = normalizeNameForUniqueness(theme.name);
+    if (seedNames.has(normalizedName)) {
+      return markUserThemeRecordInvalid(theme, 'Another theme already uses this name.');
+    }
+    if (validUserNameCounts.get(normalizedName) > 1) {
+      return markUserThemeRecordInvalid(theme, 'Another theme already uses this name.');
+    }
+    return theme;
+  });
+  const hydratedThemes = [...seedThemes, ...hydratedUserThemes];
 
   return hydratedThemes.sort(compareIncludedFirstByName);
 }

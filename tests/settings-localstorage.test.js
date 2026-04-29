@@ -349,6 +349,29 @@ vi.mock('../public/js/state.js', () => ({
   },
 }));
 
+const DEFAULT_OPACITY_PRESET_RESPONSE = {
+  id: 'default-opaque',
+  name: 'Default Opaque',
+  includedWithApp: true,
+  canEdit: false,
+  canDelete: false,
+  invalid: false,
+  invalidReason: '',
+  opacity: {
+    header: 100,
+    quickActionsToolbar: 100,
+    sidebar: 100,
+    rowHeaderBackground: 100,
+    row: 100,
+    rowArt: 100,
+    rowText: 100,
+    card: 100,
+    cardArt: 100,
+    cardText: 100,
+    styleBackgroundGradient: 0,
+  },
+};
+
 vi.mock('../public/js/render.js', () => ({
   render: vi.fn(),
   loadAlbums: vi.fn(),
@@ -1046,6 +1069,113 @@ describe('theme background application', () => {
     apiFetch.mockReset();
   });
 
+  it('renders fallback opacity presets as read-only while presets are still loading', async () => {
+    const { apiFetch } = await import('../public/js/state.js');
+    apiFetch.mockImplementation(() => new Promise(() => {}));
+
+    const { initPersonalizationSettings, restorePersonalizationSettings } = await import('../public/js/settings.js');
+    restorePersonalizationSettings();
+    initPersonalizationSettings();
+
+    const defaultOption = [...elMock.personalizationOpacityPresetSelect.querySelectorAll('option')]
+      .find(option => option.value === 'default-opaque');
+
+    expect(defaultOption?.textContent).toBe('Default Opaque');
+    expect(stateMock.personalization.activeOpacityPresetId).toBe('default-opaque');
+    expect(elMock.personalizationOpacityPresetName.value).toBe('');
+    expect(elMock.personalizationOpacityPresetUpdate.disabled).toBe(true);
+    expect(elMock.personalizationOpacityPresetDelete.disabled).toBe(true);
+  });
+
+  it('does not partially apply a theme when opacity presets cannot be loaded', async () => {
+    const theme = {
+      id: 'needs-opacity',
+      name: 'Needs Opacity',
+      description: 'Should not partially apply.',
+      previewImage: null,
+      colorSchemePresetId: 'evergreen-night',
+      opacityPresetId: 'default-opaque',
+      primaryBackgroundSelection: null,
+      primaryBackgroundDisplay: {
+        positionX: 'center',
+        positionY: 'center',
+        fill: 'cover',
+        customScale: 1,
+      },
+      secondaryBackgroundSelection: null,
+      secondaryBackgroundDisplay: {
+        positionX: 'right',
+        positionY: 'top',
+        fill: 'original-size',
+        customScale: 1,
+      },
+      backgroundImageOpacity: 30,
+      backgroundImageBlur: 5,
+      secondaryBackgroundImageOpacity: 80,
+      secondaryBackgroundImageBlur: 10,
+      includedWithApp: false,
+      canEdit: true,
+      canDelete: true,
+    };
+
+    const { apiFetch } = await import('../public/js/state.js');
+    apiFetch.mockImplementation(async path => {
+      if (path === '/api/opacity-presets') throw new Error('network down');
+      throw new Error(`Unexpected apiFetch call: ${path}`);
+    });
+
+    const { applyTheme } = await import('../public/js/settings.js');
+    await expect(applyTheme(theme)).rejects.toThrow('Could not load opacity presets needed to apply this theme.');
+
+    expect(stateMock.personalization.selectedThemeId).toBeNull();
+    expect(stateMock.personalization.appliedThemeId).toBeNull();
+    expect(stateMock.personalization.colorSchemePresetId).toBe('bunan-blue');
+    expect(localStorage.getItem('ts_appliedThemeId')).toBeNull();
+    expect(elMock.personalizationBackgroundStatus.textContent).toBe('Could not load opacity presets: network down');
+  });
+
+  it('does not partially apply a theme when its opacity preset is unavailable', async () => {
+    const theme = {
+      id: 'missing-opacity-theme',
+      name: 'Missing Opacity Theme',
+      description: 'Should not apply.',
+      previewImage: null,
+      colorSchemePresetId: 'evergreen-night',
+      opacityPresetId: 'missing-opacity',
+      primaryBackgroundSelection: null,
+      primaryBackgroundDisplay: {
+        positionX: 'center',
+        positionY: 'center',
+        fill: 'cover',
+        customScale: 1,
+      },
+      secondaryBackgroundSelection: null,
+      secondaryBackgroundDisplay: {
+        positionX: 'right',
+        positionY: 'top',
+        fill: 'original-size',
+        customScale: 1,
+      },
+      backgroundImageOpacity: 30,
+      backgroundImageBlur: 5,
+      secondaryBackgroundImageOpacity: 80,
+      secondaryBackgroundImageBlur: 10,
+      includedWithApp: false,
+      canEdit: true,
+      canDelete: true,
+    };
+    stateMock.personalization.opacityPresetsLoaded = true;
+    stateMock.personalization.opacityPresets = [DEFAULT_OPACITY_PRESET_RESPONSE];
+
+    const { applyTheme } = await import('../public/js/settings.js');
+    await expect(applyTheme(theme)).rejects.toThrow('Theme "Missing Opacity Theme" references an unavailable opacity preset.');
+
+    expect(stateMock.personalization.selectedThemeId).toBeNull();
+    expect(stateMock.personalization.appliedThemeId).toBeNull();
+    expect(stateMock.personalization.colorSchemePresetId).toBe('bunan-blue');
+    expect(localStorage.getItem('ts_appliedThemeId')).toBeNull();
+  });
+
   it('re-reveals theme background images after switching through a theme without images', async () => {
     const noImageTheme = {
       id: 'no-image',
@@ -1091,7 +1221,7 @@ describe('theme background application', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes: [noImageTheme, imageTheme] };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -1354,7 +1484,7 @@ describe('default theme initialization', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes: [basicBlueTheme] };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -1417,7 +1547,7 @@ describe('default theme initialization', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes: [basicBlueTheme] };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -1581,7 +1711,7 @@ describe('seasonal theme auto-switching', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -1637,7 +1767,7 @@ describe('seasonal theme auto-switching', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -1690,7 +1820,7 @@ describe('seasonal theme auto-switching', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -1730,7 +1860,7 @@ describe('seasonal theme auto-switching', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -1775,7 +1905,7 @@ describe('seasonal theme auto-switching', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -1914,7 +2044,7 @@ describe('included-with-app theme editor controls', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes: [basicBlueTheme] };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -2062,7 +2192,7 @@ describe('pre-applied theme draft hydration', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes: [basicBlueTheme] };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -2254,7 +2384,7 @@ describe('theme thumbnail picker', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });
@@ -2357,7 +2487,7 @@ describe('theme thumbnail picker', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async (path, options = {}) => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes: [basicTheme, invalidTheme] };
       if (path === '/api/themes/broken-theme' && options.method === 'DELETE') {
         return { ok: true, theme: invalidTheme };
@@ -2650,7 +2780,7 @@ describe('theme thumbnail picker', () => {
 
     const { apiFetch } = await import('../public/js/state.js');
     apiFetch.mockImplementation(async path => {
-      if (path === '/api/opacity-presets') return { presets: [] };
+      if (path === '/api/opacity-presets') return { presets: [DEFAULT_OPACITY_PRESET_RESPONSE] };
       if (path === '/api/themes') return { themes };
       throw new Error(`Unexpected apiFetch call: ${path}`);
     });

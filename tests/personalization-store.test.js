@@ -203,6 +203,67 @@ describe('personalization store', () => {
     });
   });
 
+  it('keeps a user theme with a duplicate built-in name visible as invalid and deleteable', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const seedTheme = readSeedThemes()[0];
+    const previewFileName = 'duplicate-built-in-name.png';
+
+    fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, previewFileName), 'preview');
+    fs.writeFileSync(path.join(store.THEMES_DIR, 'duplicate-built-in-name.json'), JSON.stringify({
+      id: 'duplicate-built-in-name',
+      name: seedTheme.name,
+      previewImage: { fileName: previewFileName },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'default-opaque',
+    }, null, 2));
+
+    const themes = store.listThemes();
+    const seedRecord = themes.find(theme => theme.id === seedTheme.id);
+    const duplicate = themes.find(theme => theme.id === 'duplicate-built-in-name');
+
+    expect(seedRecord).toMatchObject({
+      id: seedTheme.id,
+      name: seedTheme.name,
+      invalid: false,
+      includedWithApp: true,
+    });
+    expect(duplicate).toMatchObject({
+      id: 'duplicate-built-in-name',
+      name: seedTheme.name,
+      invalid: true,
+      invalidReason: 'Another theme already uses this name.',
+      canEdit: true,
+      canDelete: true,
+    });
+
+    store.deleteTheme(duplicate.id);
+    expect(fs.existsSync(path.join(store.THEMES_DIR, 'duplicate-built-in-name.json'))).toBe(false);
+  });
+
+  it('keeps user themes with duplicate names visible as invalid repair records', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+
+    ['first-duplicate-name', 'second-duplicate-name'].forEach(themeId => {
+      const previewFileName = `${themeId}.png`;
+      fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, previewFileName), 'preview');
+      fs.writeFileSync(path.join(store.THEMES_DIR, `${themeId}.json`), JSON.stringify({
+        id: themeId,
+        name: 'Duplicate User Name',
+        previewImage: { fileName: previewFileName },
+        colorSchemePresetId: 'bunan-blue',
+        opacityPresetId: 'default-opaque',
+      }, null, 2));
+    });
+
+    const duplicates = store.listThemes()
+      .filter(theme => theme.name === 'Duplicate User Name')
+      .sort((left, right) => left.id.localeCompare(right.id));
+
+    expect(duplicates.map(theme => theme.id)).toEqual(['first-duplicate-name', 'second-duplicate-name']);
+    expect(duplicates.every(theme => theme.invalid && theme.canEdit && theme.canDelete)).toBe(true);
+    expect(duplicates.every(theme => theme.invalidReason === 'Another theme already uses this name.')).toBe(true);
+  });
+
   it('creates user themes that reference a seed opacity preset', () => {
     const { store, presetDir } = loadPersonalizationStoreTestContext();
 
@@ -342,6 +403,39 @@ describe('personalization store', () => {
     expect(fs.existsSync(themePath)).toBe(true);
     expect(fs.existsSync(previewPath)).toBe(true);
     expect(fs.existsSync(thumbnailPath)).toBe(true);
+  });
+
+  it('treats directories with image extensions as missing theme assets', () => {
+    const { store, presetDir } = loadPersonalizationStoreTestContext();
+
+    fs.mkdirSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, 'directory-preview.png'));
+    fs.writeFileSync(path.join(store.THEMES_DIR, 'directory-preview-theme.json'), JSON.stringify({
+      id: 'directory-preview-theme',
+      name: 'Directory Preview Theme',
+      previewImage: { fileName: 'directory-preview.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'default-opaque',
+    }, null, 2));
+
+    fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, 'directory-background-preview.png'), 'preview');
+    fs.mkdirSync(path.join(presetDir, 'directory-background.png'));
+    fs.writeFileSync(path.join(store.THEMES_DIR, 'directory-background-theme.json'), JSON.stringify({
+      id: 'directory-background-theme',
+      name: 'Directory Background Theme',
+      previewImage: { fileName: 'directory-background-preview.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'default-opaque',
+      primaryBackgroundSelection: { kind: 'preset', id: 'directory-background.png' },
+    }, null, 2));
+
+    expect(store.findThemeById('directory-preview-theme')).toMatchObject({
+      invalid: true,
+      invalidReason: 'Theme "Directory Preview Theme" is missing its preview image.',
+    });
+    expect(store.findThemeById('directory-background-theme')).toMatchObject({
+      invalid: true,
+      invalidReason: 'Theme "Directory Background Theme" references a missing primary background image.',
+    });
   });
 
   it('deletes invalid user theme files and preview assets only through explicit delete', () => {
@@ -871,30 +965,114 @@ describe('personalization store', () => {
     expect(() => store.deleteOpacityPreset(seedPreset.id)).toThrow('Included-with-app opacity presets cannot be deleted.');
   });
 
-  it('ignores runtime theme and opacity preset copies with seed IDs', () => {
+  it('keeps duplicate user ids reachable through source-file repair ids', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'first-duplicate-id.json'), JSON.stringify({
+      id: 'duplicate-opacity-id',
+      name: 'First Duplicate Opacity',
+      opacity: {
+        header: 70,
+      },
+    }, null, 2));
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'second-duplicate-id.json'), JSON.stringify({
+      id: 'duplicate-opacity-id',
+      name: 'Second Duplicate Opacity',
+      opacity: {
+        header: 80,
+      },
+    }, null, 2));
+
+    ['first-duplicate-id', 'second-duplicate-id'].forEach((fileBase, index) => {
+      const previewFileName = `${fileBase}.png`;
+      fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, previewFileName), 'preview');
+      fs.writeFileSync(path.join(store.THEMES_DIR, `${fileBase}.json`), JSON.stringify({
+        id: 'duplicate-theme-id',
+        name: index === 0 ? 'First Duplicate Id Theme' : 'Second Duplicate Id Theme',
+        previewImage: { fileName: previewFileName },
+        colorSchemePresetId: 'bunan-blue',
+        opacityPresetId: 'default-opaque',
+      }, null, 2));
+    });
+
+    const duplicatePresets = store.listOpacityPresets()
+      .filter(preset => preset.name.includes('Duplicate Opacity'))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    const duplicateThemes = store.listThemes()
+      .filter(theme => theme.name.includes('Duplicate Id Theme'))
+      .sort((left, right) => left.id.localeCompare(right.id));
+
+    expect(duplicatePresets.map(preset => preset.id)).toEqual([
+      'opacity-file-first-duplicate-id',
+      'opacity-file-second-duplicate-id',
+    ]);
+    expect(duplicatePresets.every(preset => preset.invalid && !preset.canEdit && preset.canDelete)).toBe(true);
+    expect(duplicatePresets.every(preset => preset.invalidReason === 'Another opacity preset already uses this id.')).toBe(true);
+    expect(duplicateThemes.map(theme => theme.id)).toEqual([
+      'theme-file-first-duplicate-id',
+      'theme-file-second-duplicate-id',
+    ]);
+    expect(duplicateThemes.every(theme => theme.invalid && theme.canEdit && theme.canDelete)).toBe(true);
+    expect(duplicateThemes.every(theme => theme.invalidReason === 'Another theme already uses this id.')).toBe(true);
+
+    store.deleteOpacityPreset(duplicatePresets[1].id);
+    store.deleteTheme(duplicateThemes[1].id);
+    expect(fs.existsSync(path.join(store.OPACITY_PRESETS_DIR, 'second-duplicate-id.json'))).toBe(false);
+    expect(fs.existsSync(path.join(store.THEMES_DIR, 'second-duplicate-id.json'))).toBe(false);
+    expect(fs.existsSync(path.join(store.OPACITY_PRESETS_DIR, 'first-duplicate-id.json'))).toBe(true);
+    expect(fs.existsSync(path.join(store.THEMES_DIR, 'first-duplicate-id.json'))).toBe(true);
+  });
+
+  it('keeps runtime records with seed IDs visible as invalid deleteable repair records', () => {
     const { store } = loadPersonalizationStoreTestContext();
     const seedTheme = readSeedThemes()[0];
     const seedPreset = readSeedOpacityPresets()[0];
 
-    fs.writeFileSync(path.join(store.THEMES_DIR, `${seedTheme.id}.json`), JSON.stringify({
+    const shadowThemePath = path.join(store.THEMES_DIR, `${seedTheme.id}.json`);
+    const shadowPresetPath = path.join(store.OPACITY_PRESETS_DIR, `${seedPreset.id}.json`);
+    fs.writeFileSync(shadowThemePath, JSON.stringify({
       ...seedTheme,
       name: 'Runtime Copy Should Be Ignored',
       includedWithApp: false,
     }, null, 2));
-    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, `${seedPreset.id}.json`), JSON.stringify({
+    fs.writeFileSync(shadowPresetPath, JSON.stringify({
       ...seedPreset,
       name: 'Runtime Preset Copy Should Be Ignored',
       includedWithApp: false,
     }, null, 2));
 
-    const themes = store.listThemes().filter(theme => theme.id === seedTheme.id);
-    const presets = store.listOpacityPresets().filter(preset => preset.id === seedPreset.id);
+    const themes = store.listThemes();
+    const presets = store.listOpacityPresets();
+    const seedThemeRecords = themes.filter(theme => theme.id === seedTheme.id);
+    const seedPresetRecords = presets.filter(preset => preset.id === seedPreset.id);
+    const shadowTheme = themes.find(theme => theme.name === 'Runtime Copy Should Be Ignored');
+    const shadowPreset = presets.find(preset => preset.name === 'Runtime Preset Copy Should Be Ignored');
 
-    expect(themes).toHaveLength(1);
-    expect(themes[0].name).toBe(seedTheme.name);
-    expect(themes[0].includedWithApp).toBe(true);
-    expect(presets).toHaveLength(1);
-    expect(presets[0].name).toBe(seedPreset.name);
-    expect(presets[0].includedWithApp).toBe(true);
+    expect(seedThemeRecords).toHaveLength(1);
+    expect(seedThemeRecords[0].name).toBe(seedTheme.name);
+    expect(seedThemeRecords[0].includedWithApp).toBe(true);
+    expect(seedPresetRecords).toHaveLength(1);
+    expect(seedPresetRecords[0].name).toBe(seedPreset.name);
+    expect(seedPresetRecords[0].includedWithApp).toBe(true);
+
+    expect(shadowTheme).toMatchObject({
+      id: `theme-file-${seedTheme.id}`,
+      invalid: true,
+      invalidReason: 'This theme uses an id reserved by an included-with-app theme.',
+      canEdit: true,
+      canDelete: true,
+    });
+    expect(shadowPreset).toMatchObject({
+      id: `opacity-file-${seedPreset.id}`,
+      invalid: true,
+      invalidReason: 'This opacity preset uses an id reserved by an included-with-app preset.',
+      canEdit: false,
+      canDelete: true,
+    });
+
+    store.deleteTheme(shadowTheme.id);
+    store.deleteOpacityPreset(shadowPreset.id);
+    expect(fs.existsSync(shadowThemePath)).toBe(false);
+    expect(fs.existsSync(shadowPresetPath)).toBe(false);
   });
 });

@@ -892,9 +892,9 @@ function getFallbackOpacityPresets() {
   return DEFAULT_OPACITY_PRESETS
     .map((preset, index) => normalizeOpacityPreset({
       ...preset,
-      includedWithApp: false,
-      canEdit: true,
-      canDelete: true,
+      includedWithApp: preset.includedWithApp ?? !!preset.builtIn,
+      canEdit: false,
+      canDelete: false,
     }, index))
     .filter(Boolean);
 }
@@ -1602,10 +1602,12 @@ async function loadOpacityPresets(options = {}) {
     state.personalization.opacityPresetsLoaded = true;
     syncOpacityPresetUi();
     syncThemeUi();
+    return true;
   } catch (error) {
     if (showError) {
       setPersonalizationBackgroundStatus(`Could not load opacity presets: ${error.message}`, true);
     }
+    return false;
   }
 }
 
@@ -1737,7 +1739,15 @@ export async function applyTheme(theme, options = {}) {
   }
 
   if (!state.personalization.opacityPresetsLoaded) {
-    await loadOpacityPresets();
+    const loaded = await loadOpacityPresets({ showError: true });
+    if (!loaded) {
+      throw new Error('Could not load opacity presets needed to apply this theme.');
+    }
+  }
+
+  const opacityPreset = getOpacityPresetById(theme.opacityPresetId);
+  if (!opacityPreset || opacityPreset.invalid) {
+    throw new Error(`Theme "${theme.name}" references an unavailable opacity preset.`);
   }
 
   state.personalization.selectedThemeId = theme.id;
@@ -1746,10 +1756,9 @@ export async function applyTheme(theme, options = {}) {
   syncThemeUi();
 
   applyColorSchemePreset(theme.colorSchemePresetId, { persist });
-  const opacityPreset = getOpacityPresetById(theme.opacityPresetId);
   applyPersonalizationOpacity({
     ...state.personalization.opacity,
-    ...(opacityPreset?.opacity || {}),
+    ...opacityPreset.opacity,
     backgroundImage: theme.backgroundImageOpacity,
     backgroundImageBlur: theme.backgroundImageBlur,
     secondaryBackgroundImage: theme.secondaryBackgroundImageOpacity,

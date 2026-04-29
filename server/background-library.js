@@ -113,6 +113,15 @@ function buildThumbnailFileName(fileName) {
   return `${path.parse(fileName).name}.jpg`;
 }
 
+function getExistingFileStats(filePath) {
+  try {
+    const stats = fs.statSync(filePath);
+    return stats.isFile() ? stats : null;
+  } catch {
+    return null;
+  }
+}
+
 function compareImageRecords(left, right) {
   return left.name.localeCompare(right.name, undefined, {
     numeric: true,
@@ -140,8 +149,8 @@ function buildImageRecord({ kind, fileName, baseUrl, thumbnailDir, fallbackThumb
   const thumbnailFileName = buildThumbnailFileName(fileName);
   const thumbnailPath = thumbnailDir ? path.join(thumbnailDir, thumbnailFileName) : null;
   const fallbackThumbnailPath = fallbackThumbnailDir ? path.join(fallbackThumbnailDir, thumbnailFileName) : null;
-  const hasThumbnail = (thumbnailPath && fs.existsSync(thumbnailPath))
-    || (fallbackThumbnailPath && fs.existsSync(fallbackThumbnailPath));
+  const hasThumbnail = (thumbnailPath && getExistingFileStats(thumbnailPath))
+    || (fallbackThumbnailPath && getExistingFileStats(fallbackThumbnailPath));
   const thumbnailUrl = hasThumbnail
     ? `${thumbnailBaseUrl}/${encodeURIComponent(thumbnailFileName)}`
     : null;
@@ -232,7 +241,7 @@ function getBackgroundImageRecord(slotKey = 'primary', selection = null) {
   const thumbnailBaseUrl = kind === 'preset' ? slotConfig.presetThumbBaseUrl : slotConfig.userThumbBaseUrl;
   const directoryPath = kind === 'preset' ? slotConfig.presetDir : slotConfig.userDir;
   const targetPath = path.join(directoryPath, safeName);
-  if (!fs.existsSync(targetPath)) return null;
+  if (!getExistingFileStats(targetPath)) return null;
 
   return buildImageRecord({
     kind,
@@ -266,6 +275,7 @@ module.exports = {
   buildUserBackgroundName,
   ensureSafeStoredName,
   buildThumbnailFileName,
+  getExistingFileStats,
   compareImageRecords,
   listStoredImages,
   buildImageRecord,

@@ -25,6 +25,7 @@ const {
   listBackgroundLibrary,
   syncPresetThumbnailFiles,
   ensureSafeStoredName,
+  getExistingFileStats,
 } = require('../background-library');
 const {
   getThemesReferencingBackground,
@@ -35,15 +36,6 @@ const { validateImageBuffer } = require('../image-validation');
 const router = express.Router();
 
 const MAX_BACKGROUND_FILE_SIZE = 25 * 1024 * 1024;
-
-function getExistingFileStats(filePath) {
-  try {
-    const stats = fs.statSync(filePath);
-    return stats.isFile() ? stats : null;
-  } catch {
-    return null;
-  }
-}
 
 function createDeleteRollbackPath(targetPath) {
   const directoryPath = path.dirname(targetPath);
