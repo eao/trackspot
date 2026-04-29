@@ -366,6 +366,84 @@ describe('loadAlbums startup gating', () => {
     expect(renderAlbums).toHaveBeenCalledTimes(2);
   });
 
+  it('prefetches neighboring album pages after a paged visible load', async () => {
+    const { loadAlbums, clearAlbumPageCache } = await import('../public/js/render.js');
+    clearAlbumPageCache();
+    stateMock.pagination.currentPage = 3;
+    apiFetchMock.mockImplementation(path => {
+      const page = Number(new URL(path, 'http://trackspot.test').searchParams.get('page'));
+      return Promise.resolve({
+        albums: [{ id: page, album_name: `Page ${page}` }],
+        meta: {
+          totalCount: 8,
+          filteredCount: 8,
+          currentPage: page,
+          totalPages: 4,
+          startIndex: (page - 1) * 2,
+          endIndex: page * 2,
+          isPaged: true,
+          perPage: 2,
+          pageCount: 2,
+          trackedListenedMs: 0,
+        },
+      });
+    });
+
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums: vi.fn(),
+      useCache: true,
+    });
+
+    expect(apiFetchMock.mock.calls.map(call => (
+      new URL(call[0], 'http://trackspot.test').searchParams.get('page')
+    ))).toEqual(['3', '4', '2']);
+  });
+
+  it('serves a prefetched neighboring page from cache', async () => {
+    const { loadAlbums, clearAlbumPageCache } = await import('../public/js/render.js');
+    clearAlbumPageCache();
+    stateMock.pagination.currentPage = 3;
+    apiFetchMock.mockImplementation(path => {
+      const page = Number(new URL(path, 'http://trackspot.test').searchParams.get('page'));
+      return Promise.resolve({
+        albums: [{ id: page, album_name: `Page ${page}` }],
+        meta: {
+          totalCount: 8,
+          filteredCount: 8,
+          currentPage: page,
+          totalPages: 4,
+          startIndex: (page - 1) * 2,
+          endIndex: page * 2,
+          isPaged: true,
+          perPage: 2,
+          pageCount: 2,
+          trackedListenedMs: 0,
+        },
+      });
+    });
+
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums: vi.fn(),
+      useCache: true,
+    });
+    await flushPromises();
+
+    apiFetchMock.mockClear();
+    stateMock.albums = [];
+    stateMock.pagination.currentPage = 4;
+
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums: vi.fn(),
+      useCache: true,
+    });
+
+    expect(apiFetchMock).not.toHaveBeenCalled();
+    expect(stateMock.albums).toEqual([{ id: 4, album_name: 'Page 4' }]);
+  });
+
   it('serves cached album pages without a second album-page request when the revision matches', async () => {
     const { loadAlbums, clearAlbumPageCache } = await import('../public/js/render.js');
     clearAlbumPageCache();

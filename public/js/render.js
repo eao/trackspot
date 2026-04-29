@@ -14,6 +14,7 @@ import { renderArtistSpans } from './artists.js';
 import { openEditModal } from './modal.js';
 import { updateSortOrderBtn, updateSortFieldBtn } from './sidebar.js';
 import { preloadStartupAlbumArt } from './startup-render.js';
+import { clearAlbumArtPreloadCache, preloadAlbumArt } from './album-art-preload.js';
 import { syncHeaderTooltip } from './header-tooltip.js';
 import {
   getArtLightboxFallbackTargetRect,
@@ -83,6 +84,7 @@ function readAlbumPageCacheEntry(key) {
 export function clearAlbumPageCache() {
   albumPageCacheEpoch += 1;
   albumPageCache.clear();
+  clearAlbumArtPreloadCache();
 }
 
 function getAlbumPageRevision(pageData) {
@@ -1365,6 +1367,7 @@ function applyAlbumPageData(pageData, renderAlbums) {
   state.albumsLoadingBlocksCollection = false;
   state.albumsError = null;
   renderAlbums();
+  preloadAlbumArt(pageData.albums);
 }
 
 function normalizeAlbumPageResponse(response) {
@@ -1385,7 +1388,9 @@ async function prefetchAlbumPage(page) {
   try {
     const response = await apiFetch(`/api/albums?${params}`);
     if (cacheEpoch !== albumPageCacheEpoch) return;
-    rememberAlbumPageCacheEntry(cacheKey, normalizeAlbumPageResponse(response));
+    const pageData = normalizeAlbumPageResponse(response);
+    rememberAlbumPageCacheEntry(cacheKey, pageData);
+    preloadAlbumArt(pageData.albums);
   } catch {
     // Prefetch is opportunistic; visible loads will surface any real error.
   }
