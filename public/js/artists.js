@@ -10,7 +10,7 @@ import { loadAlbums, resetPagination } from './render.js';
 // Artist name chips
 // ---------------------------------------------------------------------------
 // Returns a <span> containing individual artist name chips separated by commas.
-// Each chip opens a popover on click or keyboard activation.
+// Each chip opens a popover on click.
 
 export function renderArtistSpans(artists, manualLink = null) {
   const wrap = document.createElement('span');
@@ -24,13 +24,10 @@ export function renderArtistSpans(artists, manualLink = null) {
     const link   = getSafeExternalHref(
       typeof a === 'object' ? (a.manual_link || manualLink || null) : manualLink
     );
-    const chipEl = document.createElement('button');
-    chipEl.type = 'button';
+    const chipEl = document.createElement('span');
     chipEl.className = 'artist-chip';
-    chipEl.textContent = name;
+    chipEl.textContent = i < list.length - 1 ? `${name}, ` : name;
     chipEl.dataset.artistName = name;
-    chipEl.setAttribute('aria-haspopup', 'menu');
-    chipEl.setAttribute('aria-expanded', 'false');
     if (id) chipEl.dataset.artistId = id;
     if (link) chipEl.dataset.artistLink = link;
 
@@ -44,13 +41,6 @@ export function renderArtistSpans(artists, manualLink = null) {
     });
 
     wrap.appendChild(chipEl);
-
-    if (i < list.length - 1) {
-      const sep = document.createElement('span');
-      sep.className = 'artist-separator';
-      sep.textContent = ', ';
-      wrap.appendChild(sep);
-    }
   });
 
   return wrap;
