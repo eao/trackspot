@@ -1171,7 +1171,8 @@ async function releaseLock() {
   }
 }
 
-function releaseLockOnPageLifecycle() {
+function releaseLockOnPageLifecycle(event) {
+  if (event?.persisted) return;
   if (!state.welcomeTour.lockSessionId) return;
   const sessionId = state.welcomeTour.lockSessionId;
   const body = JSON.stringify({ sessionId });
@@ -1196,6 +1197,11 @@ function releaseLockOnPageLifecycle() {
   }).catch(error => {
     console.warn('Welcome tour lifecycle lock release failed:', error);
   });
+}
+
+function renewLockAfterBfcacheRestore(event) {
+  if (!event?.persisted || !state.welcomeTour.active || !state.welcomeTour.lockSessionId) return;
+  void heartbeatLock(heartbeatGeneration);
 }
 
 function captureSnapshot() {
@@ -1324,11 +1330,18 @@ async function finishTourOnServer({ shouldMarkComplete, shouldAddSamples }) {
       addSamples: shouldAddSamples,
     }),
   });
-  if (result.preferences) {
-    applyPreferencesToState(result.preferences);
+  stopLockHeartbeat();
+  state.welcomeTour.lockSessionId = null;
+
+  try {
+    if (result.preferences) {
+      applyPreferencesToState(result.preferences);
+    }
+    statusCache = result.status ?? statusCache;
+    state.welcomeTour.sampleCount = statusCache?.sampleCount ?? 0;
+  } catch (error) {
+    console.warn('Welcome tour finish response processing failed:', error);
   }
-  statusCache = result.status ?? statusCache;
-  state.welcomeTour.sampleCount = statusCache?.sampleCount ?? 0;
   return result;
 }
 
@@ -1351,10 +1364,6 @@ async function finishTour(options = {}) {
       shouldMarkComplete,
       shouldAddSamples,
     });
-    await refreshRestoredPageAfterFinish(restoredPage, {
-      restoreOnly,
-      shouldAddSamples,
-    });
   } catch (error) {
     console.error('Welcome tour finish failed:', error);
     showTourError(error.message || 'Something went wrong. Please try again.');
@@ -1362,6 +1371,15 @@ async function finishTour(options = {}) {
     focusTourControl();
     isFinishingTour = false;
     return;
+  }
+
+  try {
+    await refreshRestoredPageAfterFinish(restoredPage, {
+      restoreOnly,
+      shouldAddSamples,
+    });
+  } catch (error) {
+    console.warn('Welcome tour post-finish refresh failed:', error);
   }
 
   state.welcomeTour.active = false;
@@ -1465,6 +1483,7 @@ export function initWelcomeTourEvents() {
     void startWelcomeTour({ replay: true });
   });
   window.addEventListener('pagehide', releaseLockOnPageLifecycle);
+  window.addEventListener('pageshow', renewLockAfterBfcacheRestore);
   window.addEventListener('beforeunload', releaseLockOnPageLifecycle);
   window.addEventListener('resize', () => {
     const step = TOUR_STEPS[currentStepIndex];

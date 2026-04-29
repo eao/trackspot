@@ -495,6 +495,45 @@ describe('welcome tour UI preparation', () => {
     expect(stateMock.welcomeTour.lockSessionId).toBeNull();
   });
 
+  it('keeps and renews the lock when pagehide is for BFCache', async () => {
+    const sendBeacon = vi.fn(() => true);
+    Object.defineProperty(globalThis.navigator, 'sendBeacon', {
+      value: sendBeacon,
+      configurable: true,
+    });
+    const { initWelcomeTourEvents, startWelcomeTour } = await import('../public/js/welcome-tour.js');
+    initWelcomeTourEvents();
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+    apiFetchMock.mockClear();
+
+    const pagehide = new Event('pagehide');
+    Object.defineProperty(pagehide, 'persisted', {
+      value: true,
+      configurable: true,
+    });
+    window.dispatchEvent(pagehide);
+
+    expect(sendBeacon).not.toHaveBeenCalled();
+    expect(stateMock.welcomeTour.lockSessionId).toBe('tour-session');
+
+    const pageshow = new Event('pageshow');
+    Object.defineProperty(pageshow, 'persisted', {
+      value: true,
+      configurable: true,
+    });
+    window.dispatchEvent(pageshow);
+    await Promise.resolve();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/lock', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ sessionId: 'tour-session' }),
+    }));
+
+    window.dispatchEvent(new Event('pagehide'));
+  });
+
   it('applies tour theme previews without persisting them', async () => {
     const settings = await import('../public/js/settings.js');
     const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
@@ -1050,6 +1089,32 @@ describe('welcome tour UI preparation', () => {
     expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
   });
 
+  it('finishes cleanly when the post-finish collection reload fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    loadAlbumsMock.mockRejectedValueOnce(new Error('Reload failed.'));
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    try {
+      await startWelcomeTour({ replay: true });
+      await flushTourStep();
+
+      globalThis.document.querySelector('[data-action="skip"]')?.click();
+      await flushTourStep();
+      globalThis.document.querySelector('[data-action="samples"]')?.click();
+      await flushTourStep();
+      globalThis.document.querySelector('[data-action="finish"]')?.click();
+      await flushTourStep();
+
+      expect(stateMock.welcomeTour.active).toBe(false);
+      expect(stateMock.welcomeTour.lockSessionId).toBeNull();
+      expect(globalThis.document.body.classList.contains('welcome-tour-active')).toBe(false);
+      expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
+      expect(warn).toHaveBeenCalledWith('Welcome tour post-finish refresh failed:', expect.any(Error));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('keeps the lock and overlay until stats-page restore completes', async () => {
     const statsRestore = createDeferred();
     setPageMock.mockImplementation(async (page, options = {}) => {
@@ -1087,7 +1152,8 @@ describe('welcome tour UI preparation', () => {
     await flushTourStep();
 
     expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/finish', expect.objectContaining({ method: 'POST' }));
-    expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/lock', expect.objectContaining({ method: 'DELETE' }));
+    expect(apiFetchMock).not.toHaveBeenCalledWith('/api/welcome-tour/lock', expect.objectContaining({ method: 'DELETE' }));
+    expect(stateMock.welcomeTour.lockSessionId).toBeNull();
     expect(globalThis.document.querySelector('#welcome-tour-overlay')).toBeNull();
   });
 
