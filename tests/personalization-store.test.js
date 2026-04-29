@@ -187,6 +187,51 @@ describe('personalization store', () => {
     expect(store.listThemes().length).toBeGreaterThan(0);
   });
 
+  it('does not let unreadable personalization files claim parsed record ids', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'valid-source.json'), JSON.stringify({
+      id: 'review-valid-id',
+      name: 'Review Valid Opacity',
+      opacity: {
+        header: 70,
+      },
+    }, null, 2));
+    fs.writeFileSync(path.join(store.OPACITY_PRESETS_DIR, 'review-valid-id.json'), '{nope');
+
+    fs.writeFileSync(path.join(store.THEME_PREVIEW_IMAGES_DIR, 'review-valid-theme.png'), 'preview');
+    fs.writeFileSync(path.join(store.THEMES_DIR, 'valid-theme-source.json'), JSON.stringify({
+      id: 'review-theme-valid-id',
+      name: 'Review Valid Theme',
+      previewImage: { fileName: 'review-valid-theme.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'default-opaque',
+    }, null, 2));
+    fs.writeFileSync(path.join(store.THEMES_DIR, 'review-theme-valid-id.json'), '{nope');
+
+    expect(store.findOpacityPresetById('review-valid-id')).toMatchObject({
+      name: 'Review Valid Opacity',
+      invalid: false,
+    });
+    expect(store.findOpacityPresetById('opacity-file-review-valid-id')).toMatchObject({
+      name: 'review-valid-id',
+      invalid: true,
+      invalidReason: expect.stringContaining('Could not parse opacity preset "review-valid-id.json"'),
+    });
+    expect(store.listOpacityPresets().filter(preset => preset.id === 'review-valid-id')).toHaveLength(1);
+
+    expect(store.findThemeById('review-theme-valid-id')).toMatchObject({
+      name: 'Review Valid Theme',
+      invalid: false,
+    });
+    expect(store.findThemeById('theme-file-review-theme-valid-id')).toMatchObject({
+      name: 'review-theme-valid-id',
+      invalid: true,
+      invalidReason: expect.stringContaining('Could not parse theme "review-theme-valid-id.json"'),
+    });
+    expect(store.listThemes().filter(theme => theme.id === 'review-theme-valid-id')).toHaveLength(1);
+  });
+
   it('loads all seed themes with preview URLs as included-with-app records', () => {
     const { store } = loadPersonalizationStoreTestContext();
     const seedThemes = readSeedThemes();

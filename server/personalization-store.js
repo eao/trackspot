@@ -230,6 +230,23 @@ function collectReservedRecordIds(entries, ignoredIds = new Set()) {
   return reservedIds;
 }
 
+function getSafeParsedRecordId(raw, fileName) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const rawId = getRawRecordId(raw, fileName);
+  return isSafePersonalizationId(rawId) ? rawId.trim() : null;
+}
+
+function reserveFallbackRecordId(fileName, fallbackPrefix, repairPrefix, repairIds, reservedIds) {
+  const fallbackId = getSafeFallbackIdFromFileName(fileName, fallbackPrefix);
+  if (reservedIds.has(fallbackId)) {
+    return createSourceFileRepairId(fileName, repairPrefix, repairIds, reservedIds);
+  }
+
+  reservedIds.add(fallbackId);
+  return null;
+}
+
 function buildStoredPreviewImageName(originalName, mimeType) {
   const parsed = path.parse(originalName || 'theme-preview');
   const ext = ALLOWED_IMAGE_TYPES.get(mimeType) || parsed.ext || '.jpg';
@@ -363,15 +380,11 @@ function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
       readError = error;
     }
 
-    const rawId = raw && typeof raw === 'object' && !Array.isArray(raw)
-      ? getRawRecordId(raw, fileName)
-      : path.parse(fileName).name;
-
     return {
       fileName,
       raw,
       readError,
-      safeRawId: isSafePersonalizationId(rawId) ? rawId.trim() : null,
+      safeRawId: getSafeParsedRecordId(raw, fileName),
     };
   });
   const idCounts = countSafeRecordIds(entries);
@@ -400,8 +413,15 @@ function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
         throw readError;
       }
 
+      const invalidRecordId = repairId || reserveFallbackRecordId(
+        fileName,
+        'invalid-opacity',
+        'opacity-file',
+        repairIds,
+        reservedIds,
+      );
       return buildInvalidUserOpacityPresetRecord(null, fileName, readError.message, {
-        id: repairId,
+        id: invalidRecordId,
       });
     }
 
@@ -410,8 +430,15 @@ function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
       if (options.forceIncludedWithApp) {
         throw createStoreError(500, reason);
       }
+      const invalidRecordId = repairId || reserveFallbackRecordId(
+        fileName,
+        'invalid-opacity',
+        'opacity-file',
+        repairIds,
+        reservedIds,
+      );
       return buildInvalidUserOpacityPresetRecord(raw, fileName, reason, {
-        id: repairId,
+        id: invalidRecordId,
       });
     }
 
@@ -420,10 +447,13 @@ function loadOpacityPresetRecordsFromDirectory(directoryPath, options = {}) {
       if (options.forceIncludedWithApp) {
         throw createStoreError(500, `Opacity preset file "${fileName}" has an invalid id.`);
       }
-      const fallbackId = getSafeFallbackIdFromFileName(fileName, 'invalid-opacity');
-      const invalidRecordId = repairId || (reservedIds.has(fallbackId)
-        ? createSourceFileRepairId(fileName, 'opacity-file', repairIds, reservedIds)
-        : null);
+      const invalidRecordId = repairId || reserveFallbackRecordId(
+        fileName,
+        'invalid-opacity',
+        'opacity-file',
+        repairIds,
+        reservedIds,
+      );
       return buildInvalidUserOpacityPresetRecord(raw, fileName, `Opacity preset file "${fileName}" has an invalid id.`, {
         id: invalidRecordId,
       });
@@ -860,15 +890,11 @@ function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
       readError = error;
     }
 
-    const rawId = raw && typeof raw === 'object' && !Array.isArray(raw)
-      ? getRawRecordId(raw, fileName)
-      : path.parse(fileName).name;
-
     return {
       fileName,
       raw,
       readError,
-      safeRawId: isSafePersonalizationId(rawId) ? rawId.trim() : null,
+      safeRawId: getSafeParsedRecordId(raw, fileName),
     };
   });
   const idCounts = countSafeRecordIds(entries);
@@ -898,8 +924,15 @@ function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
         throw readError;
       }
 
+      const invalidRecordId = repairId || reserveFallbackRecordId(
+        fileName,
+        'invalid-theme',
+        'theme-file',
+        repairIds,
+        reservedIds,
+      );
       hydratedThemes.push(buildInvalidUserThemeRecord(null, fileName, readError.message, {
-        id: repairId,
+        id: invalidRecordId,
       }));
       return;
     }
@@ -926,9 +959,8 @@ function loadThemeRecordsFromDirectory(directoryPath, options = {}) {
       const rawId = raw && typeof raw === 'object' && !Array.isArray(raw)
         ? getRawRecordId(raw, fileName)
         : '';
-      const fallbackId = getSafeFallbackIdFromFileName(fileName, 'invalid-theme');
-      const invalidRecordId = !isSafePersonalizationId(rawId) && reservedIds.has(fallbackId)
-        ? createSourceFileRepairId(fileName, 'theme-file', repairIds, reservedIds)
+      const invalidRecordId = !isSafePersonalizationId(rawId)
+        ? reserveFallbackRecordId(fileName, 'invalid-theme', 'theme-file', repairIds, reservedIds)
         : null;
       hydratedThemes.push(buildInvalidUserThemeRecord(raw, fileName, hydrated.reason, {
         id: invalidRecordId,
