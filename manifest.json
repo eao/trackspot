@@ -12,5 +12,19 @@
       }
     ],
     "tags": ["ratings", "statistics", "stats", "scores", "albums", "library", "export"]
+  },
+  {
+    "name": "YouTube Music Lookup",
+    "description": "Lets you search unavailable tracks on YouTube Music.",
+    "preview": "spicetify-extras/spotify-youtube-lookup/images/marketplace-preview.png",
+    "main": "spicetify-extras/spotify-youtube-lookup/spotify-youtube-lookup.js",
+    "readme": "spicetify-extras/spotify-youtube-lookup/README.md",
+    "authors": [
+      {
+        "name": "eao",
+        "url": "https://github.com/eao"
+      }
+    ],
+    "tags": ["youtube", "youtube-music", "unavailable", "tracks", "search"]
   }
 ]
