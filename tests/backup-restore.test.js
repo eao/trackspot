@@ -524,7 +524,7 @@ describe('backup and restore', () => {
       JSON.stringify([{ name: 'Restore Artist' }]),
       'completed',
       'images/old-spotify-art.jpg',
-      'https://example.test/restore-art.jpg',
+      'https://i.scdn.co/image/restore-art',
       'spotify',
       '2026-04-01 12:00:00',
       '2026-04-01 12:00:00',
@@ -573,7 +573,7 @@ describe('backup and restore', () => {
         spotify_album_id: 'legacyrestore123',
         album_name: 'Legacy Restore Art Album',
         artists: JSON.stringify([{ name: 'Legacy Restore Artist' }]),
-        image_url_large: 'https://example.test/legacy-restore-art.jpg',
+        image_url_large: 'https://i.scdn.co/image/legacy-restore-art',
       },
     ]);
 
@@ -1486,7 +1486,7 @@ describe('backup and restore', () => {
         spotify_album_id: 'restore-lock-album',
         album_name: 'Restore Lock Album',
         artists: JSON.stringify([{ name: 'Restore Artist' }]),
-        image_url_large: 'https://example.test/restore-lock.jpg',
+        image_url_large: 'https://i.scdn.co/image/restore-lock',
       },
     ]);
 
@@ -1528,7 +1528,7 @@ describe('backup and restore', () => {
         spotify_album_id: 'merge-lock-album',
         album_name: 'Merge Lock Album',
         artists: JSON.stringify([{ name: 'Merge Artist' }]),
-        image_url_large: 'https://example.test/merge-lock.jpg',
+        image_url_large: 'https://i.scdn.co/image/merge-lock',
       },
     ]);
 
@@ -2444,7 +2444,7 @@ describe('backup and restore', () => {
         spotify_album_id: 'legacy123',
         album_name: 'Legacy Refetched Art Album',
         artists: JSON.stringify([{ name: 'Legacy Artist' }]),
-        image_url_large: 'https://example.test/legacy-art.jpg',
+        image_url_large: 'https://i.scdn.co/image/legacy-art',
       },
     ]);
 
@@ -2487,7 +2487,7 @@ describe('backup and restore', () => {
         album_name: 'Normalized Refetch Album',
         artists: JSON.stringify([{ name: 'Normalized Artist' }]),
         rating: 101,
-        image_url_large: 'https://example.test/shared-preferred.jpg',
+        image_url_large: 'https://i.scdn.co/image/shared-preferred',
         source: 'spotify',
       },
       {
@@ -2544,7 +2544,7 @@ describe('backup and restore', () => {
         spotify_album_id: 'legacy123',
         album_name: 'Legacy Bundled Art Album',
         artists: JSON.stringify([{ name: 'Legacy Artist' }]),
-        image_url_large: 'https://example.test/legacy-art.jpg',
+        image_url_large: 'https://i.scdn.co/image/legacy-art',
       },
     ]);
     zip.addFile('images/legacy123.jpg', Buffer.from('backup-image'));

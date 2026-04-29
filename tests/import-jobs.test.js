@@ -258,7 +258,7 @@ describe('CSV import jobs', () => {
       const firstClaim = importJobs.claimNextImportRow('worker-1');
       const firstRow = importJobs.getClaimedImportRow(firstClaim.row.id, 'worker-1');
       const preparedByFirstWorker = await importService.prepareSpotifyGraphqlAlbumImport(
-        makeSpotifyPayload(spotifyId, 'Import Race Album', 'https://example.test/art.jpg'),
+        makeSpotifyPayload(spotifyId, 'Import Race Album', 'https://i.scdn.co/image/art'),
         makeRowOverrides(firstRow),
       );
 
@@ -273,7 +273,7 @@ describe('CSV import jobs', () => {
 
       const secondRow = importJobs.getClaimedImportRow(reclaimed.row.id, 'worker-2');
       const preparedBySecondWorker = await importService.prepareSpotifyGraphqlAlbumImport(
-        makeSpotifyPayload(spotifyId, 'Import Race Album', 'https://example.test/art.jpg'),
+        makeSpotifyPayload(spotifyId, 'Import Race Album', 'https://i.scdn.co/image/art'),
         makeRowOverrides(secondRow),
       );
 

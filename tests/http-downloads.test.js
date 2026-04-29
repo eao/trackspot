@@ -1,8 +1,12 @@
 import { createRequire } from 'node:module';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
-const { responseToBufferWithLimit } = require('../server/http-downloads.js');
+const {
+  fetchSpotifyImage,
+  isAllowedSpotifyImageUrl,
+  responseToBufferWithLimit,
+} = require('../server/http-downloads.js');
 
 function makeHeaders(contentLength = null) {
   return {
@@ -15,6 +19,35 @@ function makeArrayBuffer(bytes) {
 }
 
 describe('HTTP download size limits', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('only allows HTTPS Spotify image CDN URLs for album art fetches', async () => {
+    expect(isAllowedSpotifyImageUrl('https://i.scdn.co/image/cover')).toBe(true);
+    expect(isAllowedSpotifyImageUrl('https://image-cdn-ak.spotifycdn.com/image/cover')).toBe(true);
+    expect(isAllowedSpotifyImageUrl('http://i.scdn.co/image/cover')).toBe(false);
+    expect(isAllowedSpotifyImageUrl('https://127.0.0.1/image/cover')).toBe(false);
+    expect(isAllowedSpotifyImageUrl('https://example.test/image/cover')).toBe(false);
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(fetchSpotifyImage('https://127.0.0.1/image/cover'))
+      .rejects.toThrow(/Spotify image URL/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('passes a timeout signal to allowed album art fetches', async () => {
+    const response = { ok: true };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
+
+    await expect(fetchSpotifyImage('https://i.scdn.co/image/cover')).resolves.toBe(response);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://i.scdn.co/image/cover',
+      expect.objectContaining({ signal: expect.any(Object) }),
+    );
+  });
+
   it('rejects oversized content-length before reading the response body', async () => {
     const response = {
       headers: makeHeaders('6'),

@@ -36,7 +36,11 @@ const {
   normalizeArtistExternalLinks,
   normalizeExternalLink,
 } = require('../external-links');
-const { DEFAULT_MAX_DOWNLOAD_BYTES, responseToBufferWithLimit } = require('../http-downloads');
+const {
+  DEFAULT_MAX_DOWNLOAD_BYTES,
+  fetchSpotifyImage,
+  responseToBufferWithLimit,
+} = require('../http-downloads');
 const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
 
 const BACKUP_MANIFEST_NAME = 'trackspot-backup.json';
@@ -1086,10 +1090,7 @@ async function downloadImageToDir(imageUrl, albumId, targetImagesDir) {
     return imagePath;
   }
 
-  const response = await fetch(imageUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to download album art: ${response.status}`);
-  }
+  const response = await fetchSpotifyImage(imageUrl);
 
   const buffer = await responseToBufferWithLimit(response, {
     maxBytes: BACKUP_ART_IMAGE_MAX_BYTES,
@@ -1655,10 +1656,7 @@ function stageMergeZipImage(entry, preferredImagePath, stagingImagesDir, options
 async function downloadImageToPath(imageUrl, imagePath, targetImagesDir) {
   const { fullPath: filepath, imagePath: normalizedImagePath } = resolveAlbumImagePath(imagePath, targetImagesDir);
 
-  const response = await fetch(imageUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to download album art: ${response.status}`);
-  }
+  const response = await fetchSpotifyImage(imageUrl);
 
   const buffer = await responseToBufferWithLimit(response, {
     maxBytes: BACKUP_ART_IMAGE_MAX_BYTES,

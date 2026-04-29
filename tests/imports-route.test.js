@@ -181,7 +181,7 @@ describe('CSV import HTTP routes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         workerId: 'worker-duplicate',
-        graphqlData: makeGraphqlPayload(spotifyId, 'https://images.example/cover.jpg'),
+        graphqlData: makeGraphqlPayload(spotifyId, 'https://i.scdn.co/image/cover'),
       }),
     });
     const result = {

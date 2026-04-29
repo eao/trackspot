@@ -10,6 +10,7 @@ import { syncHeaderTooltip } from './header-tooltip.js';
 
 const dashboardState = {
   albums: null,
+  albumRevision: null,
   loadingPromise: null,
   cacheGeneration: 0,
   renderGeneration: 0,
@@ -83,6 +84,19 @@ function mergeDashboardAlbumListMeta(albums, meta = null) {
   };
 }
 
+function clearDashboardAlbumCache() {
+  dashboardState.albums = null;
+  dashboardState.albumRevision = null;
+  dashboardState.loadingPromise = null;
+  dashboardState.cacheGeneration += 1;
+}
+
+async function isDashboardAlbumCacheFresh() {
+  if (!dashboardState.albums || !dashboardState.albumRevision) return false;
+  const response = await apiFetch('/api/albums/revision');
+  return response?.revision === dashboardState.albumRevision;
+}
+
 export async function loadAlbumsForDashboard() {
   if (state.welcomeTour?.active && !state.welcomeTour?.useRealDashboardData) {
     const albums = normalizeAlbumsForStats(state.albums || []);
@@ -90,7 +104,24 @@ export async function loadAlbumsForDashboard() {
     syncHeaderTooltip();
     return albums;
   }
-  if (dashboardState.albums) return dashboardState.albums;
+  if (dashboardState.albums) {
+    const cachedAlbums = dashboardState.albums;
+    const cacheGeneration = dashboardState.cacheGeneration;
+    try {
+      if (
+        await isDashboardAlbumCacheFresh()
+        && cacheGeneration === dashboardState.cacheGeneration
+        && dashboardState.albums === cachedAlbums
+      ) {
+        return cachedAlbums;
+      }
+    } catch (error) {
+      console.warn('Dashboard album cache revision check failed:', error);
+    }
+    if (cacheGeneration === dashboardState.cacheGeneration) {
+      clearDashboardAlbumCache();
+    }
+  }
   if (dashboardState.loadingPromise) return dashboardState.loadingPromise;
 
   const cacheGeneration = dashboardState.cacheGeneration;
@@ -104,6 +135,7 @@ export async function loadAlbumsForDashboard() {
       mergeDashboardAlbumListMeta(albums, meta);
       syncHeaderTooltip();
       dashboardState.albums = normalizedAlbums;
+      dashboardState.albumRevision = meta?.revision ?? null;
     }
 
     return normalizedAlbums;
@@ -182,9 +214,7 @@ export function cleanupDashboardPage(container) {
 }
 
 export function invalidateDashboardCache() {
-  dashboardState.albums = null;
-  dashboardState.loadingPromise = null;
-  dashboardState.cacheGeneration += 1;
+  clearDashboardAlbumCache();
   dashboardState.renderGeneration += 1;
 }
 

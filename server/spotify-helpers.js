@@ -5,7 +5,11 @@ const {
   buildManagedAlbumImagePath,
   resolveAlbumImagePath,
 } = require('./album-image-paths');
-const { DEFAULT_MAX_DOWNLOAD_BYTES, responseToBufferWithLimit } = require('./http-downloads');
+const {
+  DEFAULT_MAX_DOWNLOAD_BYTES,
+  fetchSpotifyImage,
+  responseToBufferWithLimit,
+} = require('./http-downloads');
 
 // Accepts Spotify album URLs and URIs:
 //   https://open.spotify.com/album/2gvrhSDbT29UtKoQSJDqmW?si=xxx
@@ -31,10 +35,7 @@ async function downloadImage(imageUrl, albumId) {
     return imagePath;
   }
 
-  const response = await fetch(imageUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to download album art: ${response.status}`);
-  }
+  const response = await fetchSpotifyImage(imageUrl);
 
   const buffer = await responseToBufferWithLimit(response, {
     maxBytes: DEFAULT_MAX_DOWNLOAD_BYTES,

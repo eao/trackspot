@@ -146,6 +146,7 @@ describe('dashboard wrapped year resolution', () => {
         totalCount: 7,
         filteredCount: 7,
         trackedListenedMs: 17_999_999,
+        revision: 'rev-headers',
       },
     });
 
@@ -173,6 +174,7 @@ describe('dashboard wrapped year resolution', () => {
         totalCount: 1,
         filteredCount: 1,
         trackedListenedMs: 42,
+        revision: 'rev-real',
       },
     });
 
@@ -209,6 +211,7 @@ describe('dashboard wrapped year resolution', () => {
         totalCount: 1,
         filteredCount: 1,
         trackedListenedMs: 0,
+        revision: 'rev-stale',
       },
     });
 
@@ -228,7 +231,8 @@ describe('dashboard wrapped year resolution', () => {
     });
     apiFetchMock
       .mockImplementationOnce(() => firstRequest.promise)
-      .mockImplementationOnce(() => secondRequest.promise);
+      .mockImplementationOnce(() => secondRequest.promise)
+      .mockResolvedValueOnce({ revision: 'rev-2' });
     const container = document.createElement('section');
 
     const { invalidateDashboardCache, renderDashboardPage } = await import('../public/js/dashboard.js');
@@ -250,6 +254,7 @@ describe('dashboard wrapped year resolution', () => {
         totalCount: 2,
         filteredCount: 2,
         trackedListenedMs: 20,
+        revision: 'rev-2',
       },
     });
     await expect(secondRender).resolves.toEqual({ resolvedYear: null, yearsAvailable: [] });
@@ -263,6 +268,7 @@ describe('dashboard wrapped year resolution', () => {
         totalCount: 1,
         filteredCount: 1,
         trackedListenedMs: 10,
+        revision: 'rev-1',
       },
     });
     await expect(firstRender).resolves.toMatchObject({ stale: true });
@@ -273,8 +279,45 @@ describe('dashboard wrapped year resolution', () => {
       page: 'stats',
       container,
     });
-    expect(apiFetchMock).toHaveBeenCalledTimes(2);
+    expect(apiFetchMock).toHaveBeenCalledTimes(3);
+    expect(apiFetchMock.mock.calls[2][0]).toBe('/api/albums/revision');
     expect(renderStatsViewMock).toHaveBeenCalledTimes(2);
     expect(renderStatsViewMock.mock.calls[1][1]).toEqual([makeAlbum(2026, 2)]);
+  });
+
+  it('refreshes cached dashboard albums when the server revision changes', async () => {
+    apiFetchMock
+      .mockResolvedValueOnce({
+        albums: [makeAlbum(2025, 1)],
+        meta: {
+          totalCount: 1,
+          filteredCount: 1,
+          trackedListenedMs: 10,
+          revision: 'rev-before',
+        },
+      })
+      .mockResolvedValueOnce({ revision: 'rev-after' })
+      .mockResolvedValueOnce({
+        albums: [makeAlbum(2026, 2)],
+        meta: {
+          totalCount: 2,
+          filteredCount: 2,
+          trackedListenedMs: 20,
+          revision: 'rev-after',
+        },
+      });
+
+    const { invalidateDashboardCache, loadAlbumsForDashboard } = await import('../public/js/dashboard.js');
+    invalidateDashboardCache();
+
+    await expect(loadAlbumsForDashboard()).resolves.toEqual([makeAlbum(2025, 1)]);
+    await expect(loadAlbumsForDashboard()).resolves.toEqual([makeAlbum(2026, 2)]);
+
+    expect(apiFetchMock.mock.calls.map(call => call[0])).toEqual([
+      '/api/albums',
+      '/api/albums/revision',
+      '/api/albums',
+    ]);
+    expect(stateMock.albumListMeta.totalCount).toBe(2);
   });
 });

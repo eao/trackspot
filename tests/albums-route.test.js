@@ -253,7 +253,7 @@ describe('albums route helpers', () => {
       'completed',
       'spotify',
       oldPath,
-      'https://cdn.example.test/new-art.jpg',
+      'https://i.scdn.co/image/new-art',
     );
 
     globalThis.fetch = vi.fn(async () => ({
@@ -774,21 +774,22 @@ describe('albums route helpers', () => {
     handler(req, res);
 
     expect(res.statusCode).toBe(200);
-    expect(res.headers.etag).toBe('"2:2026-04-15T12:30:00"');
+    expect(res.jsonBody.revision).toMatch(/^2:[a-f0-9]{32}$/);
+    expect(res.headers.etag).toBe(`"${res.jsonBody.revision}"`);
     expect(res.jsonBody).toEqual({
-      revision: '2:2026-04-15T12:30:00',
+      revision: res.jsonBody.revision,
       albums: {
         AAAAABBBBBCCCCCDDDDD1: { id: 11, status: 'planned' },
         AAAAABBBBBCCCCCDDDDD2: { id: 22, status: 'completed' },
       },
     });
 
-    const cachedReq = { headers: { 'if-none-match': '"2:2026-04-15T12:30:00"' } };
+    const cachedReq = { headers: { 'if-none-match': res.headers.etag } };
     const cachedRes = createResponse();
     handler(cachedReq, cachedRes);
 
     expect(cachedRes.statusCode).toBe(304);
-    expect(cachedRes.headers.etag).toBe('"2:2026-04-15T12:30:00"');
+    expect(cachedRes.headers.etag).toBe(res.headers.etag);
     expect(cachedRes.jsonBody).toBeUndefined();
   });
 
@@ -1452,6 +1453,47 @@ describe('albums route helpers', () => {
       pageCount: 1,
     });
     expect(res.jsonBody.meta.trackedListenedMs).toBe(720000);
+    expect(typeof res.jsonBody.meta.revision).toBe('string');
+  });
+
+  it('changes the compact album index ETag when status changes inside one timestamp tick', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, spotify_album_id, album_name, artists, status, source, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'etag-album-1',
+      'ETag Album',
+      JSON.stringify([{ name: 'ETag Artist' }]),
+      'planned',
+      'spotify',
+      '2026-04-15 01:00:00',
+      '2026-04-15 01:00:00',
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'get', '/index');
+    const firstRes = createResponse();
+    handler({ headers: {} }, firstRes);
+
+    db.exec('DROP TRIGGER IF EXISTS albums_updated_at');
+    db.prepare(`
+      UPDATE albums
+      SET status = ?, updated_at = ?
+      WHERE id = ?
+    `).run('completed', '2026-04-15 01:00:00', 1);
+
+    const secondRes = createResponse();
+    handler({ headers: { 'if-none-match': firstRes.headers.etag } }, secondRes);
+
+    expect(firstRes.statusCode).toBe(200);
+    expect(secondRes.statusCode).toBe(200);
+    expect(secondRes.headers.etag).not.toBe(firstRes.headers.etag);
+    expect(secondRes.jsonBody.albums['etag-album-1'].status).toBe('completed');
   });
 
   it('filters to only null and non-standard album types when include_other is enabled by itself', () => {

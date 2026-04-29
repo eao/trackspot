@@ -4,7 +4,11 @@ const {
   buildManagedAlbumImagePath,
   resolveAlbumImagePath,
 } = require('./album-image-paths');
-const { DEFAULT_MAX_DOWNLOAD_BYTES, responseToBufferWithLimit } = require('./http-downloads');
+const {
+  DEFAULT_MAX_DOWNLOAD_BYTES,
+  fetchSpotifyImage,
+  responseToBufferWithLimit,
+} = require('./http-downloads');
 const {
   deriveReleaseYear,
   getReleaseDateFromSpotifyReleaseDate,
@@ -71,10 +75,7 @@ async function downloadImportImage(imageUrl, albumId) {
     return { imagePath: finalImagePath, createdImagePath: null };
   }
 
-  const response = await fetch(imageUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to download album art: ${response.status}`);
-  }
+  const response = await fetchSpotifyImage(imageUrl);
 
   const tempImagePath = buildManagedAlbumImagePath(
     `${albumId}.import-${Date.now()}-${Math.random().toString(36).slice(2)}`,

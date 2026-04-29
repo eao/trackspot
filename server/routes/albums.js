@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const multer = require('multer');
 const { db, IMAGES_DIR } = require('../db');
 const {
@@ -78,20 +79,90 @@ router.use((req, res, next) => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function buildAlbumIndexRevision() {
-  const summary = db.prepare(`
-    SELECT
-      COUNT(*) AS album_count,
-      COALESCE(MAX(updated_at), '') AS max_updated_at
+const ALBUM_INDEX_REVISION_COLUMNS = Object.freeze([
+  'id',
+  'spotify_album_id',
+  'status',
+]);
+
+const ALBUM_COLLECTION_REVISION_COLUMNS = Object.freeze([
+  'id',
+  'spotify_url',
+  'spotify_album_id',
+  'share_url',
+  'album_name',
+  'album_type',
+  'artists',
+  'release_date',
+  'release_year',
+  'label',
+  'genres',
+  'track_count',
+  'duration_ms',
+  'copyright',
+  'is_pre_release',
+  'dominant_color_dark',
+  'dominant_color_light',
+  'dominant_color_raw',
+  'image_path',
+  'image_url_small',
+  'image_url_medium',
+  'image_url_large',
+  'spotify_release_date',
+  'spotify_first_track',
+  'status',
+  'rating',
+  'notes',
+  'planned_at',
+  'listened_at',
+  'repeats',
+  'priority',
+  'source',
+  'album_link',
+  'artist_link',
+  'welcome_sample_key',
+  'created_at',
+  'updated_at',
+]);
+
+function hashRowsForRevision(rows, columns) {
+  const hash = crypto.createHash('sha256');
+  hash.update(`${rows.length}\n`);
+
+  for (const row of rows) {
+    for (const column of columns) {
+      hash.update(column);
+      hash.update('\0');
+      hash.update(String(row[column] ?? ''));
+      hash.update('\0');
+    }
+    hash.update('\n');
+  }
+
+  return `${rows.length}:${hash.digest('hex').slice(0, 32)}`;
+}
+
+function loadAlbumIndexRows() {
+  return db.prepare(`
+    SELECT id, spotify_album_id, status
     FROM albums
     WHERE spotify_album_id IS NOT NULL
-  `).get();
+    ORDER BY id ASC
+  `).all();
+}
 
-  const maxUpdatedAt = summary.max_updated_at
-    ? String(summary.max_updated_at).replace(' ', 'T')
-    : 'none';
+function buildAlbumIndexRevision(rows = loadAlbumIndexRows()) {
+  return hashRowsForRevision(rows, ALBUM_INDEX_REVISION_COLUMNS);
+}
 
-  return `${summary.album_count ?? 0}:${maxUpdatedAt}`;
+function buildAlbumCollectionRevision() {
+  const rows = db.prepare(`
+    SELECT ${ALBUM_COLLECTION_REVISION_COLUMNS.join(', ')}
+    FROM albums
+    ORDER BY id ASC
+  `).all();
+
+  return hashRowsForRevision(rows, ALBUM_COLLECTION_REVISION_COLUMNS);
 }
 
 function normalizeEtagHeader(value) {
@@ -801,8 +872,13 @@ router.get('/', (req, res) => {
     meta: {
       ...meta,
       trackedListenedMs,
+      revision: buildAlbumCollectionRevision(),
     },
   });
+});
+
+router.get('/revision', (req, res) => {
+  res.json({ revision: buildAlbumCollectionRevision() });
 });
 
 // ---------------------------------------------------------------------------
@@ -812,20 +888,14 @@ router.get('/', (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/index', (req, res) => {
-  const revision = buildAlbumIndexRevision();
+  const rows = loadAlbumIndexRows();
+  const revision = buildAlbumIndexRevision(rows);
   const etag = `"${revision}"`;
 
   if (normalizeEtagHeader(req.headers['if-none-match']) === revision) {
     res.setHeader('ETag', etag);
     return res.sendStatus(304);
   }
-
-  const rows = db.prepare(`
-    SELECT id, spotify_album_id, status
-    FROM albums
-    WHERE spotify_album_id IS NOT NULL
-    ORDER BY id ASC
-  `).all();
 
   const albums = Object.fromEntries(rows.map(row => [
     row.spotify_album_id,
@@ -1407,8 +1477,10 @@ router.post('/:id/random-art', (req, res) => {
 router.__private = {
   ALLOWED_ALBUM_IMAGE_TYPES,
   buildManualAlbumImageName,
+  buildAlbumCollectionRevision,
   buildAlbumIndexRevision,
   filterManualAlbumImage,
+  loadAlbumIndexRows,
   normalizeEtagHeader,
   normalizeManualUploadedImagePath,
 };

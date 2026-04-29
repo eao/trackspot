@@ -1,4 +1,46 @@
 const DEFAULT_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
+const DEFAULT_DOWNLOAD_TIMEOUT_MS = 15000;
+const ALLOWED_SPOTIFY_IMAGE_HOSTS = Object.freeze(new Set([
+  'i.scdn.co',
+  'mosaic.scdn.co',
+  'image-cdn-ak.spotifycdn.com',
+]));
+
+function parseDownloadUrl(value) {
+  try {
+    return new URL(String(value ?? ''));
+  } catch {
+    return null;
+  }
+}
+
+function isAllowedSpotifyImageUrl(value) {
+  const url = parseDownloadUrl(value);
+  if (!url || url.protocol !== 'https:') return false;
+  return ALLOWED_SPOTIFY_IMAGE_HOSTS.has(url.hostname.toLowerCase());
+}
+
+function assertAllowedSpotifyImageUrl(value) {
+  if (!isAllowedSpotifyImageUrl(value)) {
+    throw new Error('Album art URL must be an HTTPS Spotify image URL.');
+  }
+}
+
+function createTimeoutSignal(timeoutMs = DEFAULT_DOWNLOAD_TIMEOUT_MS) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return undefined;
+  return AbortSignal.timeout(timeoutMs);
+}
+
+async function fetchSpotifyImage(imageUrl, options = {}) {
+  assertAllowedSpotifyImageUrl(imageUrl);
+  const response = await fetch(imageUrl, {
+    signal: options.signal ?? createTimeoutSignal(options.timeoutMs),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to download album art: ${response.status}`);
+  }
+  return response;
+}
 
 function parseContentLength(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -45,7 +87,11 @@ async function responseToBufferWithLimit(response, options = {}) {
 }
 
 module.exports = {
+  DEFAULT_DOWNLOAD_TIMEOUT_MS,
   DEFAULT_MAX_DOWNLOAD_BYTES,
+  assertAllowedSpotifyImageUrl,
+  fetchSpotifyImage,
+  isAllowedSpotifyImageUrl,
   parseContentLength,
   responseToBufferWithLimit,
 };
