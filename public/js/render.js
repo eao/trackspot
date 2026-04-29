@@ -1402,6 +1402,7 @@ function prefetchNeighborAlbumPages(meta) {
 
 async function revalidateCachedAlbumPage({
   cacheEpoch,
+  cacheKey,
   requestId,
   revision,
   renderAlbums,
@@ -1418,13 +1419,24 @@ async function revalidateCachedAlbumPage({
       return;
     }
 
+    const pageResponse = await apiFetch(`/api/albums?${cacheKey}`);
+    if (
+      cacheEpoch !== albumPageCacheEpoch
+      || requestId !== latestAlbumLoadRequestId
+    ) {
+      return;
+    }
+
+    const pageData = normalizeAlbumPageResponse(pageResponse);
     clearAlbumPageCache();
+    rememberAlbumPageCacheEntry(cacheKey, pageData);
+    if (pageData.meta.currentPage !== state.pagination.currentPage) {
+      const canonicalParams = buildAlbumListParams(pageData.meta.currentPage);
+      rememberAlbumPageCacheEntry(getAlbumPageCacheKey(canonicalParams), pageData);
+    }
     if (requestId !== latestAlbumLoadRequestId) return;
-    void loadAlbums({
-      preservePage: true,
-      renderAlbums,
-      invalidateCache: true,
-    });
+    applyAlbumPageData(pageData, renderAlbums);
+    prefetchNeighborAlbumPages(pageData.meta);
   } catch {
     // Keep cached navigation instant; the next visible load will surface errors.
   }
@@ -1471,6 +1483,7 @@ export async function loadAlbums(options = {}) {
       prefetchNeighborAlbumPages(cachedPage.meta);
       void revalidateCachedAlbumPage({
         cacheEpoch,
+        cacheKey,
         requestId,
         revision: getAlbumPageRevision(cachedPage),
         renderAlbums,

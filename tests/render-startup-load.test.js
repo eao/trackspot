@@ -476,6 +476,59 @@ describe('loadAlbums startup gating', () => {
     expect(renderAlbums).toHaveBeenCalledTimes(3);
   });
 
+  it('keeps the cached album page visible when background refresh fails', async () => {
+    const { loadAlbums, clearAlbumPageCache } = await import('../public/js/render.js');
+    clearAlbumPageCache();
+    const renderAlbums = vi.fn();
+    apiFetchMock
+      .mockResolvedValueOnce({
+        albums: [{ id: 7, album_name: 'Cached Page' }],
+        meta: {
+          totalCount: 1,
+          filteredCount: 1,
+          currentPage: 9,
+          totalPages: 1,
+          startIndex: 0,
+          endIndex: 1,
+          isPaged: false,
+          perPage: 2,
+          pageCount: 1,
+          trackedListenedMs: 0,
+          revision: 'rev-1',
+        },
+      })
+      .mockResolvedValueOnce({ revision: 'rev-2' })
+      .mockRejectedValueOnce(new Error('Network down'));
+
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums,
+      useCache: true,
+    });
+    stateMock.albums = [];
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums,
+      useCache: true,
+    });
+
+    expect(stateMock.albums).toEqual([{ id: 7, album_name: 'Cached Page' }]);
+    expect(renderAlbums).toHaveBeenCalledTimes(2);
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(apiFetchMock.mock.calls.map(call => call[0])).toEqual([
+      '/api/albums?sort=date_logged&order=desc&page=9&per_page=2&types=ALBUM%2CEP%2CSINGLE%2CCOMPILATION&include_other=1',
+      '/api/albums/revision',
+      '/api/albums?sort=date_logged&order=desc&page=9&per_page=2&types=ALBUM%2CEP%2CSINGLE%2CCOMPILATION&include_other=1',
+    ]);
+    expect(stateMock.albums).toEqual([{ id: 7, album_name: 'Cached Page' }]);
+    expect(stateMock.albumsError).toBeNull();
+    expect(stateMock.albumsLoading).toBe(false);
+    expect(renderAlbums).toHaveBeenCalledTimes(2);
+  });
+
   it('bypasses cached album pages after explicit invalidation', async () => {
     const { loadAlbums, clearAlbumPageCache } = await import('../public/js/render.js');
     clearAlbumPageCache();
