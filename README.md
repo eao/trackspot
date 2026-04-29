@@ -4,103 +4,51 @@ Trackspot is a local-first album tracking app for Spotify users. It runs as a sm
 
 Use it to keep a personal album collection, import albums from Spotify, browse your listening backlog, and customize the app with local themes and backgrounds. Trackspot stores its runtime data on your machine and is designed for local or trusted-network use.
 
-## Requirements
+## Installation on Linux
 
-- Node.js `>=20.19 <26`
-- npm `>=10`
-- Native build tools for `better-sqlite3` if your platform does not have a prebuilt binary available
+Install [node.js](https://nodejs.org/en/download). Trackspot supports `>=20.19 <26` and was tested with v24 LTS.
 
-## Install And Run
-
-Trackspot does not have a build step. Once Node.js and npm are installed, you install the dependencies and start the local server.
-
-First, install Node.js. Trackspot expects Node.js `>=20.19 <26`; Node.js 24 is a good choice. If you do not already have Node.js installed, download it from [nodejs.org](https://nodejs.org/) and install it with the default options.
-
-After installing Node.js, open a new terminal and check that these commands work:
+Then:
 
 ```bash
-node --version
-npm --version
+sudo apt-get update
+sudo apt-get install -y git curl ca-certificates build-essential python3 make g++
 ```
 
-If either command is missing, Node.js is not installed correctly yet.
-
-### Linux/macOS
-
-1. Open Terminal.
-2. Go to the Trackspot folder. If you downloaded it to `Downloads`, the command probably looks like one of these:
+Then download/clone the repository somewhere and run npm install. It is recommended to install Trackspot under a new Linux account. This command is for a Linux user account with the name "spotty":
 
 ```bash
-cd "$HOME/Downloads/trackspot"
+git clone -b master https://github.com/eao/trackspot.git /home/spotty/trackspot && cd /home/spotty/trackspot && npm install
 ```
 
-or:
-
-```bash
-cd "$HOME/Downloads/trackspot-main"
-```
-
-3. Install the app dependencies:
-
-```bash
-npm install
-```
-
-4. Start Trackspot:
+Then start the server:
 
 ```bash
 npm start
 ```
 
-Keep that terminal window open while you use the app. Press `Ctrl+C` in the terminal when you want to stop the server.
+Trackspot should now be running on port 1060. Connect at `http://localhost:1060` if you are running this on desktop Linux. For more detailed configuration info, see the Configuration section.
 
-If you are on Linux and `npm install` fails while building `better-sqlite3`, install the usual native build tools and try again:
+### Installation note for macOS 
+
+On macOS, install the Xcode command line tools and use Homebrew or the official Node.js installer to install Git, Node.js, and npm:
 
 ```bash
-sudo apt update
-sudo apt install python3 make g++
-npm install
-npm start
+xcode-select --install
+brew install git node
 ```
 
-### Windows
+Then clone the repository, run `npm install`, and start the server with `npm start` as shown above.
 
-1. Open PowerShell.
-2. Go to the Trackspot folder. If you downloaded it to `Downloads`, the command probably looks like one of these:
+## Installation on Windows
 
-```powershell
-cd "$env:USERPROFILE\Downloads\trackspot"
-```
+Install [node.js](https://nodejs.org/en/download#:~:text=Or%20get%20a%20prebuilt%20Node%2Ejs,architecture%2E). It will be easiest to download and run the Windows Installer (.msi). You may need to restart your computer afterward.
 
-or:
 
-```powershell
-cd "$env:USERPROFILE\Downloads\trackspot-main"
-```
 
-3. Install the app dependencies:
+## Spicetify Extension
 
-```powershell
-npm install
-```
 
-4. Start Trackspot:
-
-```powershell
-npm start
-```
-
-Keep that PowerShell window open while you use the app. Press `Ctrl+C` in PowerShell when you want to stop the server.
-
-If Windows asks whether Node.js can access the network, allow it for private/local networks.
-
-### Open The App
-
-When the server says it is listening, open this address in your browser:
-
-```text
-http://localhost:1060
-```
 
 ## Configuration
 
