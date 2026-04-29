@@ -50,6 +50,12 @@ function isReadOnlyRequest(req) {
   return req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
 }
 
+function rejectWelcomeTourMutation(req, res, next) {
+  if (isReadOnlyRequest(req)) return next();
+  const { rejectIfWelcomeTourLocked } = require('./welcome-tour-store');
+  return rejectIfWelcomeTourLocked(req, res, next);
+}
+
 function isAllowedBrowserOrigin(browserOrigin, allowedOrigins) {
   if (!browserOrigin) return true;
   return allowedOrigins.has(browserOrigin);
@@ -156,9 +162,9 @@ function createApp() {
   app.use('/api/albums', trackNonBackupMutation, albumsRouter);
   app.use('/api/backup', backupRouter);
   app.use('/api/imports', trackNonBackupMutation, importsRouter);
-  app.use('/api/backgrounds', trackNonBackupMutation, backgroundsRouter);
-  app.use('/api/opacity-presets', trackNonBackupMutation, opacityPresetsRouter);
-  app.use('/api/themes', trackNonBackupMutation, themesRouter);
+  app.use('/api/backgrounds', trackNonBackupMutation, rejectWelcomeTourMutation, backgroundsRouter);
+  app.use('/api/opacity-presets', trackNonBackupMutation, rejectWelcomeTourMutation, opacityPresetsRouter);
+  app.use('/api/themes', trackNonBackupMutation, rejectWelcomeTourMutation, themesRouter);
   app.use('/api/preferences', trackNonBackupMutation, preferencesRouter);
   app.use('/api/welcome-tour', trackNonBackupMutation, welcomeTourRouter);
 
@@ -188,6 +194,7 @@ module.exports = {
   isLoopbackRemoteAddress,
   isAllowedBrowserOrigin,
   isReadOnlyRequest,
+  rejectWelcomeTourMutation,
   isSameOriginRequest,
   isTrustedRequestHost,
 };

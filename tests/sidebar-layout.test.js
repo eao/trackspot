@@ -229,6 +229,21 @@ describe('startup body classes', () => {
     expect(globalThis.document.body.style.getPropertyValue('--app-content-inset-left')).toBe('220px');
   });
 
+  it('uses the migrated startup preferences cache when legacy keys are gone', () => {
+    localStorage.setItem('ts_startupPreferencesCache', JSON.stringify({
+      contentWidthPx: 0,
+      reserveSidebarSpace: true,
+      quickActionsToolbarVisibility: 'hover',
+    }));
+
+    globalThis.window.eval(startupScript);
+
+    expect(globalThis.document.body.classList.contains('reserve-sidebar-space')).toBe(true);
+    expect(globalThis.document.body.classList.contains('u-buttons-hover-only')).toBe(true);
+    expect(globalThis.document.body.style.getPropertyValue('--app-content-max-width')).toBe('none');
+    expect(globalThis.document.body.style.getPropertyValue('--app-content-inset-left')).toBe('220px');
+  });
+
   it('uses sidebar overlay mode on startup for coarse-pointer phone-sized screens', () => {
     Object.defineProperty(globalThis.window, 'innerWidth', {
       configurable: true,

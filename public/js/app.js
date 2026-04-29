@@ -529,7 +529,7 @@ function initSettings() {
   syncAppShellLayout();
 }
 
-async function init() {
+export async function init() {
   const launchAlbumId = getLaunchAlbumId();
   try {
     await fetchPreferences();
@@ -635,4 +635,6 @@ async function init() {
   await maybeStartWelcomeTour();
 }
 
-init();
+if (!globalThis.__TRACKSPOT_DISABLE_AUTO_INIT) {
+  init();
+}

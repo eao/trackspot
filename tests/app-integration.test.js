@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createTempDataDir,
+  makeMultipartBody,
   removeTempDir,
   requestJson,
   resetServerModules,
@@ -285,6 +286,147 @@ describe('Express app integration', () => {
       paginationMode: expect.any(String),
       quickActionsToolbarVisibility: expect.any(String),
     }));
+  });
+
+  it('runs manual album CRUD through the mounted /api/albums stack', async () => {
+    testServer = await startTestServer(loadAppContext());
+
+    const created = await requestJson(testServer.baseUrl, '/api/albums', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        album_name: 'Mounted Manual Album',
+        artists: [{ name: 'Mounted Artist' }],
+        album_type: 'ALBUM',
+        release_date: '2026-04-01',
+        track_count: 9,
+        duration_ms: 123000,
+        status: 'completed',
+        rating: 84,
+        notes: 'Created through the mounted route.',
+        listened_at: '2026-04-02',
+        repeats: 1,
+        priority: 2,
+        source: 'manual',
+      }),
+    });
+
+    const listed = await requestJson(testServer.baseUrl, '/api/albums');
+    const fetched = await requestJson(testServer.baseUrl, `/api/albums/${created.body.id}`);
+    const patched = await requestJson(testServer.baseUrl, `/api/albums/${created.body.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'dropped',
+        rating: 77,
+        notes: 'Updated through the mounted route.',
+        repeats: 3,
+      }),
+    });
+    const deleted = await requestJson(testServer.baseUrl, `/api/albums/${created.body.id}`, {
+      method: 'DELETE',
+    });
+
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      id: expect.any(Number),
+      album_name: 'Mounted Manual Album',
+      artists: [{ name: 'Mounted Artist' }],
+      release_date: '2026-04-01',
+      release_year: 2026,
+      status: 'completed',
+      rating: 84,
+      source: 'manual',
+    });
+    expect(listed.status).toBe(200);
+    expect(listed.body.meta.totalCount).toBe(1);
+    expect(listed.body.albums).toEqual([
+      expect.objectContaining({ id: created.body.id, album_name: 'Mounted Manual Album' }),
+    ]);
+    expect(fetched.body.id).toBe(created.body.id);
+    expect(patched.body).toMatchObject({
+      id: created.body.id,
+      status: 'dropped',
+      rating: 77,
+      notes: 'Updated through the mounted route.',
+      repeats: 3,
+    });
+    expect(deleted.body).toEqual({ deleted: true, id: created.body.id });
+    expect(dbModule.db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+  });
+
+  it('uploads and claims a CSV import through the mounted /api/imports stack', async () => {
+    const spotifyAlbumId = 'ABCDEFGHIJKLMNOPQRSTUV';
+    testServer = await startTestServer(loadAppContext());
+
+    const uploaded = await requestJson(testServer.baseUrl, '/api/imports/csv', {
+      method: 'POST',
+      ...makeMultipartBody({
+        defaultStatus: 'planned',
+      }, {
+        file: {
+          name: 'albums.csv',
+          type: 'text/csv',
+          contents: Buffer.from(`https://open.spotify.com/intl-ja/album/${spotifyAlbumId}\n`),
+        },
+      }),
+    });
+    const active = await requestJson(testServer.baseUrl, '/api/imports/active');
+    const claimed = await requestJson(testServer.baseUrl, '/api/imports/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workerId: 'mounted-worker' }),
+    });
+
+    expect(uploaded.status).toBe(201);
+    expect(uploaded.body.job).toMatchObject({
+      source_type: 'csv',
+      filename: 'albums.csv',
+      default_status: 'planned',
+      status: 'queued',
+      total_rows: 1,
+      queued_rows: 1,
+      remaining_rows: 1,
+    });
+    expect(active.body.job.id).toBe(uploaded.body.job.id);
+    expect(claimed.status).toBe(200);
+    expect(claimed.body.job).toMatchObject({
+      id: uploaded.body.job.id,
+      status: 'processing',
+      total_rows: 1,
+      processing_rows: 1,
+      remaining_rows: 1,
+    });
+    expect(claimed.body.row).toMatchObject({
+      spotify_url: `https://open.spotify.com/album/${spotifyAlbumId}`,
+      spotify_album_id: spotifyAlbumId,
+      spotify_uri: `spotify:album:${spotifyAlbumId}`,
+      desired_status: 'planned',
+      default_status_applied: true,
+      status: 'processing',
+    });
+  });
+
+  it('blocks album and personalization mutations while a welcome-tour lock is active', async () => {
+    const app = loadAppContext();
+    const welcomeStore = require('../server/welcome-tour-store.js');
+    welcomeStore.upsertWelcomeTourLock('mounted-lock-session');
+    testServer = await startTestServer(app);
+
+    const album = await requestJson(testServer.baseUrl, '/api/albums', { method: 'POST' });
+    const theme = await requestJson(testServer.baseUrl, '/api/themes', { method: 'POST' });
+    const background = await requestJson(testServer.baseUrl, '/api/backgrounds/upload', { method: 'POST' });
+    const opacityPreset = await requestJson(testServer.baseUrl, '/api/opacity-presets', { method: 'POST' });
+    const readOnly = await requestJson(testServer.baseUrl, '/api/themes');
+
+    for (const result of [album, theme, background, opacityPreset]) {
+      expect(result.status).toBe(423);
+      expect(result.body).toMatchObject({
+        code: 'welcome_tour_active',
+      });
+    }
+    expect(readOnly.status).toBe(200);
+    expect(readOnly.body.themes).toBeInstanceOf(Array);
   });
 
   it('returns JSON errors for malformed JSON request bodies', async () => {

@@ -282,6 +282,44 @@ describe('personalization API routes', () => {
     expect(store.findThemeById(theme.id)).toBeNull();
   }, 10000);
 
+  it('creates and updates opacity presets through the mounted route', async () => {
+    const { app, store } = loadPersonalizationRouteContext();
+    testServer = await startTestServer(app);
+
+    const created = await requestJson(testServer.baseUrl, '/api/opacity-presets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Mounted Opacity',
+        opacity: { header: 65, card: 72 },
+      }),
+    });
+    const patched = await requestJson(testServer.baseUrl, `/api/opacity-presets/${created.body.preset.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Mounted Opacity Updated',
+        opacity: { header: 55, card: 88 },
+      }),
+    });
+
+    expect(created.status).toBe(201);
+    expect(created.body.preset).toMatchObject({
+      id: expect.any(String),
+      name: 'Mounted Opacity',
+      canEdit: true,
+      canDelete: true,
+      opacity: expect.objectContaining({ header: 65, card: 72 }),
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.preset).toMatchObject({
+      id: created.body.preset.id,
+      name: 'Mounted Opacity Updated',
+      opacity: expect.objectContaining({ header: 55, card: 88 }),
+    });
+    expect(store.findOpacityPresetById(created.body.preset.id).name).toBe('Mounted Opacity Updated');
+  });
+
   it('blocks dependent background deletion until cascade is requested', async () => {
     const { app, store } = loadPersonalizationRouteContext();
     const backgroundName = 'dependent-background.png';

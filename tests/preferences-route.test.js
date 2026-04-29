@@ -65,6 +65,14 @@ afterEach(() => {
 });
 
 describe('preferences route', () => {
+  it('keeps server and client default preferences in parity', async () => {
+    loadPreferencesRouteContext();
+    const store = require('../server/preferences-store.js');
+    const { getDefaultPreferences } = await import('../public/js/preferences.js');
+
+    expect(store.normalizePreferences({})).toEqual(getDefaultPreferences());
+  });
+
   it('returns normalized defaults when no preferences file exists yet', () => {
     const { preferencesRouter } = loadPreferencesRouteContext();
     const handler = getRouteHandler(preferencesRouter, 'get', '/');

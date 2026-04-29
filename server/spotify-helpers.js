@@ -12,12 +12,12 @@ const { DEFAULT_MAX_DOWNLOAD_BYTES, responseToBufferWithLimit } = require('./htt
 //   https://open.spotify.com/album/2gvrhSDbT29UtKoQSJDqmW
 //   spotify:album:2gvrhSDbT29UtKoQSJDqmW
 function extractAlbumId(input) {
-  const trimmed = input.trim();
+  const trimmed = String(input ?? '').trim();
 
-  const uriMatch = trimmed.match(/^spotify:album:([A-Za-z0-9]+)/);
+  const uriMatch = trimmed.match(/^spotify:album:([A-Za-z0-9]+)$/i);
   if (uriMatch) return uriMatch[1];
 
-  const urlMatch = trimmed.match(/open\.spotify\.com\/album\/([A-Za-z0-9]+)/);
+  const urlMatch = trimmed.match(/open\.spotify\.com\/(?:album|(?:intl-[A-Za-z-]+|[a-z]{2})\/album)\/([A-Za-z0-9]+)(?:[/?#].*)?$/i);
   if (urlMatch) return urlMatch[1];
 
   throw new Error('Could not extract album ID from input. Please paste a Spotify album link.');
