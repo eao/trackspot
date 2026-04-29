@@ -27,7 +27,11 @@ describe('HTTP download size limits', () => {
     expect(isAllowedSpotifyImageUrl('https://i.scdn.co/image/cover')).toBe(true);
     expect(isAllowedSpotifyImageUrl('https://image-cdn-ak.spotifycdn.com/image/cover')).toBe(true);
     expect(isAllowedSpotifyImageUrl('https://image-cdn-fa.spotifycdn.com/image/cover')).toBe(true);
+    expect(isAllowedSpotifyImageUrl('https://future-image.spotifycdn.com/image/cover')).toBe(true);
     expect(isAllowedSpotifyImageUrl('http://i.scdn.co/image/cover')).toBe(false);
+    expect(isAllowedSpotifyImageUrl('https://spotifycdn.com/image/cover')).toBe(false);
+    expect(isAllowedSpotifyImageUrl('https://image-cdn-ak.spotifycdn.com.example.test/image/cover')).toBe(false);
+    expect(isAllowedSpotifyImageUrl('https://other.scdn.co/image/cover')).toBe(false);
     expect(isAllowedSpotifyImageUrl('https://127.0.0.1/image/cover')).toBe(false);
     expect(isAllowedSpotifyImageUrl('https://example.test/image/cover')).toBe(false);
 

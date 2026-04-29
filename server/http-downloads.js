@@ -5,9 +5,10 @@ const REDIRECT_STATUSES = Object.freeze(new Set([301, 302, 303, 307, 308]));
 const ALLOWED_SPOTIFY_IMAGE_HOSTS = Object.freeze(new Set([
   'i.scdn.co',
   'mosaic.scdn.co',
-  'image-cdn-ak.spotifycdn.com',
-  'image-cdn-fa.spotifycdn.com',
 ]));
+const ALLOWED_SPOTIFY_IMAGE_HOST_SUFFIXES = Object.freeze([
+  '.spotifycdn.com',
+]);
 
 function parseDownloadUrl(value) {
   try {
@@ -20,7 +21,9 @@ function parseDownloadUrl(value) {
 function isAllowedSpotifyImageUrl(value) {
   const url = parseDownloadUrl(value);
   if (!url || url.protocol !== 'https:') return false;
-  return ALLOWED_SPOTIFY_IMAGE_HOSTS.has(url.hostname.toLowerCase());
+  const hostname = url.hostname.toLowerCase();
+  return ALLOWED_SPOTIFY_IMAGE_HOSTS.has(hostname)
+    || ALLOWED_SPOTIFY_IMAGE_HOST_SUFFIXES.some(suffix => hostname.endsWith(suffix));
 }
 
 function assertAllowedSpotifyImageUrl(value) {
