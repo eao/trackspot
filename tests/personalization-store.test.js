@@ -246,6 +246,59 @@ describe('personalization store', () => {
     expect(fs.existsSync(path.join(store.THEMES_DIR, `${theme.id}.json`))).toBe(true);
   });
 
+  it('cleans new theme preview files when theme JSON creation fails', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const originalWriteFileSync = fs.writeFileSync;
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((target, contents, options) => {
+      if (typeof target === 'number') {
+        throw new Error('simulated theme JSON write failure');
+      }
+      return originalWriteFileSync.call(fs, target, contents, options);
+    });
+
+    expect(() => store.createTheme(makeThemeInput({
+      name: 'Failed Preview Theme',
+      previewThumbnailFile: {
+        originalname: 'failed-preview.jpg',
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('preview-thumb'),
+      },
+    }))).toThrow(/simulated theme JSON write failure/);
+
+    vi.restoreAllMocks();
+
+    expect(fs.readdirSync(store.THEMES_DIR).filter(fileName => fileName.endsWith('.json'))).toEqual([]);
+    expect(fs.readdirSync(store.THEME_PREVIEW_IMAGES_DIR)).toEqual([]);
+    expect(fs.readdirSync(store.THEME_PREVIEW_IMAGES_THUMBS_DIR)).toEqual([]);
+  });
+
+  it('cleans replacement preview files when theme JSON update fails', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const theme = store.createTheme(makeThemeInput({ name: 'Preview Update Rollback Theme' }));
+    const previousPreviewFileName = theme.previewImage.fileName;
+    const originalWriteFileSync = fs.writeFileSync;
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((target, contents, options) => {
+      if (typeof target === 'number') {
+        throw new Error('simulated theme JSON update failure');
+      }
+      return originalWriteFileSync.call(fs, target, contents, options);
+    });
+
+    expect(() => store.updateTheme(theme.id, makeThemeInput({
+      name: 'Preview Update Rollback Theme',
+      previewImageFile: {
+        originalname: 'replacement-preview.png',
+        mimetype: 'image/png',
+        buffer: Buffer.from('replacement-preview'),
+      },
+    }))).toThrow(/simulated theme JSON update failure/);
+
+    vi.restoreAllMocks();
+
+    expect(fs.readdirSync(store.THEME_PREVIEW_IMAGES_DIR)).toEqual([previousPreviewFileName]);
+    expect(store.findThemeById(theme.id)?.previewImage.fileName).toBe(previousPreviewFileName);
+  });
+
   it('keeps invalid user theme files and preview assets when listing themes', () => {
     const { store } = loadPersonalizationStoreTestContext();
     const themeId = 'broken-theme';
@@ -318,6 +371,39 @@ describe('personalization store', () => {
     expect(fs.existsSync(themePath)).toBe(false);
     expect(fs.existsSync(previewPath)).toBe(false);
     expect(fs.existsSync(thumbnailPath)).toBe(false);
+  });
+
+  it('returns cleanup warnings instead of failing when deleted theme preview cleanup fails', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+    const themeId = 'delete-warning-theme';
+    const previewFileName = 'delete-warning-preview.png';
+    const themePath = path.join(store.THEMES_DIR, `${themeId}.json`);
+    const previewPath = path.join(store.THEME_PREVIEW_IMAGES_DIR, previewFileName);
+
+    fs.writeFileSync(themePath, JSON.stringify({
+      id: themeId,
+      name: 'Delete Warning Theme',
+      previewImage: { fileName: previewFileName },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'default-opaque',
+    }, null, 2));
+    fs.writeFileSync(previewPath, 'preview');
+
+    const originalUnlinkSync = fs.unlinkSync;
+    vi.spyOn(fs, 'unlinkSync').mockImplementation(targetPath => {
+      if (path.resolve(String(targetPath)) === path.resolve(previewPath)) {
+        throw new Error('simulated preview cleanup failure');
+      }
+      return originalUnlinkSync.call(fs, targetPath);
+    });
+
+    const deleted = store.deleteTheme(themeId);
+
+    vi.restoreAllMocks();
+
+    expect(deleted.cleanupWarnings?.[0]).toMatch(/simulated preview cleanup failure/);
+    expect(fs.existsSync(themePath)).toBe(false);
+    expect(fs.existsSync(previewPath)).toBe(true);
   });
 
   it('includes invalid themes in explicit dependency cascade checks', () => {

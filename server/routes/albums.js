@@ -39,6 +39,7 @@ const {
 } = require('../external-links');
 const { normalizeSpotifyNoteLinks } = require('../spotify-note-links');
 const { rejectIfWelcomeTourLocked } = require('../welcome-tour-store');
+const { validateImageBuffer } = require('../image-validation');
 
 const ALLOWED_ALBUM_IMAGE_TYPES = new Map([
   ['image/jpeg', '.jpg'],
@@ -46,8 +47,8 @@ const ALLOWED_ALBUM_IMAGE_TYPES = new Map([
   ['image/webp', '.webp'],
 ]);
 
-function buildManualAlbumImageName(file) {
-  const ext = ALLOWED_ALBUM_IMAGE_TYPES.get(file?.mimetype) || '.jpg';
+function buildManualAlbumImageName(file, detectedMimeType = null) {
+  const ext = ALLOWED_ALBUM_IMAGE_TYPES.get(detectedMimeType || file?.mimetype) || '.jpg';
   return `manual_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
 }
 
@@ -62,15 +63,8 @@ function filterManualAlbumImage(_req, file, cb) {
   cb(error);
 }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, IMAGES_DIR),
-  filename: (req, file, cb) => {
-    cb(null, buildManualAlbumImageName(file));
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: filterManualAlbumImage,
 });
@@ -1195,7 +1189,22 @@ router.post('/upload-image', upload.single('image'), (req, res) => {
     return res.status(400).json({ error: 'No image file received.' });
   }
 
-  res.json({ image_path: `images/${req.file.filename}` });
+  if (!Buffer.isBuffer(req.file.buffer)) {
+    if (!req.file.filename) {
+      return res.status(400).json({ error: 'No image file received.' });
+    }
+    return res.json({ image_path: `images/${req.file.filename}` });
+  }
+
+  try {
+    const detected = validateImageBuffer(req.file.buffer, ALLOWED_ALBUM_IMAGE_TYPES, 'album art');
+    const filename = buildManualAlbumImageName(req.file, detected.mimeType);
+    fs.mkdirSync(IMAGES_DIR, { recursive: true });
+    fs.writeFileSync(path.join(IMAGES_DIR, filename), req.file.buffer);
+    return res.json({ image_path: `images/${filename}` });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -1384,7 +1393,9 @@ router.post('/:id/random-art', (req, res) => {
     return res.status(404).json({ error: 'Donor album art file not found.' });
   }
 
-  const newImage = buildUniqueAlbumImagePath(`random_${existing.id}`, '.jpg');
+  const sourceExt = path.extname(sourceImage.filename).toLowerCase();
+  const randomArtExt = ['.jpg', '.jpeg', '.png', '.webp'].includes(sourceExt) ? sourceExt : '.jpg';
+  const newImage = buildUniqueAlbumImagePath(`random_${existing.id}`, randomArtExt);
 
   fs.copyFileSync(sourceImage.fullPath, newImage.fullPath);
   db.prepare('UPDATE albums SET image_path = ? WHERE id = ?').run(newImage.imagePath, existing.id);

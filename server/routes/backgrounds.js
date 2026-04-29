@@ -30,6 +30,7 @@ const {
   getThemesReferencingBackground,
   deleteThemes,
 } = require('../personalization-store');
+const { validateImageBuffer } = require('../image-validation');
 
 const router = express.Router();
 
@@ -70,6 +71,10 @@ function addCleanupWarning(warnings, label, error) {
   warnings.push(`Could not remove ${label}: ${error.message}`);
 }
 
+function validateUploadedBackgroundImage(file, label) {
+  return validateImageBuffer(file?.buffer, ALLOWED_IMAGE_TYPES, label);
+}
+
 function handlePresetThumbnailUpload(slotKey = 'primary') {
   return (req, res) => {
     const safeName = ensureSafeStoredName(req.params.fileName);
@@ -79,6 +84,12 @@ function handlePresetThumbnailUpload(slotKey = 'primary') {
 
     if (!req.file) {
       return res.status(400).json({ error: 'No thumbnail image was uploaded.' });
+    }
+
+    try {
+      validateUploadedBackgroundImage(req.file, 'background thumbnail');
+    } catch (error) {
+      return res.status(error.status || 500).json({ error: error.message });
     }
 
     const slotConfig = getBackgroundSlotConfig(slotKey);
@@ -113,8 +124,18 @@ function handleBackgroundUpload(slotKey = 'primary') {
       return res.status(400).json({ error: 'No background image was uploaded.' });
     }
 
+    let detectedBackground;
+    try {
+      detectedBackground = validateUploadedBackgroundImage(backgroundFile, 'background image');
+      if (thumbnailFile?.buffer?.length) {
+        validateUploadedBackgroundImage(thumbnailFile, 'background thumbnail');
+      }
+    } catch (error) {
+      return res.status(error.status || 500).json({ error: error.message });
+    }
+
     const slotConfig = getBackgroundSlotConfig(slotKey);
-    const storedName = buildUserBackgroundName(backgroundFile.originalname, backgroundFile.mimetype);
+    const storedName = buildUserBackgroundName(backgroundFile.originalname, detectedBackground.mimeType);
     const destPath = path.join(slotConfig.userDir, storedName);
     fs.writeFileSync(destPath, backgroundFile.buffer);
 
@@ -145,6 +166,12 @@ function handleUserThumbnailUpload(slotKey = 'primary') {
 
     if (!req.file) {
       return res.status(400).json({ error: 'No thumbnail image was uploaded.' });
+    }
+
+    try {
+      validateUploadedBackgroundImage(req.file, 'background thumbnail');
+    } catch (error) {
+      return res.status(error.status || 500).json({ error: error.message });
     }
 
     const slotConfig = getBackgroundSlotConfig(slotKey);

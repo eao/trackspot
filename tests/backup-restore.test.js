@@ -1223,6 +1223,85 @@ describe('backup and restore', () => {
     expect(fs.readFileSync(path.join(dataDir, 'themes', 'current-theme.json'), 'utf8')).toContain('current-theme');
   }, 15000);
 
+  it('rejects invalid app-state JSON before replacing current app-state files', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Current Name' }));
+    writeFileEnsured(path.join(dataDir, 'themes', 'current-theme.json'), JSON.stringify({ id: 'current-theme' }));
+
+    const zip = new AdmZip();
+    addFullBackupManifest(zip, backupRouter);
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addFile('preferences.json', Buffer.from('{not-json'));
+    zip.addFile('themes/backup-theme.json', Buffer.from(JSON.stringify({ id: 'backup-theme' })));
+
+    await expect(backupRouter.__private.restoreFromZip(zip)).rejects.toThrow(/preferences\.json could not be parsed/);
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).wrappedName).toBe('Current Name');
+    expect(fs.readFileSync(path.join(dataDir, 'themes', 'current-theme.json'), 'utf8')).toContain('current-theme');
+    expect(fs.existsSync(path.join(dataDir, 'themes', 'backup-theme.json'))).toBe(false);
+  }, 15000);
+
+  it('rejects unexpected app-state file types before staging them', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Current Name' }));
+
+    const zip = new AdmZip();
+    addFullBackupManifest(zip, backupRouter);
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addFile('theme-preview-images/script.html', Buffer.from('<script>bad</script>'));
+
+    await expect(backupRouter.__private.restoreFromZip(zip)).rejects.toThrow(/Unexpected app-state image path/);
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).wrappedName).toBe('Current Name');
+  }, 15000);
+
+  it('rejects incompatible full backup manifests before restoring app-state files', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Current Name' }));
+
+    const manifest = {
+      ...backupRouter.__private.buildBackupManifest('full', true),
+      appStatePaths: ['preferences.json'],
+    };
+    const zip = new AdmZip();
+    zip.addFile(backupRouter.__private.BACKUP_MANIFEST_NAME, Buffer.from(JSON.stringify(manifest)));
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addFile('preferences.json', Buffer.from(JSON.stringify({ wrappedName: 'Backup Name' })));
+
+    await expect(backupRouter.__private.restoreFromZip(zip)).rejects.toThrow(/app-state paths are not compatible/);
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).wrappedName).toBe('Current Name');
+  }, 15000);
+
+  it('refuses configured app-state restore targets outside DATA_DIR before clearing them', async () => {
+    const outsideThemesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackspot-outside-themes-'));
+    tempDirs.push(outsideThemesDir);
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext(() => {
+      process.env.THEMES_DIR = outsideThemesDir;
+    });
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(path.join(outsideThemesDir, 'outside-theme.json'), JSON.stringify({ id: 'outside-theme' }));
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Current Name' }));
+
+    const zip = new AdmZip();
+    addFullBackupManifest(zip, backupRouter);
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addFile('themes/backup-theme.json', Buffer.from(JSON.stringify({ id: 'backup-theme' })));
+
+    await expect(backupRouter.__private.restoreFromZip(zip)).rejects.toThrow(/must stay inside DATA_DIR/);
+    expect(fs.existsSync(path.join(outsideThemesDir, 'outside-theme.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outsideThemesDir, 'backup-theme.json'))).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).wrappedName).toBe('Current Name');
+  }, 15000);
+
   it('preserves app-state files when restoring legacy backups without a manifest', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     const { db } = dbModule;
@@ -1294,7 +1373,7 @@ describe('backup and restore', () => {
 
   it('reads uploaded backup zips from disk and cleans the upload artifact', () => {
     const { backupRouter, dataDir } = loadBackupTestContext();
-    const uploadPath = path.join(backupRouter.__private.BACKUP_UPLOADS_DIR, 'upload.zip');
+    const uploadPath = path.join(backupRouter.__private.BACKUP_UPLOADS_DIR, '1234567890-abcdef12.zip');
     const zip = new AdmZip();
 
     fs.mkdirSync(path.dirname(uploadPath), { recursive: true });
@@ -1308,6 +1387,16 @@ describe('backup and restore', () => {
     backupRouter.__private.cleanupUploadedBackup({ path: uploadPath });
 
     expect(fs.existsSync(uploadPath)).toBe(false);
+  });
+
+  it('skips uploaded backup cleanup paths outside the upload directory', () => {
+    const { backupRouter, dataDir } = loadBackupTestContext();
+    const outsidePath = path.join(dataDir, 'keep-me.zip');
+    fs.writeFileSync(outsidePath, 'keep');
+
+    expect(backupRouter.__private.cleanupUploadedBackup({ path: outsidePath })).toBe(false);
+
+    expect(fs.readFileSync(outsidePath, 'utf8')).toBe('keep');
   });
 
   it('sanitizes unsafe album image paths when merging backups', async () => {
@@ -1786,8 +1875,8 @@ describe('backup and restore', () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     openDbs.push(dbModule.db);
 
-    const tmpPath = path.join(dataDir, '_import_tmp_journaled.db');
-    const stagingImagesDir = path.join(dataDir, '_import_images_journaled');
+    const tmpPath = path.join(dataDir, '_import_tmp_1234567890_journaled');
+    const stagingImagesDir = path.join(dataDir, '_import_images_1234567890_journaled');
     writeFileEnsured(tmpPath, Buffer.from('temporary backup db'));
     writeFileEnsured(path.join(stagingImagesDir, 'staged-art.jpg'), Buffer.from('staged image'));
 
@@ -1810,10 +1899,14 @@ describe('backup and restore', () => {
     process.env.DATA_DIR = dataDir;
     resetServerModules();
 
-    const tmpPath = path.join(dataDir, '_import_tmp_orphan.db');
-    const stagingImagesDir = path.join(dataDir, '_import_images_orphan');
+    const tmpPath = path.join(dataDir, '_import_tmp_1234567890_abc123');
+    const stagingImagesDir = path.join(dataDir, '_import_images_1234567890_abc123');
+    const similarlyPrefixedFile = path.join(dataDir, '_import_tmp_notes.txt');
+    const similarlyPrefixedDir = path.join(dataDir, '_import_images_notes');
     writeFileEnsured(tmpPath, Buffer.from('orphan temporary backup db'));
     writeFileEnsured(path.join(stagingImagesDir, 'staged-art.jpg'), Buffer.from('orphan staged image'));
+    writeFileEnsured(similarlyPrefixedFile, Buffer.from('not generated'));
+    writeFileEnsured(path.join(similarlyPrefixedDir, 'keep.txt'), Buffer.from('not generated'));
 
     const dbModule = require('../server/db.js');
     const backupRouter = require('../server/routes/backup.js');
@@ -1822,6 +1915,8 @@ describe('backup and restore', () => {
     expect(backupRouter.__private.MERGE_JOURNAL_NAME).toBe('_merge_journal.json');
     expect(fs.existsSync(tmpPath)).toBe(false);
     expect(fs.existsSync(stagingImagesDir)).toBe(false);
+    expect(fs.existsSync(similarlyPrefixedFile)).toBe(true);
+    expect(fs.existsSync(similarlyPrefixedDir)).toBe(true);
   });
 
   it('blocks new merges when an interrupted merge journal is corrupt', async () => {

@@ -497,19 +497,30 @@ function deleteThemePreviewAssets(theme, options = {}) {
   const thumbnailFileName = previewFileName ? buildThumbnailFileName(previewFileName) : null;
   const excludedSourceFileName = options.excludeSourceFileName
     ?? getThemeSourceFileName(options.excludeTheme ?? theme);
+  const warnings = options.cleanupWarnings ?? null;
 
   if (isPreviewReferencedByAnotherUserTheme(previewFileName, excludedSourceFileName)) {
     return;
   }
 
+  const removePreviewAsset = (filePath, label) => {
+    if (!fs.existsSync(filePath)) return;
+    try {
+      fs.unlinkSync(filePath);
+    } catch (error) {
+      if (!warnings) throw error;
+      warnings.push(`Could not remove ${label}: ${error.message}`);
+    }
+  };
+
   if (previewFileName) {
     const previewPath = path.join(THEME_PREVIEW_IMAGES_DIR, previewFileName);
-    if (fs.existsSync(previewPath)) fs.unlinkSync(previewPath);
+    removePreviewAsset(previewPath, 'theme preview image');
   }
 
   if (thumbnailFileName) {
     const thumbPath = path.join(THEME_PREVIEW_IMAGES_THUMBS_DIR, thumbnailFileName);
-    if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
+    removePreviewAsset(thumbPath, 'theme preview thumbnail');
   }
 }
 
@@ -868,16 +879,41 @@ function writePreviewFiles(previewImageFile, previewThumbnailFile) {
 
   const storedName = buildStoredPreviewImageName(previewImageFile.originalname, previewImageFile.mimetype);
   const previewPath = path.join(THEME_PREVIEW_IMAGES_DIR, storedName);
-  fs.writeFileSync(previewPath, previewImageFile.buffer);
+  const thumbPath = previewThumbnailFile?.buffer?.length
+    ? path.join(THEME_PREVIEW_IMAGES_THUMBS_DIR, buildThumbnailFileName(storedName))
+    : null;
 
-  if (previewThumbnailFile?.buffer?.length) {
-    const thumbPath = path.join(THEME_PREVIEW_IMAGES_THUMBS_DIR, buildThumbnailFileName(storedName));
-    fs.writeFileSync(thumbPath, previewThumbnailFile.buffer);
+  try {
+    fs.writeFileSync(previewPath, previewImageFile.buffer);
+    if (thumbPath) {
+      fs.writeFileSync(thumbPath, previewThumbnailFile.buffer);
+    }
+  } catch (error) {
+    cleanupPreviewWrite(previewPath, thumbPath);
+    throw error;
   }
 
   return {
     fileName: storedName,
+    previewPath,
+    thumbPath,
   };
+}
+
+function cleanupPreviewWrite(previewPathOrImage, thumbPath = null) {
+  const previewPath = typeof previewPathOrImage === 'string'
+    ? previewPathOrImage
+    : previewPathOrImage?.previewPath;
+  const thumbnailPath = thumbPath ?? previewPathOrImage?.thumbPath;
+
+  [thumbnailPath, previewPath].forEach(filePath => {
+    if (!filePath) return;
+    try {
+      fs.rmSync(filePath, { force: true });
+    } catch (error) {
+      console.warn('Theme preview cleanup failed:', error);
+    }
+  });
 }
 
 function serializeThemeFile(theme) {
@@ -911,7 +947,12 @@ function createTheme(input) {
     previewImage,
   };
 
-  writeJsonFile(getThemeFilePath(theme.id), serializeThemeFile(theme));
+  try {
+    writeJsonFile(getThemeFilePath(theme.id), serializeThemeFile(theme));
+  } catch (error) {
+    cleanupPreviewWrite(previewImage);
+    throw error;
+  }
   return findThemeById(theme.id);
 }
 
@@ -944,9 +985,19 @@ function updateTheme(themeId, input) {
     previewImage: finalPreview,
   };
 
-  writeJsonFile(getThemeWritePath(existing), serializeThemeFile(theme));
+  try {
+    writeJsonFile(getThemeWritePath(existing), serializeThemeFile(theme));
+  } catch (error) {
+    cleanupPreviewWrite(previewImage);
+    throw error;
+  }
   if (previewImage && previousPreview?.fileName && previousPreview.fileName !== previewImage.fileName) {
-    deleteThemePreviewAssets({ previewImage: previousPreview }, { excludeTheme: existing });
+    const cleanupWarnings = [];
+    deleteThemePreviewAssets({ previewImage: previousPreview }, {
+      excludeTheme: existing,
+      cleanupWarnings,
+    });
+    cleanupWarnings.forEach(warning => console.warn(warning));
   }
   return findThemeById(existing.id);
 }
@@ -960,10 +1011,14 @@ function deleteTheme(themeId) {
     throw createStoreError(403, 'Included-with-app themes cannot be deleted.');
   }
 
+  const cleanupWarnings = [];
   removeThemeFile(existing);
-  deleteThemePreviewAssets(existing);
+  deleteThemePreviewAssets(existing, { cleanupWarnings });
 
-  return existing;
+  return {
+    ...existing,
+    ...(cleanupWarnings.length ? { cleanupWarnings } : {}),
+  };
 }
 
 function getThemesReferencingOpacityPreset(opacityPresetId) {
@@ -984,9 +1039,13 @@ function deleteThemes(themeIds) {
   themeIds.forEach(themeId => {
     const existing = findThemeById(themeId);
     if (!existing || existing.includedWithApp) return;
+    const cleanupWarnings = [];
     removeThemeFile(existing);
-    deleteThemePreviewAssets(existing);
-    deletedThemes.push(existing);
+    deleteThemePreviewAssets(existing, { cleanupWarnings });
+    deletedThemes.push({
+      ...existing,
+      ...(cleanupWarnings.length ? { cleanupWarnings } : {}),
+    });
   });
   return deletedThemes;
 }

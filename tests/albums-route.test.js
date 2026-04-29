@@ -17,6 +17,8 @@ const serverModulePaths = [
 
 const tempDirs = [];
 const openDbs = [];
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
+const JPEG_BYTES = Buffer.from([0xFF, 0xD8, 0xFF, 0xDB, 0x00]);
 
 function resetServerModules() {
   for (const modulePath of serverModulePaths) {
@@ -158,6 +160,44 @@ describe('albums route helpers', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.jsonBody).toEqual({ error: 'No image file received.' });
+  });
+
+  it('rejects manual image uploads when the bytes are not an image', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    openDbs.push(dbModule.db);
+
+    const uploadHandler = getRouteHandlers(albumsRouter, 'post', '/upload-image').at(-1);
+    const res = createResponse();
+    uploadHandler({
+      file: {
+        originalname: 'cover.png',
+        mimetype: 'image/png',
+        buffer: Buffer.from('<script>not an image</script>'),
+      },
+    }, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.jsonBody.error).toMatch(/supported image format/);
+    expect(fs.readdirSync(dbModule.IMAGES_DIR)).toEqual([]);
+  });
+
+  it('names manual image uploads from detected bytes instead of submitted MIME', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    openDbs.push(dbModule.db);
+
+    const uploadHandler = getRouteHandlers(albumsRouter, 'post', '/upload-image').at(-1);
+    const res = createResponse();
+    uploadHandler({
+      file: {
+        originalname: 'cover.png',
+        mimetype: 'image/png',
+        buffer: JPEG_BYTES,
+      },
+    }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.image_path).toMatch(/^images\/manual_\d+_[a-z0-9]+\.jpg$/);
+    expect(fs.existsSync(imageFullPath(dbModule, res.jsonBody.image_path))).toBe(true);
   });
 
   it('reports invalid manual image uploads as bad requests', () => {
@@ -594,6 +634,40 @@ describe('albums route helpers', () => {
     expect(res.statusCode).toBe(400);
     expect(fs.readFileSync(preferencesPath, 'utf8')).toBe('keep-me');
     expect(db.prepare('SELECT image_path FROM albums WHERE id = ?').get(1).image_path).toBeNull();
+  });
+
+  it('preserves the donor image extension when assigning random art', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const donorPath = 'images/donor-art.png';
+    writeImage(dbModule, donorPath, PNG_BYTES);
+    [
+      { id: 1, name: 'Target Album', imagePath: null },
+      { id: 2, name: 'Donor Album', imagePath: donorPath },
+    ].forEach(album => {
+      db.prepare(`
+        INSERT INTO albums (
+          id, album_name, artists, status, source, image_path
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        album.id,
+        album.name,
+        JSON.stringify([{ name: 'Careful Artist' }]),
+        'completed',
+        'manual',
+        album.imagePath,
+      );
+    });
+
+    const handler = getRouteHandler(albumsRouter, 'post', '/:id/random-art');
+    const res = createResponse();
+    handler({ params: { id: '1' } }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.image_path).toMatch(/^images\/random_1_.*\.png$/);
+    expect(fs.readFileSync(imageFullPath(dbModule, res.jsonBody.image_path))).toEqual(PNG_BYTES);
   });
 
   it('searches artist names without matching unrelated artist JSON metadata', () => {

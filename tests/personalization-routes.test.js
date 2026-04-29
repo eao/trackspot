@@ -35,6 +35,8 @@ let dataDir;
 let dbModule;
 let testServer;
 const tempDirs = [];
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
+const JPEG_BYTES = Buffer.from([0xFF, 0xD8, 0xFF, 0xDB, 0x00]);
 
 function makeTempDir(prefix) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -147,7 +149,7 @@ describe('personalization API routes', () => {
         previewImage: {
           name: 'preview.png',
           type: 'image/png',
-          contents: Buffer.from('preview-image'),
+          contents: PNG_BYTES,
         },
       }),
     });
@@ -190,13 +192,38 @@ describe('personalization API routes', () => {
         previewImage: {
           name: 'preview.png',
           type: 'image/png',
-          contents: Buffer.from('preview-image'),
+          contents: PNG_BYTES,
         },
       }),
     });
 
     expect(result.status).toBe(400);
     expect(result.body.error).toMatch(/Could not parse primary background selection/);
+    expect(fs.readdirSync(store.THEMES_DIR).filter(fileName => fileName.endsWith('.json'))).toEqual([]);
+    expect(fs.readdirSync(store.THEME_PREVIEW_IMAGES_DIR)).toEqual([]);
+  });
+
+  it('rejects theme previews whose bytes are not images', async () => {
+    const { app, store } = loadPersonalizationRouteContext();
+    testServer = await startTestServer(app);
+
+    const result = await requestJson(testServer.baseUrl, '/api/themes', {
+      method: 'POST',
+      ...makeMultipartBody({
+        name: 'Fake Preview Theme',
+        colorSchemePresetId: 'bunan-blue',
+        opacityPresetId: 'default-opaque',
+      }, {
+        previewImage: {
+          name: 'preview.png',
+          type: 'image/png',
+          contents: Buffer.from('<script>not an image</script>'),
+        },
+      }),
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toMatch(/supported image format/);
     expect(fs.readdirSync(store.THEMES_DIR).filter(fileName => fileName.endsWith('.json'))).toEqual([]);
     expect(fs.readdirSync(store.THEME_PREVIEW_IMAGES_DIR)).toEqual([]);
   });
@@ -285,5 +312,45 @@ describe('personalization API routes', () => {
     expect(fs.existsSync(path.join(dataDir, 'backgrounds-user', backgroundName))).toBe(false);
     expect(fs.existsSync(path.join(dataDir, 'backgrounds-user-thumbs', backgroundName.replace(/\.png$/, '.jpg')))).toBe(false);
     expect(store.findThemeById(theme.id)).toBeNull();
+  });
+
+  it('rejects uploaded background files whose bytes are not images', async () => {
+    const { app } = loadPersonalizationRouteContext();
+    testServer = await startTestServer(app);
+
+    const result = await requestJson(testServer.baseUrl, '/api/backgrounds/upload', {
+      method: 'POST',
+      ...makeMultipartBody({}, {
+        background: {
+          name: 'background.png',
+          type: 'image/png',
+          contents: Buffer.from('<script>not an image</script>'),
+        },
+      }),
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toMatch(/supported image format/);
+    expect(fs.readdirSync(path.join(dataDir, 'backgrounds-user'))).toEqual([]);
+  });
+
+  it('names uploaded backgrounds from detected bytes instead of submitted MIME', async () => {
+    const { app } = loadPersonalizationRouteContext();
+    testServer = await startTestServer(app);
+
+    const result = await requestJson(testServer.baseUrl, '/api/backgrounds/upload', {
+      method: 'POST',
+      ...makeMultipartBody({}, {
+        background: {
+          name: 'background.png',
+          type: 'image/png',
+          contents: JPEG_BYTES,
+        },
+      }),
+    });
+
+    expect(result.status).toBe(201);
+    expect(result.body.image.fileName).toMatch(/__background\.jpg$/);
+    expect(fs.existsSync(path.join(dataDir, 'backgrounds-user', result.body.image.fileName))).toBe(true);
   });
 });

@@ -18,6 +18,7 @@ const {
   THEME_PREVIEW_IMAGES_THUMBS_DIR,
 } = require('../personalization-store');
 const {
+  ALLOWED_IMAGE_EXTENSIONS,
   USER_BACKGROUNDS_DIR,
   USER_BACKGROUND_THUMBS_DIR,
   PRESET_BACKGROUND_THUMBS_DIR,
@@ -53,6 +54,10 @@ const MERGE_JOURNAL_PATH = path.join(DATA_DIR, MERGE_JOURNAL_NAME);
 const BACKUP_DOWNLOAD_TEMP_PREFIX = '_backup_download_';
 const MERGE_TEMP_DB_PREFIX = '_import_tmp_';
 const MERGE_STAGING_IMAGES_PREFIX = '_import_images_';
+const BACKUP_UPLOAD_FILE_NAME_RE = /^\d+-[a-z0-9]{8}\.zip$/;
+const MERGE_TEMP_DB_NAME_RE = /^_import_tmp_\d+_[a-z0-9]+$/;
+const MERGE_STAGING_IMAGES_NAME_RE = /^_import_images_\d+_[a-z0-9]+$/;
+const SUPPORTED_BACKUP_KINDS = new Set(['full', 'essential', 'database']);
 const RESTORE_PHASES = [
   'prepared',
   'db-swapping',
@@ -111,6 +116,27 @@ const APP_STATE_BACKUP_ITEMS = [
     targetPath: SECONDARY_PRESET_BACKGROUND_THUMBS_DIR,
   },
 ];
+const EXPECTED_APP_STATE_PATHS = APP_STATE_BACKUP_ITEMS.map(item => item.zipPath);
+const APP_STATE_JSON_DIRS = new Set(['opacity-presets', 'themes']);
+const APP_STATE_THUMB_DIRS = new Set([
+  'theme-preview-images-thumbs',
+  'backgrounds-user-thumbs',
+  'backgrounds-user-secondary-thumbs',
+  'background-presets-thumbs',
+  'background-presets-secondary-thumbs',
+]);
+
+class BackupValidationError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.name = 'BackupValidationError';
+    this.status = status;
+  }
+}
+
+function createBackupInputError(message, status = 400) {
+  return new BackupValidationError(message, status);
+}
 
 router.use((req, res, next) => {
   if (req.method === 'GET' || req.method === 'HEAD') return next();
@@ -494,13 +520,13 @@ function formatByteLimit(bytes) {
 }
 
 function backupEntryTooLargeError(entryName, maxBytes) {
-  return new Error(
+  return createBackupInputError(
     `Backup entry ${entryName || '(unknown)'} is too large. Maximum allowed size is ${formatByteLimit(maxBytes)}.`
   );
 }
 
 function backupTotalTooLargeError(maxBytes = BACKUP_RESTORE_MAX_TOTAL_BYTES) {
-  return new Error(
+  return createBackupInputError(
     `Backup is too large after extraction. Maximum allowed size is ${formatByteLimit(maxBytes)}.`
   );
 }
@@ -522,7 +548,7 @@ function validateZipExtractionLimits(zip) {
     if (entry.isDirectory) continue;
     fileCount++;
     if (fileCount > BACKUP_RESTORE_MAX_FILE_COUNT) {
-      throw new Error(`Backup contains too many files. Maximum allowed count is ${BACKUP_RESTORE_MAX_FILE_COUNT}.`);
+      throw createBackupInputError(`Backup contains too many files. Maximum allowed count is ${BACKUP_RESTORE_MAX_FILE_COUNT}.`);
     }
 
     assertZipEntrySize(entry);
@@ -530,7 +556,7 @@ function validateZipExtractionLimits(zip) {
     if (reportedSize !== null) {
       totalReportedBytes += reportedSize;
       if (totalReportedBytes > BACKUP_RESTORE_MAX_TOTAL_BYTES) {
-        throw new Error(
+        throw createBackupInputError(
           `Backup is too large after extraction. Maximum allowed size is ${formatByteLimit(BACKUP_RESTORE_MAX_TOTAL_BYTES)}.`
         );
       }
@@ -590,7 +616,7 @@ function readZipEntryDataFromCompressed(entry, entryName, readLimit, maxEntryByt
   const method = getZipEntryMethod(entry);
   if (method === null) return null;
   if (isZipEntryEncrypted(entry)) {
-    throw new Error(`Backup entry ${entryName || '(unknown)'} is encrypted and cannot be restored.`);
+    throw createBackupInputError(`Backup entry ${entryName || '(unknown)'} is encrypted and cannot be restored.`);
   }
 
   let compressedData = entry.getCompressedData();
@@ -609,20 +635,20 @@ function readZipEntryDataFromCompressed(entry, entryName, readLimit, maxEntryByt
       if (error?.code === 'ERR_BUFFER_TOO_LARGE') {
         throwZipReadLimitError(entryName, readLimit, maxEntryBytes, tracker);
       }
-      throw error;
+      throw createBackupInputError(`Backup entry ${entryName || '(unknown)'} could not be decompressed.`);
     }
   } else {
-    throw new Error(`Backup entry ${entryName || '(unknown)'} uses an unsupported compression method.`);
+    throw createBackupInputError(`Backup entry ${entryName || '(unknown)'} uses an unsupported compression method.`);
   }
 
   const reportedSize = getZipEntryUncompressedSize(entry);
   if (reportedSize !== null && data.length !== reportedSize) {
-    throw new Error(`Backup entry ${entryName || '(unknown)'} has invalid size metadata.`);
+    throw createBackupInputError(`Backup entry ${entryName || '(unknown)'} has invalid size metadata.`);
   }
 
   const expectedCrc = getZipEntryCrc(entry);
   if (expectedCrc !== null && ZipUtils.crc32(data) !== expectedCrc) {
-    throw new Error(`Backup entry ${entryName || '(unknown)'} failed integrity validation.`);
+    throw createBackupInputError(`Backup entry ${entryName || '(unknown)'} failed integrity validation.`);
   }
 
   return data;
@@ -677,21 +703,21 @@ function validateZipEntryNames(zip) {
   for (const entry of zip.getEntries()) {
     const normalized = normalizeZipEntryName(entry.entryName).replace(/\/+$/, '');
     if (!isSafeZipEntryName(entry.entryName)) {
-      throw new Error(`Unsafe backup path: ${entry.entryName}`);
+      throw createBackupInputError(`Unsafe backup path: ${entry.entryName}`);
     }
 
     const reservedSegment = normalized.split('/').find(isWindowsReservedPathSegment);
     if (reservedSegment) {
-      throw new Error(`Backup path is not portable to Windows: ${entry.entryName}`);
+      throw createBackupInputError(`Backup path is not portable to Windows: ${entry.entryName}`);
     }
 
     const caseInsensitiveKey = normalized.toLowerCase();
     const previousPath = seenCaseInsensitivePaths.get(caseInsensitiveKey);
     if (previousPath) {
       if (previousPath === normalized) {
-        throw new Error(`Duplicate backup path: ${entry.entryName}`);
+        throw createBackupInputError(`Duplicate backup path: ${entry.entryName}`);
       }
-      throw new Error(
+      throw createBackupInputError(
         `Backup paths collide on case-insensitive file systems: ${previousPath} and ${normalized}`
       );
     }
@@ -703,15 +729,25 @@ function resolveInside(basePath, relativePath) {
   const targetPath = path.resolve(basePath, relativePath);
   const resolvedBase = path.resolve(basePath);
   if (targetPath !== resolvedBase && !targetPath.startsWith(`${resolvedBase}${path.sep}`)) {
-    throw new Error(`Unsafe backup path: ${relativePath}`);
+    throw createBackupInputError(`Unsafe backup path: ${relativePath}`);
   }
   return targetPath;
+}
+
+function isStrictlyInsidePath(basePath, targetPath) {
+  const resolvedBase = path.resolve(basePath);
+  const resolvedTarget = path.resolve(targetPath);
+  const relativePath = path.relative(resolvedBase, resolvedTarget);
+  return Boolean(relativePath) && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
 }
 
 function assertSafeConfiguredAppStatePath(item, itemPath, label) {
   const resolved = path.resolve(itemPath || '');
   if (!itemPath || resolved === path.parse(resolved).root) {
     throw new Error(`Configured app-state ${label} path for ${item.zipPath} is unsafe.`);
+  }
+  if (label === 'target' && !isStrictlyInsidePath(DATA_DIR, resolved)) {
+    throw new Error(`Configured app-state target path for ${item.zipPath} must stay inside DATA_DIR.`);
   }
   return resolved;
 }
@@ -726,20 +762,63 @@ function getAppStateTargetPath(item, targetRoot = null) {
   return assertSafeConfiguredAppStatePath(item, item.targetPath, 'target');
 }
 
+function validateConfiguredAppStateTargetPaths() {
+  APP_STATE_BACKUP_ITEMS.forEach(item => {
+    getAppStateTargetPath(item);
+  });
+}
+
 function readBackupManifest(zip, options = {}) {
   const entry = zip.getEntry(BACKUP_MANIFEST_NAME);
   if (!entry || entry.isDirectory) return null;
 
+  const data = readZipEntryData(entry, {
+    maxEntryBytes: BACKUP_RESTORE_MAX_MANIFEST_BYTES,
+    extractionTracker: options.extractionTracker,
+  });
+
   try {
-    const manifest = JSON.parse(readZipEntryData(entry, {
-      maxEntryBytes: BACKUP_RESTORE_MAX_MANIFEST_BYTES,
-      extractionTracker: options.extractionTracker,
-    }).toString('utf8'));
+    const manifest = JSON.parse(data.toString('utf8'));
     if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null;
     return manifest;
   } catch {
-    throw new Error('Backup manifest could not be parsed.');
+    throw createBackupInputError('Backup manifest could not be parsed.');
   }
+}
+
+function arraysEqual(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
+function validateAppStateManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    throw createBackupInputError('Backup manifest is invalid.');
+  }
+  if (manifest.app !== 'trackspot') {
+    throw createBackupInputError('Backup manifest is for a different app.');
+  }
+  if (manifest.version !== BACKUP_MANIFEST_VERSION) {
+    throw createBackupInputError('Backup manifest version is not supported.');
+  }
+  if (!SUPPORTED_BACKUP_KINDS.has(manifest.kind)) {
+    throw createBackupInputError('Backup manifest kind is not supported.');
+  }
+  if (manifest.kind !== 'full') {
+    throw createBackupInputError('Only full backups may restore app-state files.');
+  }
+  if (manifest.includesAppState !== true) {
+    throw createBackupInputError('Backup manifest does not include app-state files.');
+  }
+  if (!arraysEqual(manifest.appStatePaths, EXPECTED_APP_STATE_PATHS)) {
+    throw createBackupInputError('Backup manifest app-state paths are not compatible with this version of Trackspot.');
+  }
+}
+
+function shouldRestoreAppStateFromManifest(manifest) {
+  if (manifest?.includesAppState !== true) return false;
+  validateAppStateManifest(manifest);
+  return true;
 }
 
 function getAppStateItemForEntry(entryName) {
@@ -789,6 +868,91 @@ function restoreAppStateRollback(rollbackDir) {
   copyAppStateItems(rollbackDir, null);
 }
 
+function isSafeAppStateJsonFileName(fileName) {
+  return typeof fileName === 'string'
+    && fileName.trim() === fileName
+    && fileName
+    && fileName === path.posix.basename(fileName)
+    && !fileName.includes('\\')
+    && path.posix.extname(fileName).toLowerCase() === '.json';
+}
+
+function validateAppStateEntryPath(item, normalized) {
+  if (item.type === 'file') {
+    if (normalized !== item.zipPath) {
+      throw createBackupInputError(`Unexpected app-state path: ${normalized}`);
+    }
+    return;
+  }
+
+  const relativePath = normalized.slice(item.zipPath.length + 1);
+  const parts = relativePath.split('/');
+  if (parts.length !== 1 || !parts[0]) {
+    throw createBackupInputError(`Unexpected app-state path: ${normalized}`);
+  }
+
+  const fileName = parts[0];
+  const ext = path.posix.extname(fileName).toLowerCase();
+  if (APP_STATE_JSON_DIRS.has(item.zipPath)) {
+    if (!isSafeAppStateJsonFileName(fileName)) {
+      throw createBackupInputError(`Unexpected app-state JSON path: ${normalized}`);
+    }
+    return;
+  }
+
+  if (APP_STATE_THUMB_DIRS.has(item.zipPath)) {
+    if (ext !== '.jpg') {
+      throw createBackupInputError(`Unexpected app-state thumbnail path: ${normalized}`);
+    }
+    return;
+  }
+
+  if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
+    throw createBackupInputError(`Unexpected app-state image path: ${normalized}`);
+  }
+}
+
+function readJsonObjectFile(filePath, label) {
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    throw createBackupInputError(`${label} could not be parsed.`);
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw createBackupInputError(`${label} must contain a JSON object.`);
+  }
+
+  return parsed;
+}
+
+function validateStagedAppStateJson(stagingDir) {
+  const preferencesPath = resolveInside(stagingDir, 'preferences.json');
+  if (fs.existsSync(preferencesPath)) {
+    readJsonObjectFile(preferencesPath, 'Restored preferences.json');
+  }
+
+  for (const item of APP_STATE_BACKUP_ITEMS) {
+    if (!APP_STATE_JSON_DIRS.has(item.zipPath)) continue;
+    const directoryPath = resolveInside(stagingDir, item.zipPath);
+    if (!fs.existsSync(directoryPath)) continue;
+
+    for (const dirent of fs.readdirSync(directoryPath, { withFileTypes: true })) {
+      if (!dirent.isFile()) {
+        throw createBackupInputError(`Restored ${item.zipPath} entries must be files.`);
+      }
+      if (!isSafeAppStateJsonFileName(dirent.name)) {
+        throw createBackupInputError(`Unexpected restored ${item.zipPath} file: ${dirent.name}`);
+      }
+      readJsonObjectFile(
+        path.join(directoryPath, dirent.name),
+        `Restored ${item.zipPath}/${dirent.name}`,
+      );
+    }
+  }
+}
+
 function getAppStateEntriesToRestore(zip) {
   const entriesToRestore = [];
   for (const entry of zip.getEntries()) {
@@ -797,19 +961,20 @@ function getAppStateEntriesToRestore(zip) {
     const item = getAppStateItemForEntry(normalized);
     if (!item) continue;
     if (!isSafeZipEntryName(entry.entryName)) {
-      throw new Error(`Unsafe backup path: ${entry.entryName}`);
+      throw createBackupInputError(`Unsafe backup path: ${entry.entryName}`);
     }
 
     if (item.type === 'file' && normalized !== item.zipPath) {
-      throw new Error(`Unsafe backup path: ${entry.entryName}`);
+      throw createBackupInputError(`Unsafe backup path: ${entry.entryName}`);
     }
     if (item.type === 'directory' && !normalized.startsWith(`${item.zipPath}/`)) {
-      throw new Error(`Unsafe backup path: ${entry.entryName}`);
+      throw createBackupInputError(`Unsafe backup path: ${entry.entryName}`);
     }
+    validateAppStateEntryPath(item, normalized);
 
     entriesToRestore.push({ entry, normalized });
     if (entriesToRestore.length > BACKUP_RESTORE_MAX_FILE_COUNT) {
-      throw new Error(`Backup contains too many app-state files. Maximum allowed count is ${BACKUP_RESTORE_MAX_FILE_COUNT}.`);
+      throw createBackupInputError(`Backup contains too many app-state files. Maximum allowed count is ${BACKUP_RESTORE_MAX_FILE_COUNT}.`);
     }
   }
 
@@ -829,6 +994,7 @@ function stageAppStateFromZip(zip, stagingDir, options = {}) {
     filesRestored++;
   }
 
+  validateStagedAppStateJson(stagingDir);
   return filesRestored;
 }
 
@@ -859,6 +1025,7 @@ function restoreAppStateFromZip(zip) {
   const stagingDir = createRestoreTempDir('_restore_app_state_');
   const extractionTracker = createZipExtractionTracker();
   try {
+    validateConfiguredAppStateTargetPaths();
     const filesRestored = stageAppStateFromZip(zip, stagingDir, { extractionTracker });
     commitAppStateFromStaging(stagingDir);
     return filesRestored;
@@ -1649,6 +1816,12 @@ function cleanupMergeImportArtifacts({ srcDb, tmpPath, stagingImagesDir }) {
   return cleaned;
 }
 
+function isGeneratedMergeArtifactName(fileName, expectedPrefix) {
+  if (expectedPrefix === MERGE_TEMP_DB_PREFIX) return MERGE_TEMP_DB_NAME_RE.test(fileName);
+  if (expectedPrefix === MERGE_STAGING_IMAGES_PREFIX) return MERGE_STAGING_IMAGES_NAME_RE.test(fileName);
+  return false;
+}
+
 function resolveMergeImportArtifact(artifactPath, expectedPrefix) {
   if (!artifactPath) return null;
   const resolved = path.resolve(artifactPath);
@@ -1656,7 +1829,7 @@ function resolveMergeImportArtifact(artifactPath, expectedPrefix) {
   if (resolved !== resolvedDataDir && !resolved.startsWith(`${resolvedDataDir}${path.sep}`)) {
     return null;
   }
-  if (!path.basename(resolved).startsWith(expectedPrefix)) return null;
+  if (!isGeneratedMergeArtifactName(path.basename(resolved), expectedPrefix)) return null;
   return resolved;
 }
 
@@ -1694,8 +1867,8 @@ function cleanupOrphanedMergeImportArtifacts() {
   if (!fs.existsSync(DATA_DIR)) return true;
   let cleaned = true;
   for (const dirent of fs.readdirSync(DATA_DIR, { withFileTypes: true })) {
-    const isMergeTempDb = dirent.isFile() && dirent.name.startsWith(MERGE_TEMP_DB_PREFIX);
-    const isMergeStagingDir = dirent.isDirectory() && dirent.name.startsWith(MERGE_STAGING_IMAGES_PREFIX);
+    const isMergeTempDb = dirent.isFile() && MERGE_TEMP_DB_NAME_RE.test(dirent.name);
+    const isMergeStagingDir = dirent.isDirectory() && MERGE_STAGING_IMAGES_NAME_RE.test(dirent.name);
     if (!isMergeTempDb && !isMergeStagingDir) continue;
 
     const artifactPath = path.join(DATA_DIR, dirent.name);
@@ -2066,17 +2239,52 @@ const upload = multer({
   limits: { fileSize: BACKUP_UPLOAD_MAX_BYTES },
 });
 
+function resolveUploadedBackupPath(uploadedPath) {
+  const resolvedPath = path.resolve(uploadedPath || '');
+  const resolvedRoot = path.resolve(BACKUP_UPLOADS_DIR);
+  const relativePath = path.relative(resolvedRoot, resolvedPath);
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    return null;
+  }
+  if (relativePath.includes(path.sep) || !BACKUP_UPLOAD_FILE_NAME_RE.test(path.basename(resolvedPath))) {
+    return null;
+  }
+
+  try {
+    return fs.statSync(resolvedPath).isFile() ? resolvedPath : null;
+  } catch {
+    return null;
+  }
+}
+
 function openUploadedBackupZip(uploadedFile) {
   if (!uploadedFile?.path) {
-    throw new Error('No file uploaded.');
+    throw createBackupInputError('No file uploaded.');
   }
-  return new AdmZip(uploadedFile.path);
+  const resolvedPath = resolveUploadedBackupPath(uploadedFile.path);
+  if (!resolvedPath) {
+    throw createBackupInputError('Uploaded backup path is invalid.');
+  }
+  try {
+    return new AdmZip(resolvedPath);
+  } catch {
+    throw createBackupInputError('Backup ZIP could not be parsed.');
+  }
 }
 
 function cleanupUploadedBackup(uploadedFile) {
-  if (uploadedFile?.path) {
-    fs.rmSync(uploadedFile.path, { force: true });
+  if (!uploadedFile?.path) return false;
+  const resolvedPath = resolveUploadedBackupPath(uploadedFile.path);
+  if (!resolvedPath) {
+    console.warn('Skipping invalid uploaded backup cleanup path.');
+    return false;
   }
+  fs.rmSync(resolvedPath, { force: true });
+  return true;
+}
+
+function getBackupRouteErrorStatus(error) {
+  return error?.status || error?.statusCode || 500;
 }
 
 // ---------------------------------------------------------------------------
@@ -2091,7 +2299,7 @@ router.post('/merge', upload.single('backup'), async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error('Merge error:', e);
-    res.status(e.status || e.statusCode || 500).json({ error: e.message });
+    res.status(getBackupRouteErrorStatus(e)).json({ error: e.message });
   } finally {
     cleanupUploadedBackup(req.file);
   }
@@ -2109,7 +2317,7 @@ router.post('/restore', upload.single('backup'), async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error('Restore error:', e);
-    res.status(e.status || e.statusCode || 500).json({ error: e.message });
+    res.status(getBackupRouteErrorStatus(e)).json({ error: e.message });
   } finally {
     cleanupUploadedBackup(req.file);
   }
@@ -2124,7 +2332,7 @@ async function importFromZip(zip) {
   validateZipEntryNames(zip);
   validateZipExtractionLimits(zip);
   const dbEntry = zip.getEntry('albums.db');
-  if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
+  if (!dbEntry) throw createBackupInputError('ZIP does not contain albums.db.');
 
   beginBackupMutation('merge');
 
@@ -2154,12 +2362,16 @@ async function importFromZip(zip) {
         maxEntryBytes: BACKUP_RESTORE_MAX_DB_BYTES,
         extractionTracker,
       }));
-      srcDb = new BetterSqlite(tmpPath);
+      try {
+        srcDb = new BetterSqlite(tmpPath);
+      } catch {
+        throw createBackupInputError('Backup database could not be opened.');
+      }
 
       const tableCheck = srcDb.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='albums'"
       ).get();
-      if (!tableCheck) throw new Error('Backup database does not contain an albums table.');
+      if (!tableCheck) throw createBackupInputError('Backup database does not contain an albums table.');
 
       sanitizedImagePaths = sanitizeBackupAlbumImagePaths(srcDb);
       sanitizedLinks = sanitizeBackupExternalLinks(srcDb);
@@ -2224,7 +2436,7 @@ async function importFromZip(zip) {
 
 async function restoreFromZip(zip) {
   const dbEntry = zip.getEntry('albums.db');
-  if (!dbEntry) throw new Error('ZIP does not contain albums.db.');
+  if (!dbEntry) throw createBackupInputError('ZIP does not contain albums.db.');
 
   const tmpPath = path.join(DATA_DIR, `_restore_tmp_${Date.now()}.db`);
   const rollbackDbPath = path.join(DATA_DIR, `_restore_rollback_${Date.now()}.db`);
@@ -2239,7 +2451,7 @@ async function restoreFromZip(zip) {
   let sanitizedLinks;
   const extractionTracker = createZipExtractionTracker();
   const manifest = readBackupManifest(zip, { extractionTracker });
-  const shouldRestoreAppState = manifest?.includesAppState === true;
+  const shouldRestoreAppState = shouldRestoreAppStateFromManifest(manifest);
 
   beginBackupMutation('restore');
 
@@ -2251,16 +2463,23 @@ async function restoreFromZip(zip) {
     }
     validateZipEntryNames(zip);
     validateZipExtractionLimits(zip);
+    if (shouldRestoreAppState) {
+      validateConfiguredAppStateTargetPaths();
+    }
     fs.writeFileSync(tmpPath, readZipEntryData(dbEntry, {
       maxEntryBytes: BACKUP_RESTORE_MAX_DB_BYTES,
       extractionTracker,
     }));
     const BetterSqlite = require('better-sqlite3');
-    backupDb = new BetterSqlite(tmpPath);
+    try {
+      backupDb = new BetterSqlite(tmpPath);
+    } catch {
+      throw createBackupInputError('Backup database could not be opened.');
+    }
     const tableCheck = backupDb.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='albums'"
     ).get();
-    if (!tableCheck) throw new Error('Backup database does not contain an albums table.');
+    if (!tableCheck) throw createBackupInputError('Backup database does not contain an albums table.');
 
     ensureBackupAlbumImagePathColumn(backupDb);
     sanitizedImagePaths = sanitizeBackupAlbumImagePaths(backupDb);
@@ -2386,6 +2605,7 @@ router.__private = {
   RESTORE_JOURNAL_NAME,
   buildBackupManifest,
   cleanupUploadedBackup,
+  createBackupInputError,
   createBackupDownloadStaging,
   createBackupDownloadTempDir,
   createMergeTempPath,
@@ -2401,6 +2621,7 @@ router.__private = {
   recoverInterruptedMerge,
   recoverInterruptedRestore,
   resolveBackupAlbumImageForArchive,
+  resolveUploadedBackupPath,
   restoreAppStateFromZip,
   stageAppStateFromZip,
   restoreFromZip,
@@ -2408,6 +2629,7 @@ router.__private = {
   sanitizeBackupAlbumImagePathValue,
   sanitizeBackupAlbumImagePaths,
   stageBackupDownload,
+  shouldRestoreAppStateFromManifest,
   validateZipExtractionLimits,
   validateZipEntryNames,
   writeMergeJournal,

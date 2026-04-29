@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createTempDataDir,
+  makeMultipartBody,
   removeTempDir,
   requestBuffer,
   requestJson,
@@ -11,6 +13,8 @@ import {
   startTestServer,
 } from './helpers/server.js';
 
+const require = createRequire(import.meta.url);
+const AdmZip = require('adm-zip');
 const serverModulePaths = [
   'server/app.js',
   'server/routes/backup.js',
@@ -149,6 +153,29 @@ afterEach(async () => {
   resetServerModules(serverModulePaths);
   removeTempDir(dataDir);
   dataDir = null;
+});
+
+describe('backup upload endpoints', () => {
+  it('reports malformed restore uploads as client errors', async () => {
+    const { app } = loadBackupDownloadContext();
+    testServer = await startTestServer(app);
+
+    const zip = new AdmZip();
+    zip.addFile('notes.txt', Buffer.from('not a backup database'));
+    const result = await requestJson(testServer.baseUrl, '/api/backup/restore', {
+      method: 'POST',
+      ...makeMultipartBody({}, {
+        backup: {
+          name: 'backup.zip',
+          type: 'application/zip',
+          contents: zip.toBuffer(),
+        },
+      }),
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toBe('ZIP does not contain albums.db.');
+  });
 });
 
 describe('backup creation endpoints', () => {

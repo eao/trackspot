@@ -9,6 +9,7 @@ const {
   updateTheme,
   deleteTheme,
 } = require('../personalization-store');
+const { validateImageBuffer } = require('../image-validation');
 
 const router = express.Router();
 
@@ -39,6 +40,15 @@ function parseJsonField(value, fallback = null, label = 'field') {
   }
 }
 
+function validateThemeImageFile(file, label) {
+  if (!file) return null;
+  const detected = validateImageBuffer(file.buffer, ALLOWED_IMAGE_TYPES, label);
+  return {
+    ...file,
+    mimetype: detected.mimeType,
+  };
+}
+
 function buildThemeInput(req) {
   return {
     name: req.body?.name ?? '',
@@ -54,8 +64,8 @@ function buildThemeInput(req) {
     secondaryBackgroundSelection: parseJsonField(req.body?.secondaryBackgroundSelection, null, 'secondary background selection'),
     secondaryBackgroundDisplay: parseJsonField(req.body?.secondaryBackgroundDisplay, null, 'secondary background display'),
     includedWithApp: req.body?.includedWithApp === 'true' || req.body?.includedWithApp === true,
-    previewImageFile: req.files?.previewImage?.[0] ?? null,
-    previewThumbnailFile: req.files?.previewThumbnail?.[0] ?? null,
+    previewImageFile: validateThemeImageFile(req.files?.previewImage?.[0] ?? null, 'theme preview image'),
+    previewThumbnailFile: validateThemeImageFile(req.files?.previewThumbnail?.[0] ?? null, 'theme preview thumbnail'),
   };
 }
 
