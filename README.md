@@ -10,20 +10,93 @@ Use it to keep a personal album collection, import albums from Spotify, browse y
 - npm `>=10`
 - Native build tools for `better-sqlite3` if your platform does not have a prebuilt binary available
 
-On Debian/Ubuntu-style Linux systems, the usual native build prerequisites are:
+## Install And Run
+
+Trackspot does not have a build step. Once Node.js and npm are installed, you install the dependencies and start the local server.
+
+First, install Node.js. Trackspot expects Node.js `>=20.19 <26`; Node.js 24 is a good choice. If you do not already have Node.js installed, download it from [nodejs.org](https://nodejs.org/) and install it with the default options.
+
+After installing Node.js, open a new terminal and check that these commands work:
 
 ```bash
-sudo apt install python3 make g++
+node --version
+npm --version
 ```
 
-## Quick Start
+If either command is missing, Node.js is not installed correctly yet.
+
+### Linux/macOS
+
+1. Open Terminal.
+2. Go to the Trackspot folder. If you downloaded it to `Downloads`, the command probably looks like one of these:
 
 ```bash
+cd "$HOME/Downloads/trackspot"
+```
+
+or:
+
+```bash
+cd "$HOME/Downloads/trackspot-main"
+```
+
+3. Install the app dependencies:
+
+```bash
+npm install
+```
+
+4. Start Trackspot:
+
+```bash
+npm start
+```
+
+Keep that terminal window open while you use the app. Press `Ctrl+C` in the terminal when you want to stop the server.
+
+If you are on Linux and `npm install` fails while building `better-sqlite3`, install the usual native build tools and try again:
+
+```bash
+sudo apt update
+sudo apt install python3 make g++
 npm install
 npm start
 ```
 
-The default local URL is:
+### Windows
+
+1. Open PowerShell.
+2. Go to the Trackspot folder. If you downloaded it to `Downloads`, the command probably looks like one of these:
+
+```powershell
+cd "$env:USERPROFILE\Downloads\trackspot"
+```
+
+or:
+
+```powershell
+cd "$env:USERPROFILE\Downloads\trackspot-main"
+```
+
+3. Install the app dependencies:
+
+```powershell
+npm install
+```
+
+4. Start Trackspot:
+
+```powershell
+npm start
+```
+
+Keep that PowerShell window open while you use the app. Press `Ctrl+C` in PowerShell when you want to stop the server.
+
+If Windows asks whether Node.js can access the network, allow it for private/local networks.
+
+### Open The App
+
+When the server says it is listening, open this address in your browser:
 
 ```text
 http://localhost:1060
