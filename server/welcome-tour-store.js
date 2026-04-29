@@ -131,7 +131,7 @@ function assertWelcomeTourSessionCanMutate(sessionId, options = {}) {
 function rejectIfWelcomeTourLocked(req, res, next) {
   if (!hasActiveWelcomeTourLock()) return next();
   return res.status(423).json({
-    error: 'Finish or leave the Trackspot welcome tour before changing albums.',
+    error: 'Finish or leave the Trackspot welcome tour before making changes.',
     code: 'welcome_tour_active',
   });
 }
