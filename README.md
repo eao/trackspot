@@ -6,16 +6,18 @@ Use it to keep a personal album collection, import albums from Spotify, browse y
 
 ## Installation on Linux
 
-Install [node.js](https://nodejs.org/en/download). Trackspot supports `>=20.19 <26` and was tested with v24 LTS.
+Install [Node.js](https://nodejs.org/en/download). Trackspot supports `>=20.19 <26` and was tested with v24 LTS.
 
 Then:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y git curl ca-certificates build-essential python3 make g++
+sudo apt-get install -y git ca-certificates build-essential python3
 ```
 
-Then download/clone the repository somewhere and run npm install. It is recommended to install Trackspot under a new Linux account. This command is for a Linux user account with the name "spotty":
+Then download/clone the repository somewhere and run npm install.
+
+It is recommended to install Trackspot under a new Linux account. The following command is for a Linux user account with the name "spotty". If you are running the command as-is, either create that account first, or replace `/home/spotty/trackspot` with your preferred install path.
 
 ```bash
 git clone -b master https://github.com/eao/trackspot.git /home/spotty/trackspot && cd /home/spotty/trackspot && npm install
@@ -27,11 +29,11 @@ Then start the server:
 npm start
 ```
 
-Trackspot should now be running on port 1060. Connect at `http://localhost:1060` if you are running this on desktop Linux. For more detailed configuration info, see the Configuration section.
+Trackspot should now be running on port 1060. Connect at `http://localhost:1060` if you are running this on desktop Linux. For more detailed configuration info, see the [Configuration](#configuration) section.
 
-### Installation note for macOS 
+### Installation note for macOS
 
-On macOS, install the Xcode command line tools and use Homebrew or the official Node.js installer to install Git, Node.js, and npm:
+On macOS, install the Xcode command line tools and use Homebrew to install Git, Node.js, and npm:
 
 ```bash
 xcode-select --install
@@ -42,9 +44,13 @@ Then clone the repository, run `npm install`, and start the server with `npm sta
 
 ## Installation on Windows
 
-Install [node.js](https://nodejs.org/en/download#:~:text=Or%20get%20a%20prebuilt%20Node%2Ejs,architecture%2E). It will be easiest to download and run the Windows Installer (.msi). You may need to restart your computer afterward.
+Install [Node.js](https://nodejs.org/en/download#:~:text=Or%20get%20a%20prebuilt%20Node%2Ejs,architecture%2E). It will be easiest to download and run the Windows Installer (.msi). You may need to restart your computer afterward.
 
 
+
+Trackspot should now be running on port 1060. Connect at `http://localhost:1060` in your browser. Keep the PowerShell window open while you use Trackspot, and press `Ctrl+C` in PowerShell when you want to stop the server.
+
+If Windows asks whether Node.js can access the network, allow it for private networks.
 
 ## Spicetify Extension
 
