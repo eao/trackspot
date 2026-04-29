@@ -64,7 +64,6 @@ const BULK_SYNC_ON_STARTUP_STORAGE_KEY = 'trackspot_bulkSyncOnStartup';
 const BULK_SYNC_ON_NAVIGATION_STORAGE_KEY = 'trackspot_bulkSyncOnNavigation';
 const BULK_SYNC_INTERVAL_ENABLED_STORAGE_KEY = 'trackspot_bulkSyncIntervalEnabled';
 const BULK_SYNC_INTERVAL_HOURS_STORAGE_KEY = 'trackspot_bulkSyncIntervalHours';
-const CSV_WORKER_ID_STORAGE_KEY = 'trackspot_csvWorkerId';
 const CSV_WORKER_LAST_STARTED_JOB_KEY = 'trackspot_csvWorkerLastStartedJob';
 const CSV_WORKER_LAST_FINISHED_JOB_KEY = 'trackspot_csvWorkerLastFinishedJob';
 const DEFAULT_CSV_WORKER_ENABLED = false;
@@ -98,7 +97,6 @@ const ALBUM_PLAYBACK_STOP_RESCHEDULE_TOLERANCE_MS = 750;
 const ALBUM_PLAYBACK_STOP_REPEAT_SUPPRESSION_MS = 2000;
 const ALBUM_END_PLAYBACK_EXCEPTION_FETCH_RETRY_MS = 15000;
 const SUCCESS_GREEN = '#1ED760';
-const ERROR_RED = '#D32F2F';
 const BUTTON_NEUTRAL_TEXT = '#f3f6ff';
 const BUTTON_NEUTRAL_BORDER = 'rgba(255,255,255,0.14)';
 const BUTTON_ACTIVE_BORDER = SUCCESS_GREEN;
@@ -1403,23 +1401,6 @@ function getLogModalDefaults(album = null, {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Access token
-// ---------------------------------------------------------------------------
-
-function getAccessToken() {
-  const sessionToken = SpicetifyApi.Platform?.Session?.accessToken;
-  if (sessionToken) {
-    return sessionToken;
-  }
-
-  throw new Error('Spicetify.Platform.Session.accessToken is not available.');
-}
-
-// ---------------------------------------------------------------------------
-// Extract album ID from a Spotify URI
-// ---------------------------------------------------------------------------
-
 function albumIdFromUri(uri) {
   const match = uri?.match(/spotify:album:([A-Za-z0-9]+)/);
   return match ? match[1] : null;
@@ -1508,65 +1489,6 @@ function isAlbumSavedInLibraryFromGraphql(graphqlData) {
   if (saved === 'false') return false;
   return null;
 }
-
-// ---------------------------------------------------------------------------
-// Send album to server
-// ---------------------------------------------------------------------------
-
-async function sendToServer(albumUri, graphqlData) {
-  const albumId    = albumIdFromUri(albumUri);
-  const spotifyUrl = albumId
-    ? `https://open.spotify.com/album/${albumId}`
-    : null;
-  const serverUrls = getServerUrls();
-
-  const payload = {
-    spotifyUrl,
-    spotifyId: albumId,
-    data: graphqlData.data,
-  };
-
-  for (const serverUrl of serverUrls) {
-    let response;
-
-    try {
-      response = await fetch(`${serverUrl}/api/albums/import`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } catch {
-      continue;
-    }
-
-    let result;
-    try {
-      result = await response.json();
-    } catch {
-      result = {};
-    }
-
-    if (response.status === 409) {
-      return { id: result.existing_id, alreadyLogged: true, serverUrl };
-    }
-
-    if (!response.ok) {
-      throw new Error(result.error || `Server error ${response.status}`);
-    }
-
-    return { id: result.id, alreadyLogged: false, serverUrl };
-  }
-
-  if (serverUrls.length === 1) {
-    throw new Error(`Could not connect to ${APP_NAME}. Is the server running at ${serverUrls[0]}?`);
-  }
-
-  throw new Error(`Could not connect to ${APP_NAME}. Tried: ${serverUrls.join(' and ')}.`);
-}
-
-// ---------------------------------------------------------------------------
-// CSV import worker
-// ---------------------------------------------------------------------------
 
 let csvWorkerTimer = null;
 let csvWorkerInFlight = false;
@@ -2044,13 +1966,6 @@ function setResolvedAlbumIndexState(serverUrl, state) {
   suppressAutoBulkSyncUntilReconnect = false;
   setStoredActiveServerUrl(serverUrl);
   saveAlbumIndexCache(serverUrl, albumIndexState);
-}
-
-function clearResolvedAlbumIndexState() {
-  activeServerUrl = null;
-  albumIndexState = createEmptyAlbumIndexState();
-  serverConnectionState = 'unknown';
-  setStoredActiveServerUrl(null);
 }
 
 function setServerConnectionOffline() {
