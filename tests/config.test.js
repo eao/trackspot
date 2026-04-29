@@ -26,6 +26,15 @@ afterEach(() => {
 });
 
 describe('server config', () => {
+  it('allows large local backup uploads by default', () => {
+    process.env.BACKUP_UPLOAD_MAX_BYTES = '';
+    resetConfigModule();
+    const { DEFAULT_BACKUP_UPLOAD_MAX_BYTES, getBackupUploadMaxBytes } = require('../server/config.js');
+
+    expect(DEFAULT_BACKUP_UPLOAD_MAX_BYTES).toBe(5 * 1024 * 1024 * 1024);
+    expect(getBackupUploadMaxBytes()).toBe(DEFAULT_BACKUP_UPLOAD_MAX_BYTES);
+  });
+
   it('resolves relative runtime paths from the app root instead of process cwd', () => {
     process.env.DATA_DIR = './relative-data';
     resetConfigModule();
