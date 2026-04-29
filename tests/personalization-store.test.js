@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
@@ -104,6 +104,8 @@ function loadPersonalizationStoreTestContext() {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
+
   delete process.env.DATA_DIR;
   delete process.env.PRESET_BACKGROUNDS_DIR;
   delete process.env.PRESET_BACKGROUND_THUMBS_DIR;
@@ -377,6 +379,35 @@ describe('personalization store', () => {
     expect(preset.canEdit).toBe(true);
     expect(preset.canDelete).toBe(true);
     expect(fs.existsSync(path.join(store.OPACITY_PRESETS_DIR, `${preset.id}.json`))).toBe(true);
+  });
+
+  it('keeps the previous opacity preset file when an atomic JSON write fails', () => {
+    const { store } = loadPersonalizationStoreTestContext();
+
+    const preset = store.createOpacityPreset({
+      name: 'Atomic Preset',
+      opacity: {
+        header: 80,
+      },
+    });
+    const presetPath = path.join(store.OPACITY_PRESETS_DIR, `${preset.id}.json`);
+    const previousContents = fs.readFileSync(presetPath, 'utf8');
+
+    const originalWriteFileSync = fs.writeFileSync;
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((target, contents, options) => {
+      if (typeof target === 'number') {
+        throw new Error('simulated temp write failure');
+      }
+      return originalWriteFileSync.call(fs, target, contents, options);
+    });
+
+    expect(() => store.updateOpacityPreset(preset.id, { name: 'Overwrite Attempt' }))
+      .toThrow(/simulated temp write failure/);
+
+    vi.restoreAllMocks();
+
+    expect(fs.readFileSync(presetPath, 'utf8')).toBe(previousContents);
+    expect(fs.readdirSync(store.OPACITY_PRESETS_DIR).filter(fileName => fileName.endsWith('.tmp'))).toEqual([]);
   });
 
   it('ignores client included-with-app flags for user-created opacity presets', () => {

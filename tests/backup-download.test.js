@@ -207,6 +207,7 @@ describe('backup creation endpoints', () => {
       'albums.db',
     ]));
     expect(zipEntries(database.buffer).some(entry => entry.startsWith('images/'))).toBe(false);
+    expect(fs.readdirSync(dataDir).filter(fileName => fileName.startsWith('_backup_download_'))).toEqual([]);
   });
 
   it('returns 404 for empty CSV exports and preserves BOM plus quoted CSV cells', async () => {

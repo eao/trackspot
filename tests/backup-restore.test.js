@@ -147,6 +147,43 @@ function addLegacyAlbumsDatabaseWithoutImagePath(zip, dataDir, rows) {
   fs.unlinkSync(legacyPath);
 }
 
+function addMinimalLegacyAlbumsDatabase(zip, dataDir, rows) {
+  const BetterSqlite = require('better-sqlite3');
+  const legacyPath = path.join(dataDir, `legacy-albums-minimal-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+  const legacyDb = new BetterSqlite(legacyPath);
+  try {
+    legacyDb.exec(`
+      CREATE TABLE albums (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        album_name TEXT NOT NULL,
+        artists TEXT NOT NULL,
+        status TEXT NOT NULL,
+        source TEXT NOT NULL
+      )
+    `);
+    const insert = legacyDb.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source
+      ) VALUES (
+        :id, :album_name, :artists, :status, :source
+      )
+    `);
+    rows.forEach((row, index) => {
+      insert.run({
+        id: row.id ?? index + 1,
+        album_name: row.album_name,
+        artists: row.artists ?? JSON.stringify([{ name: 'Legacy Artist' }]),
+        status: row.status ?? 'completed',
+        source: row.source ?? 'manual',
+      });
+    });
+  } finally {
+    legacyDb.close();
+  }
+  zip.addLocalFile(legacyPath, '', 'albums.db');
+  fs.unlinkSync(legacyPath);
+}
+
 function addFullBackupManifest(zip, backupRouter) {
   zip.addFile(
     backupRouter.__private.BACKUP_MANIFEST_NAME,
@@ -541,6 +578,41 @@ describe('backup and restore', () => {
       image_path: 'images/legacyrestore123.jpg',
     });
     expect(fs.readFileSync(path.join(dataDir, restored.image_path)).toString()).toBe('legacy-restore-image');
+  }, 15000);
+
+  it('migrates legacy backup databases missing created_at before restoring', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const zip = new AdmZip();
+    addMinimalLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        album_name: 'Minimal Legacy Restore Album',
+        artists: JSON.stringify([{ name: 'Minimal Legacy Artist' }]),
+      },
+    ]);
+
+    const restoreResult = await backupRouter.__private.restoreFromZip(zip);
+    const restored = db.prepare(`
+      SELECT album_name, artists, status, source, created_at
+      FROM albums
+      WHERE album_name = ?
+    `).get('Minimal Legacy Restore Album');
+
+    expect(restoreResult).toMatchObject({
+      added: 1,
+      imagesCopied: 0,
+      imagesRefetched: 0,
+    });
+    expect(restored).toMatchObject({
+      album_name: 'Minimal Legacy Restore Album',
+      artists: JSON.stringify([{ name: 'Minimal Legacy Artist' }]),
+      status: 'completed',
+      source: 'manual',
+    });
+    expect(restored.created_at).toEqual(expect.any(String));
   }, 15000);
 
   it('preserves current DB and images when album image staging fails', async () => {
@@ -2554,6 +2626,75 @@ describe('backup and restore', () => {
     expect(path.dirname(secondPath)).toBe(dataDir);
     expect(path.basename(firstPath)).toMatch(/^_import_tmp_/);
     expect(path.basename(secondPath)).toMatch(/^_import_tmp_/);
+  });
+
+  it('allocates independent staging directories for backup downloads', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    let first = null;
+    let second = null;
+
+    try {
+      first = await backupRouter.__private.createBackupDownloadStaging();
+      second = await backupRouter.__private.createBackupDownloadStaging();
+
+      expect(first.stagingDir).not.toBe(second.stagingDir);
+      expect(first.dbPath).not.toBe(second.dbPath);
+      expect(path.dirname(first.stagingDir)).toBe(dataDir);
+      expect(path.dirname(second.stagingDir)).toBe(dataDir);
+      expect(path.basename(first.stagingDir)).toMatch(/^_backup_download_/);
+      expect(path.basename(second.stagingDir)).toMatch(/^_backup_download_/);
+      expect(fs.existsSync(first.dbPath)).toBe(true);
+      expect(fs.existsSync(second.dbPath)).toBe(true);
+    } finally {
+      if (first) fs.rmSync(first.stagingDir, { recursive: true, force: true });
+      if (second) fs.rmSync(second.stagingDir, { recursive: true, force: true });
+    }
+
+    expect(fs.existsSync(first.stagingDir)).toBe(false);
+    expect(fs.existsSync(second.stagingDir)).toBe(false);
+  });
+
+  it('snapshots backup download files into staging before archiving', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+
+    writeFileEnsured(path.join(dataDir, 'images', 'staged-art.jpg'), 'staged-art');
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), '{"wrappedName":"Staged"}\n');
+
+    const staging = await backupRouter.__private.createBackupDownloadStaging({
+      includeAllImages: true,
+      includeAppState: true,
+    });
+
+    try {
+      fs.rmSync(path.join(dataDir, 'images', 'staged-art.jpg'), { force: true });
+      fs.rmSync(path.join(dataDir, 'preferences.json'), { force: true });
+
+      expect(fs.readFileSync(path.join(staging.stagingDir, 'images', 'staged-art.jpg'), 'utf8'))
+        .toBe('staged-art');
+      expect(fs.readFileSync(path.join(staging.stagingDir, 'preferences.json'), 'utf8'))
+        .toBe('{"wrappedName":"Staged"}\n');
+    } finally {
+      fs.rmSync(staging.stagingDir, { recursive: true, force: true });
+    }
+  });
+
+  it('blocks backup download staging while an app mutation is active', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    openDbs.push(dbModule.db);
+    const { beginAppMutation } = require('../server/backup-mutation-lock.js');
+    const endMutation = beginAppMutation();
+
+    try {
+      await expect(backupRouter.__private.stageBackupDownload('download'))
+        .rejects.toThrow(/app update is already in progress/i);
+    } finally {
+      endMutation();
+    }
+
+    expect(fs.readdirSync(dataDir).filter(fileName => fileName.startsWith('_backup_download_'))).toEqual([]);
   });
 
   it('sanitizes unsafe album image paths before replacing the database on restore', async () => {

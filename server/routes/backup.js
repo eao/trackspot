@@ -7,7 +7,7 @@ const archiver = require('archiver');
 const AdmZip   = require('adm-zip');
 const multer   = require('multer');
 const ZipUtils = require('adm-zip/util');
-const { db, DATA_DIR, IMAGES_DIR, replaceDatabaseFile } = require('../db');
+const { db, DATA_DIR, IMAGES_DIR, ensureAppSchema, replaceDatabaseFile } = require('../db');
 const { getBackupUploadMaxBytes, getConfiguredPath } = require('../config');
 const { beginBackupMutation, endBackupMutation } = require('../backup-mutation-lock');
 const {
@@ -35,6 +35,7 @@ const RESTORE_JOURNAL_NAME = '_restore_journal.json';
 const RESTORE_JOURNAL_PATH = path.join(DATA_DIR, RESTORE_JOURNAL_NAME);
 const MERGE_JOURNAL_NAME = '_merge_journal.json';
 const MERGE_JOURNAL_PATH = path.join(DATA_DIR, MERGE_JOURNAL_NAME);
+const BACKUP_DOWNLOAD_TEMP_PREFIX = '_backup_download_';
 const MERGE_TEMP_DB_PREFIX = '_import_tmp_';
 const MERGE_STAGING_IMAGES_PREFIX = '_import_images_';
 const RESTORE_PHASES = [
@@ -297,15 +298,96 @@ function appendBackupManifest(archive, kind, includesAppState) {
   archive.append(`${JSON.stringify(manifest, null, 2)}\n`, { name: BACKUP_MANIFEST_NAME });
 }
 
-function appendAppStateToArchive(archive) {
+function appendAppStateToArchive(archive, sourceRoot = DATA_DIR) {
   for (const item of APP_STATE_BACKUP_ITEMS) {
-    const sourcePath = path.join(DATA_DIR, item.zipPath);
+    const sourcePath = path.join(sourceRoot, item.zipPath);
     if (!fs.existsSync(sourcePath)) continue;
     if (item.type === 'file') {
       archive.file(sourcePath, { name: item.zipPath });
     } else {
       archive.directory(sourcePath, item.zipPath);
     }
+  }
+}
+
+function createBackupDownloadTempDir() {
+  return createRestoreTempDir(BACKUP_DOWNLOAD_TEMP_PREFIX);
+}
+
+function copyFileIntoBackupStaging(sourcePath, stagingDir, zipPath) {
+  const targetPath = resolveInside(stagingDir, zipPath);
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.copyFileSync(sourcePath, targetPath);
+  return targetPath;
+}
+
+function copyAllImagesToBackupStaging(stagingDir) {
+  if (!fs.existsSync(IMAGES_DIR)) return null;
+  const stagedImagesDir = resolveInside(stagingDir, 'images');
+  fs.cpSync(IMAGES_DIR, stagedImagesDir, { recursive: true });
+  return stagedImagesDir;
+}
+
+function copyEssentialImagesToBackupStaging(stagingDir, rows) {
+  const copiedImagePaths = new Set();
+  for (const row of rows) {
+    if (row.source !== 'manual' || !row.image_path) continue;
+    const image = resolveBackupAlbumImageForArchive(row.image_path);
+    if (!image || !fs.existsSync(image.fullPath) || copiedImagePaths.has(image.imagePath)) continue;
+    copyFileIntoBackupStaging(image.fullPath, stagingDir, image.imagePath);
+    copiedImagePaths.add(image.imagePath);
+  }
+  return copiedImagePaths;
+}
+
+async function createBackupDownloadStaging(options = {}) {
+  const {
+    includeAllImages = false,
+    includeEssentialImages = false,
+    includeAppState = false,
+  } = options;
+  const stagingDir = createBackupDownloadTempDir();
+  const dbPath = resolveInside(stagingDir, 'albums.db');
+
+  try {
+    await snapshotDb(dbPath);
+    const rows = db.prepare('SELECT * FROM albums ORDER BY created_at ASC').all();
+    const csv = generateCsvContent(rows);
+    const imagesDir = includeAllImages
+      ? copyAllImagesToBackupStaging(stagingDir)
+      : null;
+    if (includeEssentialImages) {
+      copyEssentialImagesToBackupStaging(stagingDir, rows);
+    }
+    if (includeAppState) {
+      copyAppStateItems(DATA_DIR, stagingDir);
+    }
+
+    return {
+      stagingDir,
+      dbPath,
+      rows,
+      csv,
+      imagesDir: imagesDir ?? resolveInside(stagingDir, 'images'),
+    };
+  } catch (error) {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function stageBackupDownload(operation, options = {}) {
+  beginBackupMutation(operation);
+  try {
+    return await createBackupDownloadStaging(options);
+  } finally {
+    endBackupMutation(operation);
+  }
+}
+
+function cleanupBackupDownloadStaging(staging) {
+  if (staging?.stagingDir) {
+    fs.rmSync(staging.stagingDir, { recursive: true, force: true });
   }
 }
 
@@ -1806,25 +1888,26 @@ function resolveBackupAlbumImageForArchive(imagePath) {
 // ---------------------------------------------------------------------------
 
 router.get('/download', async (req, res) => {
-  const stamp   = localDatetimeStamp();
-  const tmpPath = path.join(DATA_DIR, `_snapshot_${stamp}.db`);
+  const stamp = localDatetimeStamp();
+  let staging = null;
   try {
-    await snapshotDb(tmpPath);
-    const rows = db.prepare('SELECT * FROM albums ORDER BY created_at ASC').all();
-    const csv  = generateCsvContent(rows);
+    staging = await stageBackupDownload('download', {
+      includeAllImages: true,
+      includeAppState: true,
+    });
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition',
       `attachment; filename="trackspot-backup-${stamp}.zip"`);
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.pipe(res);
     appendBackupManifest(archive, 'full', true);
-    archive.append(Buffer.from(csv, 'utf-8'), { name: 'albums.csv' });
-    archive.file(tmpPath, { name: 'albums.db' });
-    if (fs.existsSync(IMAGES_DIR)) archive.directory(IMAGES_DIR, 'images');
-    appendAppStateToArchive(archive);
+    archive.append(Buffer.from(staging.csv, 'utf-8'), { name: 'albums.csv' });
+    archive.file(staging.dbPath, { name: 'albums.db' });
+    if (fs.existsSync(staging.imagesDir)) archive.directory(staging.imagesDir, 'images');
+    appendAppStateToArchive(archive, staging.stagingDir);
     await finalizeArchiveResponse(archive, res);
   } finally {
-    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    cleanupBackupDownloadStaging(staging);
   }
 });
 
@@ -1833,31 +1916,24 @@ router.get('/download', async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/download-essential', async (_req, res) => {
-  const stamp   = localDatetimeStamp();
-  const tmpPath = path.join(DATA_DIR, `_snapshot_${stamp}.db`);
+  const stamp = localDatetimeStamp();
+  let staging = null;
   try {
-    await snapshotDb(tmpPath);
-    const rows = db.prepare('SELECT * FROM albums ORDER BY created_at ASC').all();
-    const csv  = generateCsvContent(rows);
-    const manualRows = rows.filter(r => r.source === 'manual');
+    staging = await stageBackupDownload('download-essential', {
+      includeEssentialImages: true,
+    });
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition',
       `attachment; filename="trackspot-backup-essential-${stamp}.zip"`);
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.pipe(res);
     appendBackupManifest(archive, 'essential', false);
-    archive.append(Buffer.from(csv, 'utf-8'), { name: 'albums.csv' });
-    archive.file(tmpPath, { name: 'albums.db' });
-    for (const row of manualRows) {
-      if (!row.image_path) continue;
-      const image = resolveBackupAlbumImageForArchive(row.image_path);
-      if (image && fs.existsSync(image.fullPath)) {
-        archive.file(image.fullPath, { name: image.imagePath });
-      }
-    }
+    archive.append(Buffer.from(staging.csv, 'utf-8'), { name: 'albums.csv' });
+    archive.file(staging.dbPath, { name: 'albums.db' });
+    if (fs.existsSync(staging.imagesDir)) archive.directory(staging.imagesDir, 'images');
     await finalizeArchiveResponse(archive, res);
   } finally {
-    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    cleanupBackupDownloadStaging(staging);
   }
 });
 
@@ -1866,23 +1942,21 @@ router.get('/download-essential', async (_req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/download-db', async (req, res) => {
-  const stamp   = localDatetimeStamp();
-  const tmpPath = path.join(DATA_DIR, `_snapshot_${stamp}.db`);
+  const stamp = localDatetimeStamp();
+  let staging = null;
   try {
-    await snapshotDb(tmpPath);
-    const rows = db.prepare('SELECT * FROM albums ORDER BY created_at ASC').all();
-    const csv  = generateCsvContent(rows);
+    staging = await stageBackupDownload('download-db');
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition',
       `attachment; filename="trackspot-backup-db-${stamp}.zip"`);
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.pipe(res);
     appendBackupManifest(archive, 'database', false);
-    archive.append(Buffer.from(csv, 'utf-8'), { name: 'albums.csv' });
-    archive.file(tmpPath, { name: 'albums.db' });
+    archive.append(Buffer.from(staging.csv, 'utf-8'), { name: 'albums.csv' });
+    archive.file(staging.dbPath, { name: 'albums.db' });
     await finalizeArchiveResponse(archive, res);
   } finally {
-    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    cleanupBackupDownloadStaging(staging);
   }
 });
 
@@ -2124,6 +2198,7 @@ async function restoreFromZip(zip) {
 
     ensureBackupAlbumImagePathColumn(backupDb);
     sanitizedImagePaths = sanitizeBackupAlbumImagePaths(backupDb);
+    ensureAppSchema(backupDb);
     sanitizedLinks = sanitizeBackupExternalLinks(backupDb);
     const restoredAlbums = backupDb.prepare('SELECT rowid AS __restore_rowid, * FROM albums ORDER BY created_at ASC').all();
     stagingImagesDir = createRestoreTempDir('_restore_images_');
@@ -2245,6 +2320,8 @@ router.__private = {
   RESTORE_JOURNAL_NAME,
   buildBackupManifest,
   cleanupUploadedBackup,
+  createBackupDownloadStaging,
+  createBackupDownloadTempDir,
   createMergeTempPath,
   createRestoreTempPath,
   isWindowsReservedPathSegment,
@@ -2264,6 +2341,7 @@ router.__private = {
   sanitizeBackupExternalLinks,
   sanitizeBackupAlbumImagePathValue,
   sanitizeBackupAlbumImagePaths,
+  stageBackupDownload,
   validateZipExtractionLimits,
   validateZipEntryNames,
   writeMergeJournal,

@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { DATA_DIR } = require('./db');
 const { getConfiguredPath } = require('./config');
+const { atomicWriteJsonFileSync } = require('./atomic-json');
 
 const PREFERENCES_PATH = getConfiguredPath('PREFERENCES_PATH', path.join(DATA_DIR, 'preferences.json'));
 
@@ -202,7 +203,7 @@ function readPreferencesFile() {
 
 function writePreferencesFile(value) {
   ensurePreferencesDir();
-  fs.writeFileSync(PREFERENCES_PATH, `${JSON.stringify(value, null, 2)}\n`);
+  atomicWriteJsonFileSync(PREFERENCES_PATH, value);
 }
 
 function getPreferences() {

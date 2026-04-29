@@ -1122,9 +1122,13 @@ router.patch('/:id', async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.delete('/wipe', (req, res) => {
-  const albums = db.prepare('SELECT image_path FROM albums').all();
-  const imagePaths = [...new Set(albums.map(album => album.image_path).filter(Boolean))];
-  db.prepare('DELETE FROM albums').run();
+  const wipeAlbums = db.transaction(() => {
+    const albums = db.prepare('SELECT image_path FROM albums').all();
+    db.prepare('UPDATE import_job_rows SET created_album_id = NULL WHERE created_album_id IS NOT NULL').run();
+    db.prepare('DELETE FROM albums').run();
+    return [...new Set(albums.map(album => album.image_path).filter(Boolean))];
+  });
+  const imagePaths = wipeAlbums();
   for (const imagePath of imagePaths) cleanupUnusedAlbumImage(imagePath);
   res.json({ ok: true });
 });

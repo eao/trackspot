@@ -471,6 +471,43 @@ describe('albums route helpers', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
   });
 
+  it('clears import row album references when wiping albums', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Imported Wipe Album',
+      JSON.stringify([{ name: 'Import Artist' }]),
+      'completed',
+      'manual',
+    );
+    db.prepare(`
+      INSERT INTO import_jobs (
+        id, source_type, filename, default_status, status, total_rows
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(1, 'csv', 'import.csv', 'completed', 'completed', 1);
+    db.prepare(`
+      INSERT INTO import_job_rows (
+        id, job_id, row_index, status, created_album_id
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(1, 1, 0, 'imported', 1);
+
+    const handler = getRouteHandler(albumsRouter, 'delete', '/wipe');
+    const res = createResponse();
+    handler({}, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM albums').get().count).toBe(0);
+    expect(db.prepare('SELECT created_album_id FROM import_job_rows WHERE id = ?').get(1).created_album_id)
+      .toBeNull();
+  });
+
   it('rejects unsafe temp-art discard paths without deleting outside files', () => {
     const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
     openDbs.push(dbModule.db);

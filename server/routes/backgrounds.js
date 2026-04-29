@@ -44,6 +44,32 @@ function getExistingFileStats(filePath) {
   }
 }
 
+function createDeleteRollbackPath(targetPath) {
+  const directoryPath = path.dirname(targetPath);
+  const baseName = path.basename(targetPath);
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const candidate = path.join(directoryPath, `.${baseName}.${suffix}.delete-tmp`);
+    if (!fs.existsSync(candidate)) return candidate;
+  }
+  throw new Error('Could not allocate a background delete rollback path.');
+}
+
+function moveBackgroundForDelete(targetPath) {
+  const rollbackPath = createDeleteRollbackPath(targetPath);
+  fs.renameSync(targetPath, rollbackPath);
+  return rollbackPath;
+}
+
+function restoreMovedBackground(rollbackPath, targetPath) {
+  if (!rollbackPath || !fs.existsSync(rollbackPath) || fs.existsSync(targetPath)) return;
+  fs.renameSync(rollbackPath, targetPath);
+}
+
+function addCleanupWarning(warnings, label, error) {
+  warnings.push(`Could not remove ${label}: ${error.message}`);
+}
+
 function handlePresetThumbnailUpload(slotKey = 'primary') {
   return (req, res) => {
     const safeName = ensureSafeStoredName(req.params.fileName);
@@ -172,19 +198,45 @@ function handleUserDelete(slotKey = 'primary') {
         });
       }
 
-      const deletedThemes = dependentThemes.length
-        ? deleteThemes(dependentThemes.map(theme => theme.id))
-        : [];
+      let rollbackPath = null;
+      const cleanupWarnings = [];
 
-      fs.unlinkSync(targetPath);
-      const thumbPath = path.join(slotConfig.userThumbDir, buildThumbnailFileName(safeName));
-      if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
+      try {
+        rollbackPath = moveBackgroundForDelete(targetPath);
+        const deletedThemes = dependentThemes.length
+          ? deleteThemes(dependentThemes.map(theme => theme.id))
+          : [];
 
-      return res.json({
-        ok: true,
-        fileName: safeName,
-        deletedThemes,
-      });
+        try {
+          fs.unlinkSync(rollbackPath);
+          rollbackPath = null;
+        } catch (cleanupError) {
+          addCleanupWarning(cleanupWarnings, 'deleted background staging file', cleanupError);
+        }
+
+        const thumbPath = path.join(slotConfig.userThumbDir, buildThumbnailFileName(safeName));
+        if (fs.existsSync(thumbPath)) {
+          try {
+            fs.unlinkSync(thumbPath);
+          } catch (cleanupError) {
+            addCleanupWarning(cleanupWarnings, 'background thumbnail', cleanupError);
+          }
+        }
+
+        return res.json({
+          ok: true,
+          fileName: safeName,
+          deletedThemes,
+          ...(cleanupWarnings.length ? { cleanupWarnings } : {}),
+        });
+      } catch (error) {
+        try {
+          restoreMovedBackground(rollbackPath, targetPath);
+        } catch (rollbackError) {
+          console.error('Could not roll back background delete:', rollbackError);
+        }
+        throw error;
+      }
     } catch (error) {
       return next(error);
     }
@@ -258,6 +310,8 @@ router.__private = {
   syncPresetThumbnailFiles,
   ensureSafeStoredName,
   getExistingFileStats,
+  moveBackgroundForDelete,
+  restoreMovedBackground,
 };
 
 module.exports = router;

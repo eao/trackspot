@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
@@ -133,6 +133,8 @@ function createResponse() {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
+
   while (openDbs.length) {
     openDbs.pop()?.close();
   }
@@ -319,6 +321,55 @@ describe('background route helpers', () => {
     expect(nextError).toBeNull();
     expect(res.statusCode).toBe(404);
     expect(res.jsonBody).toEqual({ error: 'Background image not found.' });
+    expect(fs.existsSync(themePath)).toBe(true);
+  });
+
+  it('does not cascade-delete dependent themes when background deletion cannot be staged', () => {
+    const {
+      backgroundsRouter,
+      dataDir,
+      userDir,
+      presetDir,
+      secondaryPresetDir,
+    } = loadBackgroundRouteTestContext();
+    createSeedBackgroundPlaceholders(presetDir, secondaryPresetDir);
+
+    const targetName = 'locked-background.png';
+    const targetPath = path.join(userDir, targetName);
+    fs.writeFileSync(targetPath, 'background');
+    fs.mkdirSync(path.join(dataDir, 'theme-preview-images'), { recursive: true });
+    fs.mkdirSync(path.join(dataDir, 'themes'), { recursive: true });
+    fs.writeFileSync(path.join(dataDir, 'theme-preview-images', 'locked-preview.png'), 'preview');
+
+    const themePath = path.join(dataDir, 'themes', 'locked-dependent-theme.json');
+    fs.writeFileSync(themePath, JSON.stringify({
+      id: 'locked-dependent-theme',
+      name: 'Locked Dependent Theme',
+      previewImage: { fileName: 'locked-preview.png' },
+      colorSchemePresetId: 'bunan-blue',
+      opacityPresetId: 'default-opaque',
+      primaryBackgroundSelection: { kind: 'user', id: targetName },
+    }));
+
+    const originalRenameSync = fs.renameSync;
+    vi.spyOn(fs, 'renameSync').mockImplementation((oldPath, newPath) => {
+      if (oldPath === targetPath) {
+        throw new Error('simulated background move failure');
+      }
+      return originalRenameSync.call(fs, oldPath, newPath);
+    });
+
+    const handler = getRouteHandler(backgroundsRouter, 'delete', '/user/:fileName');
+    const res = createResponse();
+    let nextError = null;
+
+    handler({
+      params: { fileName: targetName },
+      query: { cascadeThemes: '1' },
+    }, res, error => { nextError = error; });
+
+    expect(nextError?.message).toBe('simulated background move failure');
+    expect(fs.existsSync(targetPath)).toBe(true);
     expect(fs.existsSync(themePath)).toBe(true);
   });
 

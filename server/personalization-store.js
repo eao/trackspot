@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { DATA_DIR } = require('./db');
 const { getConfiguredPath } = require('./config');
+const { atomicWriteJsonFileSync } = require('./atomic-json');
 const { loadColorSchemePresets } = require('./color-scheme-presets');
 const {
   ALLOWED_IMAGE_TYPES,
@@ -109,7 +110,7 @@ function readJsonFile(filePath, label) {
 }
 
 function writeJsonFile(filePath, value) {
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+  atomicWriteJsonFileSync(filePath, value);
 }
 
 function isSafePersonalizationId(value) {
