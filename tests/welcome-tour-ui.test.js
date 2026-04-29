@@ -495,6 +495,26 @@ describe('welcome tour UI preparation', () => {
     expect(stateMock.welcomeTour.lockSessionId).toBeNull();
   });
 
+  it('does not release the lock on beforeunload', async () => {
+    const sendBeacon = vi.fn(() => true);
+    Object.defineProperty(globalThis.navigator, 'sendBeacon', {
+      value: sendBeacon,
+      configurable: true,
+    });
+    const { initWelcomeTourEvents, startWelcomeTour } = await import('../public/js/welcome-tour.js');
+    initWelcomeTourEvents();
+
+    await startWelcomeTour({ replay: true });
+    await flushTourStep();
+
+    window.dispatchEvent(new Event('beforeunload'));
+
+    expect(sendBeacon).not.toHaveBeenCalled();
+    expect(stateMock.welcomeTour.lockSessionId).toBe('tour-session');
+
+    window.dispatchEvent(new Event('pagehide'));
+  });
+
   it('keeps and renews the lock when pagehide is for BFCache', async () => {
     const sendBeacon = vi.fn(() => true);
     Object.defineProperty(globalThis.navigator, 'sendBeacon', {

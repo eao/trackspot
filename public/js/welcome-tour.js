@@ -1484,7 +1484,6 @@ export function initWelcomeTourEvents() {
   });
   window.addEventListener('pagehide', releaseLockOnPageLifecycle);
   window.addEventListener('pageshow', renewLockAfterBfcacheRestore);
-  window.addEventListener('beforeunload', releaseLockOnPageLifecycle);
   window.addEventListener('resize', () => {
     const step = TOUR_STEPS[currentStepIndex];
     if (state.welcomeTour.active && step) {
