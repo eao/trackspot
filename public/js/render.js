@@ -270,7 +270,7 @@ function getInitialAnimatedRowCount(
     return Math.min(rows.length, 1, maxRows);
   }
 
-  return Math.min(rows.length, maxRows);
+  return Math.min(visibleRows, maxRows);
 }
 
 function getVisualRowStaggerIndexes(elements, tolerancePx = 4) {
@@ -1225,6 +1225,12 @@ function syncEmptyStateActions({ hasError, isLoading, totalCount }) {
   }
 }
 
+function syncCollectionViewVisibility({ isCollectionPage, showEmptyState, collectionView }) {
+  el.emptyState.classList.toggle('hidden', !showEmptyState);
+  el.viewList.classList.toggle('hidden', !isCollectionPage || showEmptyState || collectionView !== 'list');
+  el.viewGrid.classList.toggle('hidden', !isCollectionPage || showEmptyState || collectionView !== 'grid');
+}
+
 export function render() {
   const isCollectionPage = isCollectionPageActive();
   const meta = state.albumListMeta ?? getDefaultAlbumListMeta();
@@ -1234,6 +1240,9 @@ export function render() {
   const isBlockingLoading = isLoading && state.albumsLoadingBlocksCollection;
   const hasError = isCollectionPage && !!state.albumsError;
   el.pageCollection?.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+  const isEmpty = isCollectionPage && state.albumsLoaded && meta.filteredCount === 0;
+  const showEmptyState = hasError || isEmpty || isBlockingLoading;
+  syncCollectionViewVisibility({ isCollectionPage, showEmptyState, collectionView });
 
   if (isCollectionPage && !hasError && !isBlockingLoading) {
     const startupAnimatedView = _initialRender ? collectionView : null;
@@ -1248,8 +1257,6 @@ export function render() {
     }
   }
 
-  const isEmpty = isCollectionPage && state.albumsLoaded && meta.filteredCount === 0;
-  const showEmptyState = hasError || isEmpty || isBlockingLoading;
   const emptyStateMessage = el.emptyState.querySelector('p');
   if (emptyStateMessage) {
     emptyStateMessage.textContent = hasError
@@ -1261,9 +1268,7 @@ export function render() {
           : 'No albums match your filters.';
   }
   syncEmptyStateActions({ hasError, isLoading: isBlockingLoading, totalCount: meta.totalCount });
-  el.emptyState.classList.toggle('hidden', !showEmptyState);
-  el.viewList.classList.toggle('hidden', !isCollectionPage || showEmptyState || collectionView !== 'list');
-  el.viewGrid.classList.toggle('hidden', !isCollectionPage || showEmptyState || collectionView !== 'grid');
+  syncCollectionViewVisibility({ isCollectionPage, showEmptyState, collectionView });
   if (isCollectionPage) {
     syncListResponsiveLayout();
   }

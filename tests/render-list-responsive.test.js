@@ -699,6 +699,190 @@ describe('list view responsive layout stages', () => {
     vi.useRealTimers();
   });
 
+  it('measures list startup rows after making the active view visible', async () => {
+    vi.useFakeTimers();
+    viewListEl.className = 'album-list hidden';
+    stateMock.view = 'list';
+    stateMock.albums = [
+      {
+        id: 1,
+        album_name: 'List One',
+        artists: [{ name: 'Artist One' }],
+        notes: '',
+        release_year: 2001,
+        listened_at: '2026-04-15',
+        duration_ms: 2520000,
+        rating: 95,
+      },
+      {
+        id: 2,
+        album_name: 'List Two',
+        artists: [{ name: 'Artist Two' }],
+        notes: '',
+        release_year: 2002,
+        listened_at: '2026-04-15',
+        duration_ms: 2520000,
+        rating: 90,
+      },
+      {
+        id: 3,
+        album_name: 'List Three',
+        artists: [{ name: 'Artist Three' }],
+        notes: '',
+        release_year: 2003,
+        listened_at: '2026-04-15',
+        duration_ms: 2520000,
+        rating: 85,
+      },
+    ];
+    stateMock.albumListMeta = {
+      totalCount: 3,
+      filteredCount: 3,
+      currentPage: 1,
+      totalPages: 1,
+      startIndex: 0,
+      endIndex: 3,
+      isPaged: false,
+      perPage: null,
+      pageCount: 3,
+      trackedListenedMs: 0,
+    };
+
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    const originalGetComputedStyle = globalThis.window.getComputedStyle.bind(globalThis.window);
+    Element.prototype.getBoundingClientRect = function getBoundingClientRectMock() {
+      if (this.classList?.contains('album-row') && !this.classList.contains('album-row-header')) {
+        const id = Number(this.dataset.id);
+        if (viewListEl.classList.contains('hidden')) {
+          return { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 };
+        }
+        return {
+          left: 0,
+          top: (id - 1) * 80,
+          width: 800,
+          height: 72,
+          right: 800,
+          bottom: ((id - 1) * 80) + 72,
+        };
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+    globalThis.window.getComputedStyle = vi.fn(element => {
+      if (element.classList?.contains('slide-in') || element.classList?.contains('fade-in')) {
+        return {
+          animationName: element.classList.contains('fade-in') ? 'row-fade-in' : 'row-slide-in-move, row-fade-in',
+          animationDuration: element.classList.contains('fade-in') ? '1.25s' : '1.25s, 0.5s',
+          animationDelay: element.style.animationDelay || '0ms',
+        };
+      }
+      return originalGetComputedStyle(element);
+    });
+
+    const { render } = await import('../public/js/render.js');
+    render();
+
+    const rows = Array.from(viewListEl.querySelectorAll('.album-row:not(.album-row-header)'));
+    expect(viewListEl.classList.contains('hidden')).toBe(false);
+    expect(rows.map(row => row.classList.contains('slide-in'))).toEqual([true, true, true]);
+    expect(rows.map(row => row.style.animationDelay)).toEqual(['0ms', '150ms', '300ms']);
+
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    globalThis.window.getComputedStyle = originalGetComputedStyle;
+    vi.useRealTimers();
+  });
+
+  it('measures grid startup cards after making the active view visible', async () => {
+    vi.useFakeTimers();
+    viewGridEl.className = 'album-grid hidden';
+    stateMock.view = 'grid';
+    stateMock.albums = [
+      {
+        id: 1,
+        album_name: 'Grid One',
+        artists: [{ name: 'Artist One' }],
+        notes: '',
+        release_year: 2001,
+        listened_at: '2026-04-15',
+        duration_ms: 2520000,
+        rating: 95,
+      },
+      {
+        id: 2,
+        album_name: 'Grid Two',
+        artists: [{ name: 'Artist Two' }],
+        notes: '',
+        release_year: 2002,
+        listened_at: '2026-04-15',
+        duration_ms: 2520000,
+        rating: 90,
+      },
+      {
+        id: 3,
+        album_name: 'Grid Three',
+        artists: [{ name: 'Artist Three' }],
+        notes: '',
+        release_year: 2003,
+        listened_at: '2026-04-15',
+        duration_ms: 2520000,
+        rating: 85,
+      },
+    ];
+    stateMock.albumListMeta = {
+      totalCount: 3,
+      filteredCount: 3,
+      currentPage: 1,
+      totalPages: 1,
+      startIndex: 0,
+      endIndex: 3,
+      isPaged: false,
+      perPage: null,
+      pageCount: 3,
+      trackedListenedMs: 0,
+    };
+
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    const originalGetComputedStyle = globalThis.window.getComputedStyle.bind(globalThis.window);
+    Element.prototype.getBoundingClientRect = function getBoundingClientRectMock() {
+      if (this.classList?.contains('album-card')) {
+        const id = Number(this.dataset.id);
+        if (viewGridEl.classList.contains('hidden')) {
+          return { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 };
+        }
+        return {
+          left: id === 2 ? 220 : 0,
+          top: id === 3 ? 280 : 0,
+          width: 200,
+          height: 260,
+          right: id === 2 ? 420 : 200,
+          bottom: id === 3 ? 540 : 260,
+        };
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+    globalThis.window.getComputedStyle = vi.fn(element => {
+      if (element.classList?.contains('slide-in')) {
+        return {
+          animationName: 'row-slide-in-move, row-fade-in',
+          animationDuration: '1.25s, 0.5s',
+          animationDelay: element.style.animationDelay || '0ms',
+        };
+      }
+      return originalGetComputedStyle(element);
+    });
+
+    const { render } = await import('../public/js/render.js');
+    render();
+
+    const cards = Array.from(viewGridEl.querySelectorAll('.album-card'));
+    expect(viewGridEl.classList.contains('hidden')).toBe(false);
+    expect(cards.map(card => card.classList.contains('slide-in'))).toEqual([true, true, true]);
+    expect(cards.map(card => card.style.animationDelay)).toEqual(['0ms', '0ms', '150ms']);
+
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    globalThis.window.getComputedStyle = originalGetComputedStyle;
+    vi.useRealTimers();
+  });
+
   it('preserves startup animation until albums exist instead of consuming it on an empty first render', async () => {
     vi.useFakeTimers();
     stateMock.view = 'list';
