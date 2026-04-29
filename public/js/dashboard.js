@@ -11,6 +11,8 @@ import { syncHeaderTooltip } from './header-tooltip.js';
 const dashboardState = {
   albums: null,
   loadingPromise: null,
+  cacheGeneration: 0,
+  renderGeneration: 0,
 };
 
 function showLoading(container) {
@@ -91,20 +93,29 @@ export async function loadAlbumsForDashboard() {
   if (dashboardState.albums) return dashboardState.albums;
   if (dashboardState.loadingPromise) return dashboardState.loadingPromise;
 
-  dashboardState.loadingPromise = (async () => {
+  const cacheGeneration = dashboardState.cacheGeneration;
+  const loadingPromise = (async () => {
     const response = await apiFetch('/api/albums');
     const albums = Array.isArray(response) ? response : (response.albums || []);
     const meta = Array.isArray(response) ? null : response.meta;
-    mergeDashboardAlbumListMeta(albums, meta);
-    syncHeaderTooltip();
-    dashboardState.albums = normalizeAlbumsForStats(albums);
-    return dashboardState.albums;
+    const normalizedAlbums = normalizeAlbumsForStats(albums);
+
+    if (cacheGeneration === dashboardState.cacheGeneration) {
+      mergeDashboardAlbumListMeta(albums, meta);
+      syncHeaderTooltip();
+      dashboardState.albums = normalizedAlbums;
+    }
+
+    return normalizedAlbums;
   })();
+  dashboardState.loadingPromise = loadingPromise;
 
   try {
-    return await dashboardState.loadingPromise;
+    return await loadingPromise;
   } finally {
-    dashboardState.loadingPromise = null;
+    if (dashboardState.loadingPromise === loadingPromise) {
+      dashboardState.loadingPromise = null;
+    }
   }
 }
 
@@ -118,19 +129,22 @@ export async function renderDashboardPage({
   if (!container || (page !== 'stats' && page !== 'wrapped')) {
     return { resolvedYear: null, yearsAvailable: [] };
   }
-  if (!isFresh()) {
+  const renderGeneration = ++dashboardState.renderGeneration;
+  const isCurrentRender = () => dashboardState.renderGeneration === renderGeneration && isFresh();
+
+  if (!isCurrentRender()) {
     return { resolvedYear: null, yearsAvailable: [], stale: true };
   }
 
   cleanupDashboardView(container);
-  if (!isFresh()) {
+  if (!isCurrentRender()) {
     return { resolvedYear: null, yearsAvailable: [], stale: true };
   }
   showLoading(container);
 
   try {
     const albums = await loadAlbumsForDashboard();
-    if (!isFresh()) {
+    if (!isCurrentRender()) {
       return { resolvedYear: null, yearsAvailable: [], stale: true };
     }
     if (page === 'stats') {
@@ -152,7 +166,7 @@ export async function renderDashboardPage({
     });
     return { resolvedYear, yearsAvailable };
   } catch (error) {
-    if (!isFresh()) {
+    if (!isCurrentRender()) {
       return { resolvedYear: null, yearsAvailable: [], stale: true };
     }
     console.error('Dashboard page render failed:', error);
@@ -170,6 +184,8 @@ export function cleanupDashboardPage(container) {
 export function invalidateDashboardCache() {
   dashboardState.albums = null;
   dashboardState.loadingPromise = null;
+  dashboardState.cacheGeneration += 1;
+  dashboardState.renderGeneration += 1;
 }
 
 export async function refreshActiveDashboardPage() {

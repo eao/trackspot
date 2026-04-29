@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiFetchMock = vi.fn();
+const computeStatsMock = vi.fn(albums => albums);
 const renderStatsViewMock = vi.fn();
 const cleanupStatsViewMock = vi.fn();
 const renderWrappedViewMock = vi.fn();
@@ -22,7 +23,7 @@ vi.mock('../public/js/state.js', () => ({
 }));
 
 vi.mock('../public/js/stats-compute.js', () => ({
-  computeStats: vi.fn(),
+  computeStats: computeStatsMock,
   normalizeAlbumsForStats: vi.fn(albums => albums),
 }));
 
@@ -54,6 +55,7 @@ describe('dashboard wrapped year resolution', () => {
     elMock.pageStats = document.createElement('section');
     elMock.pageWrapped = document.createElement('section');
     apiFetchMock.mockReset();
+    computeStatsMock.mockClear();
     renderStatsViewMock.mockReset();
     cleanupStatsViewMock.mockReset();
     renderWrappedViewMock.mockReset();
@@ -179,5 +181,66 @@ describe('dashboard wrapped year resolution', () => {
     await expect(renderPromise).resolves.toMatchObject({ stale: true });
     expect(renderStatsViewMock).not.toHaveBeenCalled();
     expect(container.textContent).toBe('Loading…');
+  });
+
+  it('keeps older dashboard requests from overwriting newer refresh content or cache', async () => {
+    const firstRequest = {};
+    firstRequest.promise = new Promise(resolve => {
+      firstRequest.resolve = resolve;
+    });
+    const secondRequest = {};
+    secondRequest.promise = new Promise(resolve => {
+      secondRequest.resolve = resolve;
+    });
+    apiFetchMock
+      .mockImplementationOnce(() => firstRequest.promise)
+      .mockImplementationOnce(() => secondRequest.promise);
+    const container = document.createElement('section');
+
+    const { invalidateDashboardCache, renderDashboardPage } = await import('../public/js/dashboard.js');
+    invalidateDashboardCache();
+    const firstRender = renderDashboardPage({
+      page: 'stats',
+      container,
+    });
+
+    invalidateDashboardCache();
+    const secondRender = renderDashboardPage({
+      page: 'stats',
+      container,
+    });
+
+    secondRequest.resolve({
+      albums: [makeAlbum(2026, 2)],
+      meta: {
+        totalCount: 2,
+        filteredCount: 2,
+        trackedListenedMs: 20,
+      },
+    });
+    await expect(secondRender).resolves.toEqual({ resolvedYear: null, yearsAvailable: [] });
+    expect(renderStatsViewMock).toHaveBeenCalledTimes(1);
+    expect(renderStatsViewMock.mock.calls[0][1]).toEqual([makeAlbum(2026, 2)]);
+    expect(stateMock.albumListMeta.totalCount).toBe(2);
+
+    firstRequest.resolve({
+      albums: [makeAlbum(2025, 1)],
+      meta: {
+        totalCount: 1,
+        filteredCount: 1,
+        trackedListenedMs: 10,
+      },
+    });
+    await expect(firstRender).resolves.toMatchObject({ stale: true });
+    expect(renderStatsViewMock).toHaveBeenCalledTimes(1);
+    expect(stateMock.albumListMeta.totalCount).toBe(2);
+
+    await renderDashboardPage({
+      page: 'stats',
+      container,
+    });
+    expect(apiFetchMock).toHaveBeenCalledTimes(2);
+    expect(renderStatsViewMock).toHaveBeenCalledTimes(2);
+    expect(renderStatsViewMock.mock.calls[1][1]).toEqual([makeAlbum(2026, 2)]);
   });
 });

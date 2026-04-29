@@ -78,6 +78,11 @@ function restoreCollectionStateAfterAbortedJump(previousState, appliedState) {
   updateSortOrderBtn();
 }
 
+function hasAdoptedCollectionJump(appliedState) {
+  return state.navigation?.page === 'collection'
+    && collectionJumpStateMatches(appliedState);
+}
+
 export function applyTopArtistCollectionPreset(artistName) {
   const normalizedArtistName = String(artistName ?? '').trim();
   if (!normalizedArtistName) return false;
@@ -144,6 +149,9 @@ export async function handleStatsOpenTopArtist(event) {
     || state.navigation?.page !== sourcePage
     || getNavigationRevision() !== sourceNavigationRevision
   ) {
+    if (hasAdoptedCollectionJump(appliedCollectionState)) {
+      return true;
+    }
     restoreCollectionStateAfterAbortedJump(previousCollectionState, appliedCollectionState);
     return false;
   }

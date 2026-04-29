@@ -117,6 +117,33 @@ describe('stats top artist jump', () => {
     expect(stateMock.pagination.currentPage).toBe(3);
   });
 
+  it('keeps the artist preset when the user reaches collection before the jump load finishes', async () => {
+    let resolveLoad;
+    loadAlbumsMock.mockImplementation(() => new Promise(resolve => {
+      resolveLoad = resolve;
+    }));
+
+    const { handleStatsOpenTopArtist } = await import('../public/js/top-artist-jump.js');
+
+    const jumpPromise = handleStatsOpenTopArtist({ detail: { artistName: 'Sade' } });
+    await Promise.resolve();
+
+    expect(stateMock.filters.artist).toBe('Sade');
+    stateMock.navigation.page = 'collection';
+    navigationRevision += 1;
+    resolveLoad(false);
+
+    await expect(jumpPromise).resolves.toBe(true);
+    expect(setPageMock).not.toHaveBeenCalled();
+    expect(stateMock.filters.artist).toBe('Sade');
+    expect(stateMock.filters.artistMatchExact).toBe(true);
+    expect(stateMock.sort).toEqual({
+      field: 'release_date',
+      order: 'desc',
+    });
+    expect(stateMock.navigation.scrollPositions.collection).toBe(0);
+  });
+
   it('opens collection after the current top-artist load applies', async () => {
     loadAlbumsMock.mockResolvedValue(true);
 
