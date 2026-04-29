@@ -55,6 +55,7 @@ Expected root `.env` values:
 
 ```text
 PORT=1060
+HOST=0.0.0.0
 DATA_DIR=./data
 ```
 
@@ -126,7 +127,7 @@ The app is designed for local/trusted use. There is **no auth layer**.
 
 - `tests/`: extensive Vitest coverage for frontend logic and selected backend modules/routes
 - `vitest.config.js`: jsdom test environment
-- `eslint.config.js`: flat ESLint config for frontend JS and tests
+- `eslint.config.js`: flat ESLint config for frontend JS, backend/scripts, tests, and `trackspot-spicetify.js`
 
 ## Architecture Notes
 
