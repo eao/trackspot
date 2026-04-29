@@ -29,13 +29,26 @@ const serverModulePaths = [
   'server/welcome-tour-store.js',
   'server/db.js',
 ];
+const configuredPathEnvNames = [
+  'PREFERENCES_PATH',
+  'THEMES_DIR',
+  'THEME_PREVIEW_IMAGES_DIR',
+  'USER_BACKGROUNDS_DIR',
+];
 
 let dataDir;
 let dbModule;
 let testServer;
 
-function loadBackupDownloadContext() {
+function clearConfiguredPathEnv() {
+  for (const envName of configuredPathEnvNames) {
+    delete process.env[envName];
+  }
+}
+
+function loadBackupDownloadContext(configureEnv = () => {}) {
   dataDir = createTempDataDir('trackspot-backup-download-');
+  configureEnv(dataDir);
   resetServerModules(serverModulePaths);
   dbModule = require('../server/db.js');
   const { createApp } = require('../server/app.js');
@@ -132,6 +145,7 @@ afterEach(async () => {
   dbModule?.db?.close();
   dbModule = null;
   delete process.env.DATA_DIR;
+  clearConfiguredPathEnv();
   resetServerModules(serverModulePaths);
   removeTempDir(dataDir);
   dataDir = null;
@@ -208,6 +222,44 @@ describe('backup creation endpoints', () => {
     ]));
     expect(zipEntries(database.buffer).some(entry => entry.startsWith('images/'))).toBe(false);
     expect(fs.readdirSync(dataDir).filter(fileName => fileName.startsWith('_backup_download_'))).toEqual([]);
+  });
+
+  it('backs up configured app-state paths with stable zip names', async () => {
+    const { app } = loadBackupDownloadContext(currentDataDir => {
+      const configuredRoot = path.join(currentDataDir, 'configured-app-state');
+      process.env.PREFERENCES_PATH = path.join(configuredRoot, 'prefs', 'custom-preferences.json');
+      process.env.THEMES_DIR = path.join(configuredRoot, 'theme-store');
+      process.env.THEME_PREVIEW_IMAGES_DIR = path.join(configuredRoot, 'theme-previews');
+      process.env.USER_BACKGROUNDS_DIR = path.join(configuredRoot, 'primary-backgrounds');
+    });
+    writeDataFile('preferences.json', '{"wrappedName":"Default Name"}\n');
+    writeDataFile('themes/default-theme.json', '{"id":"default-theme"}\n');
+    writeDataFile('theme-preview-images/default.png', 'default-preview');
+    writeDataFile('backgrounds-user/default.png', 'default-background');
+    fs.mkdirSync(path.dirname(process.env.PREFERENCES_PATH), { recursive: true });
+    fs.writeFileSync(process.env.PREFERENCES_PATH, '{"wrappedName":"Configured Name"}\n');
+    fs.mkdirSync(process.env.THEMES_DIR, { recursive: true });
+    fs.writeFileSync(path.join(process.env.THEMES_DIR, 'configured-theme.json'), '{"id":"configured-theme"}\n');
+    fs.mkdirSync(process.env.THEME_PREVIEW_IMAGES_DIR, { recursive: true });
+    fs.writeFileSync(path.join(process.env.THEME_PREVIEW_IMAGES_DIR, 'configured-preview.png'), 'configured-preview');
+    fs.mkdirSync(process.env.USER_BACKGROUNDS_DIR, { recursive: true });
+    fs.writeFileSync(path.join(process.env.USER_BACKGROUNDS_DIR, 'configured.png'), 'configured-background');
+    testServer = await startTestServer(app);
+
+    const full = await requestBuffer(testServer.baseUrl, '/api/backup/download');
+    const entries = readZipEntryMap(full.buffer);
+    const entryNames = [...entries.keys()];
+
+    expect(full.status).toBe(200);
+    expect(entries.get('preferences.json').toString('utf8')).toContain('Configured Name');
+    expect(entryNames).toEqual(expect.arrayContaining([
+      'themes/configured-theme.json',
+      'theme-preview-images/configured-preview.png',
+      'backgrounds-user/configured.png',
+    ]));
+    expect(entryNames).not.toContain('themes/default-theme.json');
+    expect(entryNames).not.toContain('theme-preview-images/default.png');
+    expect(entryNames).not.toContain('backgrounds-user/default.png');
   });
 
   it('returns 404 for empty CSV exports and preserves BOM plus quoted CSV cells', async () => {

@@ -10,6 +10,21 @@ const ZipUtils = require('adm-zip/util');
 const { db, DATA_DIR, IMAGES_DIR, ensureAppSchema, replaceDatabaseFile } = require('../db');
 const { getBackupUploadMaxBytes, getConfiguredPath } = require('../config');
 const { beginBackupMutation, endBackupMutation } = require('../backup-mutation-lock');
+const { PREFERENCES_PATH } = require('../preferences-store');
+const {
+  OPACITY_PRESETS_DIR,
+  THEMES_DIR,
+  THEME_PREVIEW_IMAGES_DIR,
+  THEME_PREVIEW_IMAGES_THUMBS_DIR,
+} = require('../personalization-store');
+const {
+  USER_BACKGROUNDS_DIR,
+  USER_BACKGROUND_THUMBS_DIR,
+  PRESET_BACKGROUND_THUMBS_DIR,
+  SECONDARY_USER_BACKGROUNDS_DIR,
+  SECONDARY_USER_BACKGROUND_THUMBS_DIR,
+  SECONDARY_PRESET_BACKGROUND_THUMBS_DIR,
+} = require('../background-library');
 const {
   buildManagedAlbumImagePath,
   buildUniqueAlbumImagePath,
@@ -49,17 +64,52 @@ const RESTORE_PHASES = [
   'committed',
 ];
 const APP_STATE_BACKUP_ITEMS = [
-  { zipPath: 'preferences.json', type: 'file' },
-  { zipPath: 'opacity-presets', type: 'directory' },
-  { zipPath: 'themes', type: 'directory' },
-  { zipPath: 'theme-preview-images', type: 'directory' },
-  { zipPath: 'theme-preview-images-thumbs', type: 'directory' },
-  { zipPath: 'backgrounds-user', type: 'directory' },
-  { zipPath: 'backgrounds-user-thumbs', type: 'directory' },
-  { zipPath: 'backgrounds-user-secondary', type: 'directory' },
-  { zipPath: 'backgrounds-user-secondary-thumbs', type: 'directory' },
-  { zipPath: 'background-presets-thumbs', type: 'directory' },
-  { zipPath: 'background-presets-secondary-thumbs', type: 'directory' },
+  { zipPath: 'preferences.json', type: 'file', sourcePath: PREFERENCES_PATH, targetPath: PREFERENCES_PATH },
+  { zipPath: 'opacity-presets', type: 'directory', sourcePath: OPACITY_PRESETS_DIR, targetPath: OPACITY_PRESETS_DIR },
+  { zipPath: 'themes', type: 'directory', sourcePath: THEMES_DIR, targetPath: THEMES_DIR },
+  {
+    zipPath: 'theme-preview-images',
+    type: 'directory',
+    sourcePath: THEME_PREVIEW_IMAGES_DIR,
+    targetPath: THEME_PREVIEW_IMAGES_DIR,
+  },
+  {
+    zipPath: 'theme-preview-images-thumbs',
+    type: 'directory',
+    sourcePath: THEME_PREVIEW_IMAGES_THUMBS_DIR,
+    targetPath: THEME_PREVIEW_IMAGES_THUMBS_DIR,
+  },
+  { zipPath: 'backgrounds-user', type: 'directory', sourcePath: USER_BACKGROUNDS_DIR, targetPath: USER_BACKGROUNDS_DIR },
+  {
+    zipPath: 'backgrounds-user-thumbs',
+    type: 'directory',
+    sourcePath: USER_BACKGROUND_THUMBS_DIR,
+    targetPath: USER_BACKGROUND_THUMBS_DIR,
+  },
+  {
+    zipPath: 'backgrounds-user-secondary',
+    type: 'directory',
+    sourcePath: SECONDARY_USER_BACKGROUNDS_DIR,
+    targetPath: SECONDARY_USER_BACKGROUNDS_DIR,
+  },
+  {
+    zipPath: 'backgrounds-user-secondary-thumbs',
+    type: 'directory',
+    sourcePath: SECONDARY_USER_BACKGROUND_THUMBS_DIR,
+    targetPath: SECONDARY_USER_BACKGROUND_THUMBS_DIR,
+  },
+  {
+    zipPath: 'background-presets-thumbs',
+    type: 'directory',
+    sourcePath: PRESET_BACKGROUND_THUMBS_DIR,
+    targetPath: PRESET_BACKGROUND_THUMBS_DIR,
+  },
+  {
+    zipPath: 'background-presets-secondary-thumbs',
+    type: 'directory',
+    sourcePath: SECONDARY_PRESET_BACKGROUND_THUMBS_DIR,
+    targetPath: SECONDARY_PRESET_BACKGROUND_THUMBS_DIR,
+  },
 ];
 
 router.use((req, res, next) => {
@@ -298,9 +348,9 @@ function appendBackupManifest(archive, kind, includesAppState) {
   archive.append(`${JSON.stringify(manifest, null, 2)}\n`, { name: BACKUP_MANIFEST_NAME });
 }
 
-function appendAppStateToArchive(archive, sourceRoot = DATA_DIR) {
+function appendAppStateToArchive(archive, sourceRoot = null) {
   for (const item of APP_STATE_BACKUP_ITEMS) {
-    const sourcePath = path.join(sourceRoot, item.zipPath);
+    const sourcePath = getAppStateSourcePath(item, sourceRoot);
     if (!fs.existsSync(sourcePath)) continue;
     if (item.type === 'file') {
       archive.file(sourcePath, { name: item.zipPath });
@@ -360,7 +410,7 @@ async function createBackupDownloadStaging(options = {}) {
       copyEssentialImagesToBackupStaging(stagingDir, rows);
     }
     if (includeAppState) {
-      copyAppStateItems(DATA_DIR, stagingDir);
+      copyAppStateItems(null, stagingDir);
     }
 
     return {
@@ -658,6 +708,24 @@ function resolveInside(basePath, relativePath) {
   return targetPath;
 }
 
+function assertSafeConfiguredAppStatePath(item, itemPath, label) {
+  const resolved = path.resolve(itemPath || '');
+  if (!itemPath || resolved === path.parse(resolved).root) {
+    throw new Error(`Configured app-state ${label} path for ${item.zipPath} is unsafe.`);
+  }
+  return resolved;
+}
+
+function getAppStateSourcePath(item, sourceRoot = null) {
+  if (sourceRoot) return resolveInside(sourceRoot, item.zipPath);
+  return assertSafeConfiguredAppStatePath(item, item.sourcePath, 'source');
+}
+
+function getAppStateTargetPath(item, targetRoot = null) {
+  if (targetRoot) return resolveInside(targetRoot, item.zipPath);
+  return assertSafeConfiguredAppStatePath(item, item.targetPath, 'target');
+}
+
 function readBackupManifest(zip, options = {}) {
   const entry = zip.getEntry(BACKUP_MANIFEST_NAME);
   if (!entry || entry.isDirectory) return null;
@@ -684,7 +752,7 @@ function getAppStateItemForEntry(entryName) {
 
 function clearAppStateBackupTargets() {
   for (const item of APP_STATE_BACKUP_ITEMS) {
-    const targetPath = resolveInside(DATA_DIR, item.zipPath);
+    const targetPath = getAppStateTargetPath(item);
     if (item.type === 'file') {
       if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath);
       fs.mkdirSync(path.dirname(targetPath), { recursive: true });
@@ -698,8 +766,8 @@ function clearAppStateBackupTargets() {
 function copyAppStateItems(sourceRoot, targetRoot, options = {}) {
   const { createMissingDirectories = false } = options;
   for (const item of APP_STATE_BACKUP_ITEMS) {
-    const sourcePath = resolveInside(sourceRoot, item.zipPath);
-    const targetPath = resolveInside(targetRoot, item.zipPath);
+    const sourcePath = getAppStateSourcePath(item, sourceRoot);
+    const targetPath = getAppStateTargetPath(item, targetRoot);
     if (!fs.existsSync(sourcePath)) {
       if (createMissingDirectories && item.type === 'directory') {
         fs.mkdirSync(targetPath, { recursive: true });
@@ -718,7 +786,7 @@ function copyAppStateItems(sourceRoot, targetRoot, options = {}) {
 
 function restoreAppStateRollback(rollbackDir) {
   clearAppStateBackupTargets();
-  copyAppStateItems(rollbackDir, DATA_DIR);
+  copyAppStateItems(rollbackDir, null);
 }
 
 function getAppStateEntriesToRestore(zip) {
@@ -732,12 +800,10 @@ function getAppStateEntriesToRestore(zip) {
       throw new Error(`Unsafe backup path: ${entry.entryName}`);
     }
 
-    const targetPath = resolveInside(DATA_DIR, normalized);
-    const itemRoot = resolveInside(DATA_DIR, item.zipPath);
-    if (item.type === 'file' && targetPath !== itemRoot) {
+    if (item.type === 'file' && normalized !== item.zipPath) {
       throw new Error(`Unsafe backup path: ${entry.entryName}`);
     }
-    if (item.type === 'directory' && !targetPath.startsWith(`${itemRoot}${path.sep}`)) {
+    if (item.type === 'directory' && !normalized.startsWith(`${item.zipPath}/`)) {
       throw new Error(`Unsafe backup path: ${entry.entryName}`);
     }
 
@@ -768,7 +834,7 @@ function stageAppStateFromZip(zip, stagingDir, options = {}) {
 
 function createAppStateRollback() {
   const rollbackDir = createRestoreTempDir('_restore_app_state_rollback_');
-  copyAppStateItems(DATA_DIR, rollbackDir);
+  copyAppStateItems(null, rollbackDir);
   return rollbackDir;
 }
 
@@ -776,7 +842,7 @@ function commitAppStateFromStaging(stagingDir, rollbackDir = null) {
   const ownedRollbackDir = rollbackDir || createAppStateRollback();
   try {
     clearAppStateBackupTargets();
-    copyAppStateItems(stagingDir, DATA_DIR, { createMissingDirectories: true });
+    copyAppStateItems(stagingDir, null, { createMissingDirectories: true });
   } catch (error) {
     try {
       restoreAppStateRollback(ownedRollbackDir);

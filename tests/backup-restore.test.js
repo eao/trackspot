@@ -11,11 +11,19 @@ const serverModulePaths = [
   '../server/backup-mutation-lock.js',
   '../server/welcome-tour-store.js',
   '../server/preferences-store.js',
+  '../server/personalization-store.js',
+  '../server/background-library.js',
   '../server/album-helpers.js',
   '../server/external-links.js',
   '../server/http-downloads.js',
   '../server/spotify-helpers.js',
   '../server/db.js',
+];
+const configuredPathEnvNames = [
+  'PREFERENCES_PATH',
+  'THEMES_DIR',
+  'THEME_PREVIEW_IMAGES_DIR',
+  'USER_BACKGROUNDS_DIR',
 ];
 
 const tempDirs = [];
@@ -27,10 +35,17 @@ function resetServerModules() {
   }
 }
 
-function loadBackupTestContext() {
+function clearConfiguredPathEnv() {
+  for (const envName of configuredPathEnvNames) {
+    delete process.env[envName];
+  }
+}
+
+function loadBackupTestContext(configureEnv = () => {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackspot-backup-test-'));
   tempDirs.push(dataDir);
   process.env.DATA_DIR = dataDir;
+  configureEnv(dataDir);
   resetServerModules();
 
   const dbModule = require('../server/db.js');
@@ -209,6 +224,7 @@ afterEach(async () => {
   }
 
   delete process.env.DATA_DIR;
+  clearConfiguredPathEnv();
   resetServerModules();
 
   while (tempDirs.length) {
@@ -1120,6 +1136,56 @@ describe('backup and restore', () => {
     expect(fs.readFileSync(path.join(dataDir, 'backgrounds-user-secondary-thumbs', 'secondary.jpg')).toString()).toBe('secondary-thumb');
     expect(fs.existsSync(path.join(dataDir, 'opacity-presets', 'current-only.json'))).toBe(false);
     expect(fs.existsSync(path.join(dataDir, 'backgrounds-user-thumbs', 'current-only.jpg'))).toBe(false);
+  }, 15000);
+
+  it('restores app-state files into configured target paths', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext(currentDataDir => {
+      const configuredRoot = path.join(currentDataDir, 'configured-app-state');
+      process.env.PREFERENCES_PATH = path.join(configuredRoot, 'prefs', 'custom-preferences.json');
+      process.env.THEMES_DIR = path.join(configuredRoot, 'theme-store');
+      process.env.THEME_PREVIEW_IMAGES_DIR = path.join(configuredRoot, 'theme-previews');
+      process.env.USER_BACKGROUNDS_DIR = path.join(configuredRoot, 'primary-backgrounds');
+    });
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    writeFileEnsured(process.env.PREFERENCES_PATH, JSON.stringify({ wrappedName: 'Current Configured Name' }));
+    writeFileEnsured(path.join(process.env.THEMES_DIR, 'current-theme.json'), JSON.stringify({ id: 'current-theme' }));
+    writeFileEnsured(path.join(process.env.THEME_PREVIEW_IMAGES_DIR, 'current-preview.png'), Buffer.from('current-preview'));
+    writeFileEnsured(path.join(process.env.USER_BACKGROUNDS_DIR, 'current.png'), Buffer.from('current-background'));
+    writeFileEnsured(path.join(dataDir, 'preferences.json'), JSON.stringify({ wrappedName: 'Default Name' }));
+    writeFileEnsured(path.join(dataDir, 'themes', 'default-theme.json'), JSON.stringify({ id: 'default-theme' }));
+    writeFileEnsured(path.join(dataDir, 'theme-preview-images', 'default-preview.png'), Buffer.from('default-preview'));
+    writeFileEnsured(path.join(dataDir, 'backgrounds-user', 'default.png'), Buffer.from('default-background'));
+
+    const zip = new AdmZip();
+    addFullBackupManifest(zip, backupRouter);
+    await addDatabaseSnapshot(zip, db, dataDir);
+    zip.addFile('preferences.json', Buffer.from(JSON.stringify({ wrappedName: 'Backup Configured Name' })));
+    zip.addFile('themes/backup-theme.json', Buffer.from(JSON.stringify({ id: 'backup-theme' })));
+    zip.addFile('theme-preview-images/backup-preview.png', Buffer.from('backup-preview'));
+    zip.addFile('backgrounds-user/backup.png', Buffer.from('backup-background'));
+
+    const restoreResult = await backupRouter.__private.restoreFromZip(zip);
+
+    expect(restoreResult).toMatchObject({
+      appStateRestored: true,
+      appStateFilesRestored: 4,
+    });
+    expect(JSON.parse(fs.readFileSync(process.env.PREFERENCES_PATH, 'utf8')).wrappedName).toBe('Backup Configured Name');
+    expect(fs.readFileSync(path.join(process.env.THEMES_DIR, 'backup-theme.json'), 'utf8')).toContain('backup-theme');
+    expect(fs.readFileSync(path.join(process.env.THEME_PREVIEW_IMAGES_DIR, 'backup-preview.png')).toString()).toBe('backup-preview');
+    expect(fs.readFileSync(path.join(process.env.USER_BACKGROUNDS_DIR, 'backup.png')).toString()).toBe('backup-background');
+    expect(fs.existsSync(path.join(process.env.THEMES_DIR, 'current-theme.json'))).toBe(false);
+    expect(fs.existsSync(path.join(process.env.THEME_PREVIEW_IMAGES_DIR, 'current-preview.png'))).toBe(false);
+    expect(fs.existsSync(path.join(process.env.USER_BACKGROUNDS_DIR, 'current.png'))).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, 'preferences.json'), 'utf8')).wrappedName).toBe('Default Name');
+    expect(fs.readFileSync(path.join(dataDir, 'themes', 'default-theme.json'), 'utf8')).toContain('default-theme');
+    expect(fs.readFileSync(path.join(dataDir, 'theme-preview-images', 'default-preview.png')).toString()).toBe('default-preview');
+    expect(fs.readFileSync(path.join(dataDir, 'backgrounds-user', 'default.png')).toString()).toBe('default-background');
+    expect(fs.existsSync(path.join(dataDir, 'themes', 'backup-theme.json'))).toBe(false);
+    expect(fs.existsSync(path.join(dataDir, 'theme-preview-images', 'backup-preview.png'))).toBe(false);
+    expect(fs.existsSync(path.join(dataDir, 'backgrounds-user', 'backup.png'))).toBe(false);
   }, 15000);
 
   it('preserves current app-state files when staging a full restore fails', async () => {
