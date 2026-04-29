@@ -63,6 +63,7 @@ export const state = {
   albums: [],
   albumsLoaded: false,
   albumsLoading: false,
+  albumsLoadingBlocksCollection: false,
   albumsError: null,
   albumListMeta: {
     totalCount: 0,

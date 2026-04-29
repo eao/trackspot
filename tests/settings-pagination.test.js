@@ -103,6 +103,7 @@ const resetPaginationMock = vi.fn();
 vi.mock('../public/js/render.js', () => ({
   render: renderMock,
   loadAlbums: loadAlbumsMock,
+  clearAlbumPageCache: vi.fn(),
   resetPagination: resetPaginationMock,
   openArtLightbox: vi.fn(),
 }));

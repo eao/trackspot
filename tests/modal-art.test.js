@@ -96,7 +96,7 @@ describe('modal art actions', () => {
     expect(stateMock.albums[0].image_path).toBe('images/refetched.jpg');
     expect(stateMock.albumDetailsCache[1]).toMatchObject({ image_path: 'images/refetched.jpg' });
     expect(elMock.metaArt.src).toContain('/art/images/refetched.jpg');
-    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true, invalidateCache: true });
     expect(elMock.artRefetchPreview.classList.contains('hidden')).toBe(true);
   });
 
@@ -139,7 +139,7 @@ describe('modal art actions', () => {
     expect(stateMock.albums[0].image_path).toBe('images/replaced.jpg');
     expect(stateMock.albumDetailsCache[1]).toMatchObject({ image_path: 'images/replaced.jpg' });
     expect(elMock.metaArt.src).toContain('/art/images/replaced.jpg');
-    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true, invalidateCache: true });
     expect(elMock.artRefetchPreview.classList.contains('hidden')).toBe(true);
   });
 
@@ -154,7 +154,7 @@ describe('modal art actions', () => {
     expect(stateMock.albums[0].image_path).toBeNull();
     expect(elMock.metaArt.getAttribute('src')).toBe('');
     expect(elMock.metaArt.classList.contains('hidden')).toBe(true);
-    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true, invalidateCache: true });
   });
 
   it('randomizes art and refreshes the current album page', async () => {
@@ -168,6 +168,6 @@ describe('modal art actions', () => {
     expect(stateMock.albums[0].image_path).toBe('images/random.jpg');
     expect(elMock.metaArt.src).toContain('/art/images/random.jpg');
     expect(elMock.metaArt.classList.contains('hidden')).toBe(false);
-    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true, invalidateCache: true });
   });
 });

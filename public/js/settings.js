@@ -16,7 +16,7 @@ import {
   DEFAULT_PERSONALIZATION_BACKGROUND_DISPLAY, DEFAULT_SECONDARY_PERSONALIZATION_BACKGROUND_DISPLAY,
   DEFAULT_OPACITY_PRESETS, DEFAULT_COLOR_SCHEME_PRESET_ID, COLOR_SCHEME_PRESETS, PAGE_SUGGESTED,
 } from './state.js';
-import { render, loadAlbums, resetPagination, openArtLightbox } from './render.js';
+import { render, loadAlbums, resetPagination, openArtLightbox, clearAlbumPageCache } from './render.js';
 import { escHtml } from './utils.js';
 import { waitForImageReady } from './image-ready.js';
 import { applyPreferencesToState, patchPreferences } from './preferences.js';
@@ -108,7 +108,9 @@ const EARLY_WRAPPED_FOCUSABLE_SELECTOR = [
 function invalidateAlbumDerivedState(options = {}) {
   const { clearDetails = true } = options;
   invalidateDashboardCache();
+  clearAlbumPageCache();
   state.albumsError = null;
+  state.albumsLoadingBlocksCollection = false;
   if (clearDetails) {
     state.albumDetailsCache = {};
   }
@@ -126,11 +128,12 @@ async function refreshAlbumDependentViews(options = {}) {
 
   if (reloadCollection) {
     if (activePage === 'collection') {
-      await loadAlbums({ preservePage });
+      await loadAlbums({ preservePage, invalidateCache: true });
     } else {
       await loadAlbums({
         preservePage,
         renderAlbums: () => {},
+        invalidateCache: true,
       });
     }
   } else if (activePage === 'collection') {
@@ -4250,6 +4253,7 @@ export async function handleBulkRefetchArt() {
     }
   }
 
+  clearAlbumPageCache();
   setSettingsStatus(`Done — ${fetched}/${missing.length} album${missing.length !== 1 ? 's' : ''} without art re-fetched.`);
   el.btnBulkRefetchArt.disabled = false;
   render();

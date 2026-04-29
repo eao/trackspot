@@ -6,6 +6,7 @@ const stateMock = {
   albums: [],
   albumsLoaded: false,
   albumsLoading: false,
+  albumsLoadingBlocksCollection: false,
   albumsError: null,
   albumDetailsCache: {},
   albumListMeta: {
@@ -91,6 +92,7 @@ describe('loadAlbums startup gating', () => {
     stateMock.albums = [];
     stateMock.albumsLoaded = false;
     stateMock.albumsLoading = false;
+    stateMock.albumsLoadingBlocksCollection = false;
     stateMock.albumsError = null;
     stateMock.albumDetailsCache = {};
     stateMock.complexStatuses = [];
@@ -291,6 +293,7 @@ describe('loadAlbums startup gating', () => {
     });
 
     expect(stateMock.albumsLoading).toBe(true);
+    expect(stateMock.albumsLoadingBlocksCollection).toBe(true);
     expect(renderAlbums).toHaveBeenCalledOnce();
 
     resolveRequest({
@@ -311,7 +314,140 @@ describe('loadAlbums startup gating', () => {
     await expect(loadPromise).resolves.toBe(true);
 
     expect(stateMock.albumsLoading).toBe(false);
+    expect(stateMock.albumsLoadingBlocksCollection).toBe(false);
     expect(renderAlbums).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps already loaded album pages visible during preserve-page reloads', async () => {
+    const { loadAlbums } = await import('../public/js/render.js');
+    stateMock.albumsLoaded = true;
+    stateMock.albums = [{ id: 1, album_name: 'Existing Page' }];
+    let resolveRequest;
+    apiFetchMock.mockImplementation(() => new Promise(resolve => {
+      resolveRequest = resolve;
+    }));
+    const renderAlbums = vi.fn();
+
+    const loadPromise = loadAlbums({
+      preservePage: true,
+      renderAlbums,
+      showLoading: true,
+    });
+
+    expect(stateMock.albumsLoading).toBe(true);
+    expect(stateMock.albumsLoadingBlocksCollection).toBe(false);
+    expect(stateMock.albums).toEqual([{ id: 1, album_name: 'Existing Page' }]);
+    expect(renderAlbums).toHaveBeenCalledOnce();
+
+    resolveRequest({
+      albums: [{ id: 2, album_name: 'Next Page' }],
+      meta: {
+        totalCount: 2,
+        filteredCount: 2,
+        currentPage: 2,
+        totalPages: 2,
+        startIndex: 1,
+        endIndex: 2,
+        isPaged: true,
+        perPage: 1,
+        pageCount: 1,
+        trackedListenedMs: 0,
+      },
+    });
+    await expect(loadPromise).resolves.toBe(true);
+
+    expect(stateMock.albums).toEqual([{ id: 2, album_name: 'Next Page' }]);
+    expect(stateMock.albumsLoading).toBe(false);
+    expect(stateMock.albumsLoadingBlocksCollection).toBe(false);
+    expect(renderAlbums).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves cached album pages without a second network request', async () => {
+    const { loadAlbums, clearAlbumPageCache } = await import('../public/js/render.js');
+    clearAlbumPageCache();
+    apiFetchMock.mockResolvedValue({
+      albums: [{ id: 7, album_name: 'Cached Page' }],
+      meta: {
+        totalCount: 1,
+        filteredCount: 1,
+        currentPage: 9,
+        totalPages: 1,
+        startIndex: 0,
+        endIndex: 1,
+        isPaged: false,
+        perPage: 2,
+        pageCount: 1,
+        trackedListenedMs: 0,
+      },
+    });
+
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums: vi.fn(),
+      useCache: true,
+    });
+    expect(apiFetchMock).toHaveBeenCalledOnce();
+
+    stateMock.albums = [];
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums: vi.fn(),
+      useCache: true,
+    });
+
+    expect(apiFetchMock).toHaveBeenCalledOnce();
+    expect(stateMock.albums).toEqual([{ id: 7, album_name: 'Cached Page' }]);
+  });
+
+  it('bypasses cached album pages after explicit invalidation', async () => {
+    const { loadAlbums, clearAlbumPageCache } = await import('../public/js/render.js');
+    clearAlbumPageCache();
+    apiFetchMock
+      .mockResolvedValueOnce({
+        albums: [{ id: 7, album_name: 'Cached Page' }],
+        meta: {
+          totalCount: 1,
+          filteredCount: 1,
+          currentPage: 9,
+          totalPages: 1,
+          startIndex: 0,
+          endIndex: 1,
+          isPaged: false,
+          perPage: 2,
+          pageCount: 1,
+          trackedListenedMs: 0,
+        },
+      })
+      .mockResolvedValueOnce({
+        albums: [{ id: 8, album_name: 'Fresh Page' }],
+        meta: {
+          totalCount: 1,
+          filteredCount: 1,
+          currentPage: 9,
+          totalPages: 1,
+          startIndex: 0,
+          endIndex: 1,
+          isPaged: false,
+          perPage: 2,
+          pageCount: 1,
+          trackedListenedMs: 0,
+        },
+      });
+
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums: vi.fn(),
+      useCache: true,
+    });
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums: vi.fn(),
+      useCache: true,
+      invalidateCache: true,
+    });
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(2);
+    expect(stateMock.albums).toEqual([{ id: 8, album_name: 'Fresh Page' }]);
   });
 
   it('scrolls to the top when requested for pagination navigation loads', async () => {

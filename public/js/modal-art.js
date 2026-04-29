@@ -40,7 +40,7 @@ export async function handleRefetchArt() {
       const idx = state.albums.findIndex(a => a.id === album.id);
       if (idx !== -1) state.albums[idx] = { ...state.albums[idx], ...result };
       state.albumDetailsCache[album.id] = { ...album, ...result };
-      await loadAlbums({ preservePage: true });
+      await loadAlbums({ preservePage: true, invalidateCache: true });
       el.metaArt.src = artUrl(result.image_path) || '';
     } else {
       // Show comparison popup.
@@ -78,7 +78,7 @@ export async function handleArtRefetchReplace() {
     if (idx !== -1) state.albums[idx] = updated;
     state.albumDetailsCache[state.modal.albumId] = updated;
     el.metaArt.src = artUrl(updated.image_path) || '';
-    await loadAlbums({ preservePage: true });
+    await loadAlbums({ preservePage: true, invalidateCache: true });
   } catch (e) {
     showError(e.message);
   } finally {
@@ -95,7 +95,7 @@ export async function handleDeleteArt() {
     state.albumDetailsCache[state.modal.albumId] = updated;
     el.metaArt.src = '';
     el.metaArt.classList.add('hidden');
-    await loadAlbums({ preservePage: true });
+    await loadAlbums({ preservePage: true, invalidateCache: true });
   } catch (e) {
     showError(e.message);
   }
@@ -110,7 +110,7 @@ export async function handleRandomArt() {
     state.albumDetailsCache[state.modal.albumId] = updated;
     el.metaArt.src = artUrl(updated.image_path) || '';
     el.metaArt.classList.toggle('hidden', !updated.image_path);
-    await loadAlbums({ preservePage: true });
+    await loadAlbums({ preservePage: true, invalidateCache: true });
   } catch (e) {
     showError(e.message);
   }

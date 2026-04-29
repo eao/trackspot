@@ -751,7 +751,7 @@ export async function handleSaveNew() {
     clearPendingUploadedArtReference(pendingImagePath);
     invalidateDashboardCache();
     resetPagination();
-    await loadAlbums();
+    await loadAlbums({ invalidateCache: true });
     closeModal({ force: true });
 
   } catch (e) {
@@ -974,7 +974,7 @@ export async function handleSaveEdit() {
     })));
     clearPendingUploadedArtReference(pendingImagePath);
     invalidateDashboardCache();
-    await loadAlbums({ preservePage: true });
+    await loadAlbums({ preservePage: true, invalidateCache: true });
     closeModal({ force: true });
 
   } catch (e) {
@@ -1051,7 +1051,7 @@ export async function handleDeleteConfirm() {
     await apiFetch(`/api/albums/${id}`, { method: 'DELETE' });
     removeAlbumDetails(id);
     invalidateDashboardCache();
-    await loadAlbums({ preservePage: true });
+    await loadAlbums({ preservePage: true, invalidateCache: true });
     closeDeleteConfirm({ restoreFocus: false });
     closeModal({ force: true });
 

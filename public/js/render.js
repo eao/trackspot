@@ -31,11 +31,58 @@ const ART_LIGHTBOX_OPEN_MOTION_DURATION_MS = 450;
 const ART_LIGHTBOX_CLOSE_FADE_DURATION_MS = 200;
 const ART_LIGHTBOX_CLOSE_MOTION_DURATION_MS = 300;
 const ART_LIGHTBOX_CLOSE_FALLBACK_MOTION_DURATION_MS = 300;
+const ALBUM_PAGE_CACHE_MAX_ENTRIES = 60;
 let listResponsiveResizeObserver = null;
 let latestAlbumLoadRequestId = 0;
+const albumPageCache = new Map();
+let albumPageCacheEpoch = 0;
 
 function getCurrentCollectionView() {
   return state.navigation?.collectionView || state.view || 'list';
+}
+
+function cloneAlbumForPageCache(album) {
+  return {
+    ...album,
+    artists: Array.isArray(album.artists)
+      ? album.artists.map(artist => (artist && typeof artist === 'object' ? { ...artist } : artist))
+      : album.artists,
+  };
+}
+
+function cloneAlbumPageData(pageData) {
+  return {
+    albums: Array.isArray(pageData?.albums) ? pageData.albums.map(cloneAlbumForPageCache) : [],
+    meta: { ...getDefaultAlbumListMeta(), ...(pageData?.meta ?? {}) },
+  };
+}
+
+function getAlbumPageCacheKey(params) {
+  return params.toString();
+}
+
+function rememberAlbumPageCacheEntry(key, pageData) {
+  if (!key) return;
+  if (albumPageCache.has(key)) {
+    albumPageCache.delete(key);
+  }
+  albumPageCache.set(key, cloneAlbumPageData(pageData));
+  while (albumPageCache.size > ALBUM_PAGE_CACHE_MAX_ENTRIES) {
+    albumPageCache.delete(albumPageCache.keys().next().value);
+  }
+}
+
+function readAlbumPageCacheEntry(key) {
+  const cached = albumPageCache.get(key);
+  if (!cached) return null;
+  albumPageCache.delete(key);
+  albumPageCache.set(key, cached);
+  return cloneAlbumPageData(cached);
+}
+
+export function clearAlbumPageCache() {
+  albumPageCacheEpoch += 1;
+  albumPageCache.clear();
 }
 
 function isCollectionPageActive() {
@@ -788,8 +835,8 @@ export function resetPagination() {
   state.pagination.currentPage = 1;
 }
 
-function getActivePerPage() {
-  return state.pagination.perPage.list;
+function getActivePerPage(view = getCurrentCollectionView()) {
+  return state.pagination.perPage[view] ?? state.pagination.perPage.list;
 }
 
 function getDefaultAlbumListMeta() {
@@ -810,9 +857,11 @@ function getDefaultAlbumListMeta() {
 export function clearAlbumResults(options = {}) {
   const { loading = false } = options;
 
+  clearAlbumPageCache();
   state.albums = [];
   state.albumsLoaded = false;
   state.albumsLoading = loading;
+  state.albumsLoadingBlocksCollection = loading;
   state.albumsError = null;
   state.albumListMeta = getDefaultAlbumListMeta();
 }
@@ -874,10 +923,11 @@ function updatePageControls(meta) {
   el.pageControlFirst.classList.toggle('hidden', !showFirstLast);
   el.pageControlLast.classList.toggle('hidden', !showFirstLast);
 
-  el.pageControlFirst.disabled = meta.currentPage <= 1;
-  el.pageControlPrev.disabled = meta.currentPage <= 1;
-  el.pageControlNext.disabled = meta.currentPage >= meta.totalPages;
-  el.pageControlLast.disabled = meta.currentPage >= meta.totalPages;
+  const controlsDisabled = !!state.albumsLoading;
+  el.pageControlFirst.disabled = controlsDisabled || meta.currentPage <= 1;
+  el.pageControlPrev.disabled = controlsDisabled || meta.currentPage <= 1;
+  el.pageControlNext.disabled = controlsDisabled || meta.currentPage >= meta.totalPages;
+  el.pageControlLast.disabled = controlsDisabled || meta.currentPage >= meta.totalPages;
 }
 
 function renderList(albums, startIndex = 0, options = {}) {
@@ -1176,10 +1226,11 @@ export function render() {
   const pageAlbums = state.albums;
   const collectionView = getCurrentCollectionView();
   const isLoading = isCollectionPage && state.albumsLoading;
+  const isBlockingLoading = isLoading && state.albumsLoadingBlocksCollection;
   const hasError = isCollectionPage && !!state.albumsError;
   el.pageCollection?.setAttribute('aria-busy', isLoading ? 'true' : 'false');
 
-  if (isCollectionPage && !hasError) {
+  if (isCollectionPage && !hasError && !isBlockingLoading) {
     const startupAnimatedView = _initialRender ? collectionView : null;
     const consumedListStartup = renderList(pageAlbums, meta.startIndex, {
       animateIn: startupAnimatedView === 'list',
@@ -1193,18 +1244,18 @@ export function render() {
   }
 
   const isEmpty = isCollectionPage && state.albumsLoaded && meta.filteredCount === 0;
-  const showEmptyState = hasError || isEmpty || isLoading;
+  const showEmptyState = hasError || isEmpty || isBlockingLoading;
   const emptyStateMessage = el.emptyState.querySelector('p');
   if (emptyStateMessage) {
     emptyStateMessage.textContent = hasError
       ? `Failed to load albums. ${state.albumsError}`
-      : isLoading
+      : isBlockingLoading
         ? 'Loading albums...'
         : meta.totalCount === 0
           ? 'No albums logged yet.'
           : 'No albums match your filters.';
   }
-  syncEmptyStateActions({ hasError, isLoading, totalCount: meta.totalCount });
+  syncEmptyStateActions({ hasError, isLoading: isBlockingLoading, totalCount: meta.totalCount });
   el.emptyState.classList.toggle('hidden', !showEmptyState);
   el.viewList.classList.toggle('hidden', !isCollectionPage || showEmptyState || collectionView !== 'list');
   el.viewGrid.classList.toggle('hidden', !isCollectionPage || showEmptyState || collectionView !== 'grid');
@@ -1215,7 +1266,7 @@ export function render() {
 
   if (hasError) {
     el.albumCount.textContent = 'Failed to load albums.';
-  } else if (isLoading) {
+  } else if (isBlockingLoading) {
     el.albumCount.textContent = 'Loading albums...';
   } else {
     const total = meta.totalCount;
@@ -1223,7 +1274,8 @@ export function render() {
     const pageShown = pageAlbums.length;
     const baseCount = `Showing ${shown}/${total} album${total !== 1 ? 's' : ''}`;
     const pageLine = meta.isPaged ? `page ${meta.currentPage} of ${meta.totalPages}, showing ${pageShown}` : '';
-    el.albumCount.textContent = pageLine ? `${baseCount}\n${pageLine}` : baseCount;
+    const countText = pageLine ? `${baseCount}\n${pageLine}` : baseCount;
+    el.albumCount.textContent = isLoading ? `${countText}\nUpdating...` : countText;
   }
 
   syncHeaderTooltip();
@@ -1235,28 +1287,7 @@ export function render() {
 // Fetches the current album page from the server using the active filter,
 // sort, and pagination state.
 
-export async function loadAlbums(options = {}) {
-  const {
-    gateStartupArt = false,
-    preloadVisibleAlbumArt = preloadInitialVisibleAlbumArt,
-    renderAlbums = render,
-    preservePage = false,
-    scrollToTop = false,
-    showLoading = renderAlbums === render,
-  } = options;
-
-  if (!preservePage) {
-    resetPagination();
-  }
-
-  if (scrollToTop) {
-    window.scrollTo({
-      top: 0,
-      left: 0,
-      behavior: 'auto',
-    });
-  }
-
+function buildAlbumListParams(page = state.pagination.currentPage) {
   const statusFilter = state.filters.statusFilter;
   const complexStatus = state.complexStatuses.find(item => item.id === statusFilter);
   const statuses = complexStatus
@@ -1272,7 +1303,7 @@ export async function loadAlbums(options = {}) {
   const params = new URLSearchParams({
     sort:  state.sort.field,
     order: state.sort.order,
-    page: String(state.pagination.currentPage),
+    page: String(page),
   });
 
   if (perPage) {
@@ -1309,9 +1340,106 @@ export async function loadAlbums(options = {}) {
     params.set('types', allowedTypes.join(','));
   }
   params.set('include_other', state.filters.typeOther ? '1' : '0');
+  return params;
+}
+
+function applyAlbumPageData(pageData, renderAlbums) {
+  state.albums = pageData.albums;
+  state.albums.forEach(album => {
+    state.albumDetailsCache[album.id] = album;
+  });
+  state.albumListMeta = pageData.meta;
+  state.pagination.currentPage = state.albumListMeta.currentPage;
+  state.albumsLoaded = true;
+  state.albumsLoading = false;
+  state.albumsLoadingBlocksCollection = false;
+  state.albumsError = null;
+  renderAlbums();
+}
+
+function normalizeAlbumPageResponse(response) {
+  const albums = Array.isArray(response) ? response : response.albums;
+  const meta = Array.isArray(response) ? getDefaultAlbumListMeta() : (response.meta ?? getDefaultAlbumListMeta());
+  return {
+    albums: normalizeAlbumCollectionClientShape(albums),
+    meta: { ...getDefaultAlbumListMeta(), ...meta },
+  };
+}
+
+async function prefetchAlbumPage(page) {
+  const params = buildAlbumListParams(page);
+  const cacheKey = getAlbumPageCacheKey(params);
+  if (albumPageCache.has(cacheKey)) return;
+  const cacheEpoch = albumPageCacheEpoch;
+
+  try {
+    const response = await apiFetch(`/api/albums?${params}`);
+    if (cacheEpoch !== albumPageCacheEpoch) return;
+    rememberAlbumPageCacheEntry(cacheKey, normalizeAlbumPageResponse(response));
+  } catch {
+    // Prefetch is opportunistic; visible loads will surface any real error.
+  }
+}
+
+function prefetchNeighborAlbumPages(meta) {
+  if (!meta?.isPaged || state.albumsLoading) return;
+  const currentPage = Number.parseInt(String(meta.currentPage), 10);
+  const totalPages = Number.parseInt(String(meta.totalPages), 10);
+  if (!Number.isFinite(currentPage) || !Number.isFinite(totalPages)) return;
+
+  if (currentPage < totalPages) {
+    void prefetchAlbumPage(currentPage + 1);
+  }
+  if (currentPage > 1) {
+    void prefetchAlbumPage(currentPage - 1);
+  }
+}
+
+export async function loadAlbums(options = {}) {
+  const {
+    gateStartupArt = false,
+    preloadVisibleAlbumArt = preloadInitialVisibleAlbumArt,
+    renderAlbums = render,
+    preservePage = false,
+    scrollToTop = false,
+    showLoading = renderAlbums === render,
+    blockDuringLoading = !preservePage || !state.albumsLoaded,
+    useCache = renderAlbums === render,
+    invalidateCache = false,
+  } = options;
+
+  if (invalidateCache) {
+    clearAlbumPageCache();
+  }
+
+  if (!preservePage) {
+    resetPagination();
+  }
+
+  if (scrollToTop) {
+    window.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: 'auto',
+    });
+  }
+
+  const params = buildAlbumListParams();
+  const cacheKey = getAlbumPageCacheKey(params);
   const requestId = ++latestAlbumLoadRequestId;
+
+  if (useCache) {
+    const cachedPage = readAlbumPageCacheEntry(cacheKey);
+    if (cachedPage) {
+      applyAlbumPageData(cachedPage, renderAlbums);
+      prefetchNeighborAlbumPages(cachedPage.meta);
+      return true;
+    }
+  }
+
   state.albumsError = null;
   state.albumsLoading = true;
+  state.albumsLoadingBlocksCollection = !!blockDuringLoading;
   if (showLoading) {
     renderAlbums();
   }
@@ -1320,30 +1448,29 @@ export async function loadAlbums(options = {}) {
     const response = await apiFetch(`/api/albums?${params}`);
     if (requestId !== latestAlbumLoadRequestId) return false;
 
-    const albums = Array.isArray(response) ? response : response.albums;
-    const meta = Array.isArray(response) ? getDefaultAlbumListMeta() : (response.meta ?? getDefaultAlbumListMeta());
-    const normalizedAlbums = normalizeAlbumCollectionClientShape(albums);
-    const nextAlbumListMeta = { ...getDefaultAlbumListMeta(), ...meta };
+    const pageData = normalizeAlbumPageResponse(response);
 
     if (gateStartupArt) {
-      await preloadVisibleAlbumArt(normalizedAlbums);
+      await preloadVisibleAlbumArt(pageData.albums);
       if (requestId !== latestAlbumLoadRequestId) return false;
     }
 
-    state.albums = normalizedAlbums;
-    state.albums.forEach(album => {
-      state.albumDetailsCache[album.id] = album;
-    });
-    state.albumListMeta = nextAlbumListMeta;
-    state.pagination.currentPage = state.albumListMeta.currentPage;
-    state.albumsLoaded = true;
-    state.albumsLoading = false;
-    state.albumsError = null;
-    renderAlbums();
+    if (useCache) {
+      rememberAlbumPageCacheEntry(cacheKey, pageData);
+      if (pageData.meta.currentPage !== state.pagination.currentPage) {
+        const canonicalParams = buildAlbumListParams(pageData.meta.currentPage);
+        rememberAlbumPageCacheEntry(getAlbumPageCacheKey(canonicalParams), pageData);
+      }
+    }
+    applyAlbumPageData(pageData, renderAlbums);
+    if (useCache) {
+      prefetchNeighborAlbumPages(pageData.meta);
+    }
     return true;
   } catch (e) {
     if (requestId !== latestAlbumLoadRequestId) return false;
     state.albumsLoading = false;
+    state.albumsLoadingBlocksCollection = false;
     state.albumsError = e?.message || String(e);
     console.error('Failed to load albums:', e);
     renderAlbums();

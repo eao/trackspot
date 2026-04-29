@@ -99,6 +99,7 @@ vi.mock('../public/js/state.js', () => ({
 vi.mock('../public/js/render.js', () => ({
   render: vi.fn(),
   loadAlbums: vi.fn(),
+  clearAlbumPageCache: vi.fn(),
   resetPagination: vi.fn(),
   openArtLightbox: vi.fn(),
 }));

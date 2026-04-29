@@ -53,6 +53,7 @@ const stateMock = {
   albums: [],
   albumsLoaded: true,
   albumsLoading: false,
+  albumsLoadingBlocksCollection: false,
   albumsError: null,
   albumListMeta: null,
   filters: {
@@ -214,6 +215,7 @@ describe('list view responsive layout stages', () => {
     stateMock.view = 'list';
     stateMock.albumsLoaded = true;
     stateMock.albumsLoading = false;
+    stateMock.albumsLoadingBlocksCollection = false;
     stateMock.albumsError = null;
     stateMock.albumListMeta = null;
     stateMock.albums = [
@@ -558,6 +560,32 @@ describe('list view responsive layout stages', () => {
     expect(emptyStateEl.querySelector('p')?.textContent).toBe('Failed to load albums. Network down.');
     expect(emptyStateEl.classList.contains('hidden')).toBe(false);
     expect(viewGridEl.classList.contains('hidden')).toBe(true);
+  });
+
+  it('keeps the active collection visible during background page loads', async () => {
+    const { render } = await import('../public/js/render.js');
+    emptyStateEl.innerHTML = '<p></p>';
+    stateMock.albumsLoading = true;
+    stateMock.albumsLoadingBlocksCollection = false;
+    stateMock.albumListMeta = {
+      totalCount: 4,
+      filteredCount: 4,
+      currentPage: 1,
+      totalPages: 2,
+      startIndex: 0,
+      endIndex: 2,
+      isPaged: true,
+      perPage: 2,
+      pageCount: 2,
+      trackedListenedMs: 0,
+    };
+
+    render();
+
+    expect(emptyStateEl.classList.contains('hidden')).toBe(true);
+    expect(viewListEl.classList.contains('hidden')).toBe(false);
+    expect(pageControlNextEl.disabled).toBe(true);
+    expect(albumCountEl.textContent).toContain('Updating...');
   });
 
   it('restores the wider desktop layout when the list grows again', async () => {

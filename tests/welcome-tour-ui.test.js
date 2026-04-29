@@ -83,6 +83,7 @@ vi.mock('../public/js/state.js', () => ({
 vi.mock('../public/js/render.js', () => ({
   render: renderMock,
   loadAlbums: loadAlbumsMock,
+  clearAlbumPageCache: vi.fn(),
 }));
 
 vi.mock('../public/js/navigation.js', () => ({
@@ -1100,7 +1101,7 @@ describe('welcome tour UI preparation', () => {
     globalThis.document.querySelector('[data-action="finish"]')?.click();
     await flushTourStep();
 
-    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true, invalidateCache: true });
     expect(globalThis.document.querySelector('#welcome-tour-overlay')).not.toBeNull();
 
     albumReload.resolve(true);

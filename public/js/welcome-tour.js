@@ -1,5 +1,5 @@
 import { apiFetch, state, DEFAULT_COMPLEX_STATUSES } from './state.js';
-import { render, loadAlbums } from './render.js';
+import { render, loadAlbums, clearAlbumPageCache } from './render.js';
 import { setPage } from './navigation.js';
 import { animateGridSidebarToggle, applyCollectionViewState, syncFilterControlsFromState, updateImportTypeFilterBtn, updateRatedFilterBtn, updateRestoreBtn, updateSortFieldBtn, updateSortOrderBtn, updateStatusFilterBtn, updateTypeFilterBtn } from './sidebar.js';
 import { openLogModal, closeModal } from './modal.js';
@@ -1310,8 +1310,9 @@ async function refreshRestoredPageAfterFinish(restoredPage, { restoreOnly, shoul
   if (restoreOnly || !shouldAddSamples) return;
 
   invalidateDashboardCache();
+  clearAlbumPageCache();
   if (restoredPage === 'collection') {
-    await loadAlbums({ preservePage: true });
+    await loadAlbums({ preservePage: true, invalidateCache: true });
     return;
   }
 

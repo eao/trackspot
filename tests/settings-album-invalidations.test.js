@@ -94,6 +94,7 @@ vi.mock('../public/js/state.js', () => ({
 vi.mock('../public/js/render.js', () => ({
   render: renderMock,
   loadAlbums: loadAlbumsMock,
+  clearAlbumPageCache: vi.fn(),
   resetPagination: vi.fn(),
   openArtLightbox: vi.fn(),
 }));
@@ -263,7 +264,7 @@ describe('settings album mutation invalidation', () => {
 
     expect(invalidateDashboardCacheMock).toHaveBeenCalledOnce();
     expect(stateMock.albumDetailsCache).toEqual({});
-    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true, invalidateCache: true });
   });
 
   it('clears album-derived state after removing welcome samples', async () => {
@@ -278,7 +279,7 @@ describe('settings album mutation invalidation', () => {
     expect(apiFetchMock).toHaveBeenCalledWith('/api/welcome-tour/samples', { method: 'DELETE' });
     expect(invalidateDashboardCacheMock).toHaveBeenCalledOnce();
     expect(stateMock.albumDetailsCache).toEqual({});
-    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true, invalidateCache: true });
   });
 
   it('refreshes the active stats dashboard after settings-side album mutations', async () => {
@@ -295,6 +296,7 @@ describe('settings album mutation invalidation', () => {
     expect(loadAlbumsMock).toHaveBeenCalledWith({
       preservePage: true,
       renderAlbums: expect.any(Function),
+      invalidateCache: true,
     });
     expect(refreshActiveDashboardPageMock).toHaveBeenCalledOnce();
     expect(renderMock).not.toHaveBeenCalled();

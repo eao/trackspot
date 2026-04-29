@@ -227,7 +227,7 @@ describe('modal save payloads', () => {
       },
     ]);
     expect(resetPaginationMock).toHaveBeenCalledOnce();
-    expect(loadAlbumsMock).toHaveBeenCalledWith();
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ invalidateCache: true });
     expect(stateMock.modal.open).toBe(false);
   });
 
@@ -265,7 +265,7 @@ describe('modal save payloads', () => {
       repeats: 3,
       priority: 4,
     });
-    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true, invalidateCache: true });
   });
 
   it('includes editable metadata and pending replacement image when editing a manual album', async () => {
@@ -296,7 +296,7 @@ describe('modal save payloads', () => {
       rating: 91,
     });
     expect(payload.artists).toHaveLength(2);
-    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true });
+    expect(loadAlbumsMock).toHaveBeenCalledWith({ preservePage: true, invalidateCache: true });
   });
 
   it('keeps the modal open and restores controls when a save fails', async () => {

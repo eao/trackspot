@@ -375,6 +375,7 @@ const DEFAULT_OPACITY_PRESET_RESPONSE = {
 vi.mock('../public/js/render.js', () => ({
   render: vi.fn(),
   loadAlbums: vi.fn(),
+  clearAlbumPageCache: vi.fn(),
   resetPagination: vi.fn(),
   openArtLightbox: vi.fn(),
 }));
