@@ -26,6 +26,7 @@ describe('HTTP download size limits', () => {
   it('only allows HTTPS Spotify image CDN URLs for album art fetches', async () => {
     expect(isAllowedSpotifyImageUrl('https://i.scdn.co/image/cover')).toBe(true);
     expect(isAllowedSpotifyImageUrl('https://image-cdn-ak.spotifycdn.com/image/cover')).toBe(true);
+    expect(isAllowedSpotifyImageUrl('https://image-cdn-fa.spotifycdn.com/image/cover')).toBe(true);
     expect(isAllowedSpotifyImageUrl('http://i.scdn.co/image/cover')).toBe(false);
     expect(isAllowedSpotifyImageUrl('https://127.0.0.1/image/cover')).toBe(false);
     expect(isAllowedSpotifyImageUrl('https://example.test/image/cover')).toBe(false);
@@ -44,8 +45,46 @@ describe('HTTP download size limits', () => {
 
     expect(fetchSpy).toHaveBeenCalledWith(
       'https://i.scdn.co/image/cover',
-      expect.objectContaining({ signal: expect.any(Object) }),
+      expect.objectContaining({ redirect: 'manual', signal: expect.any(Object) }),
     );
+  });
+
+  it('follows allowed album art redirects after validating each hop', async () => {
+    const redirectResponse = {
+      ok: false,
+      status: 302,
+      headers: { get: vi.fn(() => 'https://image-cdn-fa.spotifycdn.com/image/cover') },
+    };
+    const finalResponse = { ok: true, status: 200 };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(redirectResponse)
+      .mockResolvedValueOnce(finalResponse);
+
+    await expect(fetchSpotifyImage('https://i.scdn.co/image/cover')).resolves.toBe(finalResponse);
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      'https://i.scdn.co/image/cover',
+      expect.objectContaining({ redirect: 'manual', signal: expect.any(Object) }),
+    );
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      'https://image-cdn-fa.spotifycdn.com/image/cover',
+      expect.objectContaining({ redirect: 'manual', signal: expect.any(Object) }),
+    );
+  });
+
+  it('rejects album art redirects to non-Spotify hosts before fetching the target', async () => {
+    const redirectResponse = {
+      ok: false,
+      status: 302,
+      headers: { get: vi.fn(() => 'https://127.0.0.1/image/cover') },
+    };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(redirectResponse);
+
+    await expect(fetchSpotifyImage('https://i.scdn.co/image/cover'))
+      .rejects.toThrow(/redirect.*Spotify image URL/i);
+    expect(fetchSpy).toHaveBeenCalledOnce();
   });
 
   it('rejects oversized content-length before reading the response body', async () => {

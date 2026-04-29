@@ -1,9 +1,12 @@
 const DEFAULT_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 15000;
+const DEFAULT_MAX_REDIRECTS = 5;
+const REDIRECT_STATUSES = Object.freeze(new Set([301, 302, 303, 307, 308]));
 const ALLOWED_SPOTIFY_IMAGE_HOSTS = Object.freeze(new Set([
   'i.scdn.co',
   'mosaic.scdn.co',
   'image-cdn-ak.spotifycdn.com',
+  'image-cdn-fa.spotifycdn.com',
 ]));
 
 function parseDownloadUrl(value) {
@@ -31,15 +34,50 @@ function createTimeoutSignal(timeoutMs = DEFAULT_DOWNLOAD_TIMEOUT_MS) {
   return AbortSignal.timeout(timeoutMs);
 }
 
+function parseMaxRedirects(value = DEFAULT_MAX_REDIRECTS) {
+  return Number.isInteger(value) && value >= 0 ? value : DEFAULT_MAX_REDIRECTS;
+}
+
+function resolveRedirectUrl(location, baseUrl) {
+  if (!location) return null;
+  try {
+    return new URL(String(location), baseUrl).href;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchSpotifyImage(imageUrl, options = {}) {
   assertAllowedSpotifyImageUrl(imageUrl);
-  const response = await fetch(imageUrl, {
-    signal: options.signal ?? createTimeoutSignal(options.timeoutMs),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to download album art: ${response.status}`);
+  const signal = options.signal ?? createTimeoutSignal(options.timeoutMs);
+  const maxRedirects = parseMaxRedirects(options.maxRedirects);
+  let currentUrl = String(imageUrl);
+
+  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+    const response = await fetch(currentUrl, {
+      redirect: 'manual',
+      signal,
+    });
+
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      if (!response.ok) {
+        throw new Error(`Failed to download album art: ${response.status}`);
+      }
+      return response;
+    }
+
+    if (redirectCount >= maxRedirects) {
+      throw new Error('Failed to download album art: too many redirects.');
+    }
+
+    const nextUrl = resolveRedirectUrl(response.headers?.get?.('location'), currentUrl);
+    if (!isAllowedSpotifyImageUrl(nextUrl)) {
+      throw new Error('Album art redirect must remain on an HTTPS Spotify image URL.');
+    }
+    currentUrl = nextUrl;
   }
-  return response;
+
+  throw new Error('Failed to download album art: too many redirects.');
 }
 
 function parseContentLength(value) {
@@ -88,6 +126,7 @@ async function responseToBufferWithLimit(response, options = {}) {
 
 module.exports = {
   DEFAULT_DOWNLOAD_TIMEOUT_MS,
+  DEFAULT_MAX_REDIRECTS,
   DEFAULT_MAX_DOWNLOAD_BYTES,
   assertAllowedSpotifyImageUrl,
   fetchSpotifyImage,
