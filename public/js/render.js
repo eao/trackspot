@@ -85,6 +85,11 @@ export function clearAlbumPageCache() {
   albumPageCache.clear();
 }
 
+function getAlbumPageRevision(pageData) {
+  const revision = pageData?.meta?.revision;
+  return typeof revision === 'string' && revision ? revision : null;
+}
+
 function isCollectionPageActive() {
   return (state.navigation?.page || 'collection') === 'collection';
 }
@@ -1395,6 +1400,36 @@ function prefetchNeighborAlbumPages(meta) {
   }
 }
 
+async function revalidateCachedAlbumPage({
+  cacheEpoch,
+  requestId,
+  revision,
+  renderAlbums,
+}) {
+  if (!revision) return;
+
+  try {
+    const response = await apiFetch('/api/albums/revision');
+    if (
+      cacheEpoch !== albumPageCacheEpoch
+      || requestId !== latestAlbumLoadRequestId
+      || response?.revision === revision
+    ) {
+      return;
+    }
+
+    clearAlbumPageCache();
+    if (requestId !== latestAlbumLoadRequestId) return;
+    void loadAlbums({
+      preservePage: true,
+      renderAlbums,
+      invalidateCache: true,
+    });
+  } catch {
+    // Keep cached navigation instant; the next visible load will surface errors.
+  }
+}
+
 export async function loadAlbums(options = {}) {
   const {
     gateStartupArt = false,
@@ -1431,8 +1466,15 @@ export async function loadAlbums(options = {}) {
   if (useCache) {
     const cachedPage = readAlbumPageCacheEntry(cacheKey);
     if (cachedPage) {
+      const cacheEpoch = albumPageCacheEpoch;
       applyAlbumPageData(cachedPage, renderAlbums);
       prefetchNeighborAlbumPages(cachedPage.meta);
+      void revalidateCachedAlbumPage({
+        cacheEpoch,
+        requestId,
+        revision: getAlbumPageRevision(cachedPage),
+        renderAlbums,
+      });
       return true;
     }
   }

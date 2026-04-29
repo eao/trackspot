@@ -162,6 +162,10 @@ describe('loadAlbums startup gating', () => {
     return new URL(path, 'http://trackspot.test').searchParams;
   }
 
+  function flushPromises() {
+    return new Promise(resolve => setTimeout(resolve, 0));
+  }
+
   it('waits for startup art gating before rendering on initial load', async () => {
     const { loadAlbums } = await import('../public/js/render.js');
     apiFetchMock.mockResolvedValue({
@@ -362,24 +366,27 @@ describe('loadAlbums startup gating', () => {
     expect(renderAlbums).toHaveBeenCalledTimes(2);
   });
 
-  it('serves cached album pages without a second network request', async () => {
+  it('serves cached album pages without a second album-page request when the revision matches', async () => {
     const { loadAlbums, clearAlbumPageCache } = await import('../public/js/render.js');
     clearAlbumPageCache();
-    apiFetchMock.mockResolvedValue({
-      albums: [{ id: 7, album_name: 'Cached Page' }],
-      meta: {
-        totalCount: 1,
-        filteredCount: 1,
-        currentPage: 9,
-        totalPages: 1,
-        startIndex: 0,
-        endIndex: 1,
-        isPaged: false,
-        perPage: 2,
-        pageCount: 1,
-        trackedListenedMs: 0,
-      },
-    });
+    apiFetchMock
+      .mockResolvedValueOnce({
+        albums: [{ id: 7, album_name: 'Cached Page' }],
+        meta: {
+          totalCount: 1,
+          filteredCount: 1,
+          currentPage: 9,
+          totalPages: 1,
+          startIndex: 0,
+          endIndex: 1,
+          isPaged: false,
+          perPage: 2,
+          pageCount: 1,
+          trackedListenedMs: 0,
+          revision: 'rev-1',
+        },
+      })
+      .mockResolvedValueOnce({ revision: 'rev-1' });
 
     await loadAlbums({
       preservePage: true,
@@ -395,8 +402,78 @@ describe('loadAlbums startup gating', () => {
       useCache: true,
     });
 
-    expect(apiFetchMock).toHaveBeenCalledOnce();
+    expect(apiFetchMock).toHaveBeenCalledTimes(2);
+    expect(apiFetchMock.mock.calls.map(call => call[0])).toEqual([
+      '/api/albums?sort=date_logged&order=desc&page=9&per_page=2&types=ALBUM%2CEP%2CSINGLE%2CCOMPILATION&include_other=1',
+      '/api/albums/revision',
+    ]);
     expect(stateMock.albums).toEqual([{ id: 7, album_name: 'Cached Page' }]);
+  });
+
+  it('refreshes a cached album page in the background when the server revision changes', async () => {
+    const { loadAlbums, clearAlbumPageCache } = await import('../public/js/render.js');
+    clearAlbumPageCache();
+    const renderAlbums = vi.fn();
+    apiFetchMock
+      .mockResolvedValueOnce({
+        albums: [{ id: 7, album_name: 'Cached Page' }],
+        meta: {
+          totalCount: 1,
+          filteredCount: 1,
+          currentPage: 9,
+          totalPages: 1,
+          startIndex: 0,
+          endIndex: 1,
+          isPaged: false,
+          perPage: 2,
+          pageCount: 1,
+          trackedListenedMs: 0,
+          revision: 'rev-1',
+        },
+      })
+      .mockResolvedValueOnce({ revision: 'rev-2' })
+      .mockResolvedValueOnce({
+        albums: [{ id: 8, album_name: 'Fresh Page' }],
+        meta: {
+          totalCount: 1,
+          filteredCount: 1,
+          currentPage: 9,
+          totalPages: 1,
+          startIndex: 0,
+          endIndex: 1,
+          isPaged: false,
+          perPage: 2,
+          pageCount: 1,
+          trackedListenedMs: 0,
+          revision: 'rev-2',
+        },
+      });
+
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums,
+      useCache: true,
+    });
+    stateMock.albums = [];
+    await loadAlbums({
+      preservePage: true,
+      renderAlbums,
+      useCache: true,
+    });
+
+    expect(stateMock.albums).toEqual([{ id: 7, album_name: 'Cached Page' }]);
+    expect(renderAlbums).toHaveBeenCalledTimes(2);
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(apiFetchMock.mock.calls.map(call => call[0])).toEqual([
+      '/api/albums?sort=date_logged&order=desc&page=9&per_page=2&types=ALBUM%2CEP%2CSINGLE%2CCOMPILATION&include_other=1',
+      '/api/albums/revision',
+      '/api/albums?sort=date_logged&order=desc&page=9&per_page=2&types=ALBUM%2CEP%2CSINGLE%2CCOMPILATION&include_other=1',
+    ]);
+    expect(stateMock.albums).toEqual([{ id: 8, album_name: 'Fresh Page' }]);
+    expect(renderAlbums).toHaveBeenCalledTimes(3);
   });
 
   it('bypasses cached album pages after explicit invalidation', async () => {
