@@ -4,6 +4,22 @@ Trackspot is a local-first album tracking app for Spotify users. It runs as a sm
 
 Use it to keep a personal album collection, import albums from Spotify, browse your listening backlog, and customize the app with local themes and backgrounds. Trackspot stores its runtime data on your machine and is designed for local or trusted-network use.
 
+## Installation on Windows
+
+Install [Node.js](https://nodejs.org/en/download#:~:text=Or%20get%20a%20prebuilt%20Node%2Ejs,architecture%2E). It will be easiest to download and run the Windows Installer (.msi). You may need to restart your computer afterward.
+
+![Windows Node download](readme-files/windows-node-download.png)
+
+Clone the repo if you know how, or, download the code as a ZIP file and extract it to where you want Trackspot to live.
+
+![Windows zip download](readme-files/windows-zip-download.png)
+
+insert further instructions here
+
+Trackspot should now be running on port 1060. Connect at `http://localhost:1060` in your browser. Keep the PowerShell window open while you use Trackspot, and press `Ctrl+C` in PowerShell when you want to stop the server.
+
+If Windows asks whether Node.js can access the network, allow it for private networks.
+
 ## Installation on Linux
 
 Install [Node.js](https://nodejs.org/en/download). Trackspot supports `>=20.19 <26` and was tested with v24 LTS.
@@ -41,16 +57,6 @@ brew install git node
 ```
 
 Then clone the repository, run `npm install`, and start the server with `npm start` as shown above.
-
-## Installation on Windows
-
-Install [Node.js](https://nodejs.org/en/download#:~:text=Or%20get%20a%20prebuilt%20Node%2Ejs,architecture%2E). It will be easiest to download and run the Windows Installer (.msi). You may need to restart your computer afterward.
-
-
-
-Trackspot should now be running on port 1060. Connect at `http://localhost:1060` in your browser. Keep the PowerShell window open while you use Trackspot, and press `Ctrl+C` in PowerShell when you want to stop the server.
-
-If Windows asks whether Node.js can access the network, allow it for private networks.
 
 ## Spicetify Extension
 
