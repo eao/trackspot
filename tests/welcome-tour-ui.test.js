@@ -1050,6 +1050,14 @@ describe('welcome tour UI preparation', () => {
     await flushTourStep();
 
     expect(globalThis.document.querySelector('.welcome-tour-card h2')?.textContent).toBe('Spicetify Setup');
+    expect(globalThis.document.querySelector('.welcome-tour-kicker')?.textContent).toBe('Step 20/20');
+    expect(globalThis.document.querySelector('.welcome-tour-card p')?.textContent).toContain(
+      'Trackspot is most useful when used with its Spicetify extension.',
+    );
+    expect(Array.from(globalThis.document.querySelectorAll('.welcome-tour-card p a')).map(link => link.href)).toEqual([
+      'https://spicetify.app/#install',
+      'https://github.com/eao/trackspot#spicetify-extension',
+    ]);
     expect(globalThis.document.querySelector('[data-action="samples"]')).toBeNull();
     expect(globalThis.document.querySelector('[data-action="finish"]')).not.toBeNull();
   });

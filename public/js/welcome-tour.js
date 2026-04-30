@@ -305,7 +305,7 @@ const TOUR_STEPS = [
   {
     id: 'spicetify',
     title: 'Spicetify Setup',
-    body: 'Insert Spicetify extension call to action here.',
+    body: 'Trackspot is most useful when used with its Spicetify extension. Install Spicetify for Spotify <a href="https://spicetify.app/#install" target="_blank" rel="noopener noreferrer">here</a>, then install the Trackspot extension from the Spicetify Marketplace.<br><br>For more detailed instructions, see the GitHub repo <a href="https://github.com/eao/trackspot#spicetify-extension" target="_blank" rel="noopener noreferrer">here</a>.',
     placement: 'center',
     final: true,
     effect: prepareCollectionList,
@@ -1001,7 +1001,7 @@ function renderStepFailure(step, message) {
 }
 
 function renderStep(step) {
-  const progress = `${currentStepIndex + 1} / ${TOUR_STEPS.length}`;
+  const progress = `${currentStepIndex + 1}/${TOUR_STEPS.length}`;
   const sampleCount = statusCache?.sampleCount ?? state.welcomeTour.sampleCount ?? 0;
   const alreadyAdded = sampleCount > 0;
   const sampleWarning = alreadyAdded
@@ -1030,7 +1030,7 @@ function renderStep(step) {
   positionHighlights(null);
   card.className = 'welcome-tour-card';
   card.innerHTML = `
-    <div class="welcome-tour-kicker">${step.final ? 'Finish tour' : `Step ${progress}`}</div>
+    <div class="welcome-tour-kicker">Step ${progress}</div>
     <h2>${step.title}</h2>
     <p>${step.body}</p>
     ${step.final ? finalStepActions : (step.choice ? choiceStepActions : normalActions)}
