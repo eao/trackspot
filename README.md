@@ -1,13 +1,13 @@
-## ![Trackspot](readme-files/trackspot-banner.png)
+## <img src="readme-files/trackspot-banner.png" alt="Trackspot" width="650">
 
 Trackspot is a highly-customizable, self-hosted album tracking app.
 
 
-![Trackspot list and grid views in different themes](readme-files/trackspot-quadrants.png)
+<img src="readme-files/trackspot-quadrants.png" alt="Trackspot list and grid views in different themes" width="900">
 
 It can be used as-is, or in tandem with its Spicetify extension, which links its tracking functionality directly into Spotify. No Premium required.
 
-![Spotify album actions](readme-files/album-actions.png)
+<img src="readme-files/album-actions.png" alt="Spotify album actions" width="700">
 
 Trackspot makes it easy to keep track of the albums you listen to, with 100-point ratings and personal notes put front-and-center. Auto-log any album you listen to in Spotify, then browse your collection in list view or grid view. See your stats on the Stats page, or get a year-end wrap-up on the Wrapped page. Export your data at any time as a database backup or as a .CSV for putting in a spreadsheet.
 
@@ -17,11 +17,11 @@ Trackspot can keep track of your albums even if you don't use Spotify, but is mo
 
 Once you have Spicetify installed in Spotify, open up the Spicetify Marketplace by clicking on the shopping cart button in the upper-left.
 
-![Spicetify Marketplace button](readme-files/spicetify-marketplace-button.png)
+<img src="readme-files/spicetify-marketplace-button.png" alt="Spicetify Marketplace button" width="320">
 
 Once in the Marketplace, search for Trackspot. If you don't see it, hit "Load more" and it should come up. Then, hit "Install".
 
-![Spicetify marketplace search](readme-files/spicetify-marketplace-search.png)
+<img src="readme-files/spicetify-marketplace-search.png" alt="Spicetify marketplace search" width="500">
 
 Or, if you like doing things the old-fashioned way, you can install `trackspot-spicetify.js` manually via the instructions [here](https://spicetify.app/docs/customization/extensions).
 
@@ -31,7 +31,7 @@ Download the latest Windows Trackspot release by clicking [HERE](https://github.
 
 Then, open the extracted Trackspot folder and double-click `Windows - Start Trackspot.bat`.
 
-![Windows bat files](readme-files/windows-bat-files.png)
+<img src="readme-files/windows-bat-files.png" alt="Windows bat files" width="320">
 
 The first run will install Trackspot's dependencies, which can take a few minutes. If Windows asks whether Node.js can access the network, allow it for private networks. 
 
