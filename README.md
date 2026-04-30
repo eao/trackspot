@@ -34,6 +34,8 @@ npm run package:windows -- -NodeZipPath "C:\Users\Erik\Downloads\node-v24.15.0-w
 
 The package will be created at `dist/Trackspot-Windows-x64.zip`.
 
+Running the same command again replaces the previous ZIP. By default the final ZIP keeps only the runtime files Trackspot needs from Node.js; add `-KeepFullNodeRuntime` if you want to include the full Node.js standalone ZIP contents for debugging.
+
 ## Installation on Linux
 
 Install [Node.js](https://nodejs.org/en/download). Trackspot supports `>=20.19 <26` and was tested with v24 LTS.

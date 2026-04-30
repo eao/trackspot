@@ -4,7 +4,8 @@ param(
   [string] $OutputRoot = '',
   [string] $PackageName = 'Trackspot-Windows-x64',
   [switch] $SkipDependencyInstall,
-  [switch] $KeepExpandedPackage
+  [switch] $KeepExpandedPackage,
+  [switch] $KeepFullNodeRuntime
 )
 
 Set-StrictMode -Version Latest
@@ -121,6 +122,25 @@ function Copy-RequiredItem {
   Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
 }
 
+function Trim-PackagedNodeRuntime {
+  param(
+    [Parameter(Mandatory = $true)] [string] $RuntimePath
+  )
+
+  $keepNames = @(
+    'node.exe',
+    'LICENSE',
+    'README.md',
+    'CHANGELOG.md'
+  )
+
+  Get-ChildItem -LiteralPath $RuntimePath -Force | ForEach-Object {
+    if ($keepNames -notcontains $_.Name) {
+      Remove-Item -LiteralPath $_.FullName -Recurse -Force
+    }
+  }
+}
+
 $expandedNode = $null
 
 try {
@@ -230,6 +250,13 @@ You can also place Node at runtime\node before running this script.
       $env:Path = $previousPath
       Pop-Location
     }
+  }
+
+  if ($KeepFullNodeRuntime) {
+    Write-Step 'Keeping full portable Node.js runtime'
+  } else {
+    Write-Step 'Trimming portable Node.js runtime for release'
+    Trim-PackagedNodeRuntime -RuntimePath $runtimeDir
   }
 
   Write-Step 'Creating ZIP archive'
