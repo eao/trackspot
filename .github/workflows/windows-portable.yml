@@ -1,0 +1,72 @@
+name: Build Windows Portable ZIP
+
+on:
+  workflow_dispatch:
+    inputs:
+      node_version:
+        description: Portable Node.js version to bundle
+        required: true
+        default: 24.15.0
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  PORTABLE_NODE_VERSION: ${{ inputs.node_version || '24.15.0' }}
+
+jobs:
+  build-windows-portable:
+    name: Build Windows portable package
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out Trackspot
+        uses: actions/checkout@v6
+
+      - name: Set up build Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check app
+        run: npm run check
+
+      - name: Download portable Node.js
+        shell: pwsh
+        run: |
+          $version = "${env:PORTABLE_NODE_VERSION}"
+          $downloadDir = Join-Path $PWD 'downloads'
+          $zipPath = Join-Path $downloadDir 'node-win-x64.zip'
+          $url = "https://nodejs.org/dist/v$version/node-v$version-win-x64.zip"
+
+          New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile $zipPath
+
+      - name: Build portable ZIP
+        shell: pwsh
+        run: |
+          $zipPath = Join-Path $PWD 'downloads\node-win-x64.zip'
+          npm run package:windows -- -NodeZipPath $zipPath
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Trackspot-Windows-x64
+          path: dist/Trackspot-Windows-x64.zip
+          if-no-files-found: error
+
+      - name: Attach ZIP to GitHub Release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" `
+            "dist/Trackspot-Windows-x64.zip" `
+            --clobber
