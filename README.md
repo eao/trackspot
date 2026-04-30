@@ -6,15 +6,7 @@ Use it to keep a personal album collection, import albums from Spotify, browse y
 
 ## Installation on Windows
 
-If you downloaded a Trackspot Windows portable ZIP from the releases page, you do not need to install Node.js. Extract it to where you want Trackspot to live.
-
-If you downloaded the source ZIP from GitHub, install [Node.js](https://nodejs.org/en/download#:~:text=Or%20get%20a%20prebuilt%20Node%2Ejs,architecture%2E) first. It will be easiest to download and run the Windows Installer (.msi). You may need to restart your computer afterward.
-
-![Windows Node download](readme-files/windows-node-download.png)
-
-Clone the repo if you know how, or, download the code as a ZIP file and extract it to where you want Trackspot to live.
-
-![Windows zip download](readme-files/windows-zip-download.png)
+The easiest way to install Trackspot on Windows is to download a portable ZIP from the releases page.
 
 Open the extracted Trackspot folder and double-click `Windows - Start Trackspot.bat`.
 
@@ -64,7 +56,15 @@ Then clone the repository, run `npm install`, and start the server with `npm sta
 
 ## Spicetify Extension
 
+Trackspot is most useful when used with its Spicetify extension. Install Spicetify [here](https://spicetify.app/#install).
 
+Once you have Spicetify installed in Spotify, open up the Spicetify Marketplace by clicking on the shopping cart button in the upper-left.
+
+![Spicetify Marketplace button](readme-files/spicetify-marketplace-button.png)
+
+Once in the Marketplace, search for Trackspot. If you don't see it, hit "Load more" and it should come up. Then, hit "Install".
+
+![Spicetify marketplace search](readme-files/spicetify-marketplace-search.png)
 
 ## Configuration
 
