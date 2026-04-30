@@ -143,4 +143,6 @@ Write-Host 'Use "Windows - Stop Trackspot.bat" when you want to stop the server.
 if (-not $NoBrowser) {
   Open-TrackspotBrowser -Url $url
 }
-Start-Sleep -Seconds 1
+Write-Host ''
+Write-Host 'This window will close in 10 seconds.'
+Start-Sleep -Seconds 10
