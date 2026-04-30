@@ -1055,7 +1055,7 @@ describe('welcome tour UI preparation', () => {
       'Trackspot is most useful when used with its Spicetify extension, which adds Trackspot functionality directly into Spotify.',
     );
     const setupImage = globalThis.document.querySelector('.welcome-tour-inline-image');
-    expect(setupImage?.getAttribute('src')).toBe('assets/welcome/album-actions.png');
+    expect(setupImage?.getAttribute('src')).toBe('/assets/welcome/album-actions.png');
     expect(setupImage?.getAttribute('alt')).toBe('Trackspot album actions in Spotify');
     expect(Array.from(globalThis.document.querySelectorAll('.welcome-tour-card p a')).map(link => link.href)).toEqual([
       'https://spicetify.app/#install',
