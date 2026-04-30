@@ -1,12 +1,35 @@
-## Trackspot
+## ![Trackspot](readme-files/trackspot-banner.png)
 
-Trackspot is a local-first album tracking app for Spotify users. It runs as a small Express server and serves a vanilla JavaScript app directly from `public/`.
+Trackspot is a highly-customizable, self-hosted album tracking app.
 
-Use it to keep a personal album collection, import albums from Spotify, browse your listening backlog, and customize the app with local themes and backgrounds. Trackspot stores its runtime data on your machine and is designed for local or trusted-network use.
+
+![Trackspot list and grid views in different themes](readme-files/trackspot-quadrants.png)
+
+It can be used as-is, or in tandem with its Spicetify extension, which links its tracking functionality directly into Spotify. No Premium required.
+
+![Spotify album actions](readme-files/album-actions.png)
+
+Trackspot makes it easy to keep track of the albums you listen to, with 100-point ratings and personal notes put front-and-center. Auto-log any album you listen to in Spotify, then browse your collection in list view or grid view. See your stats on the Stats page, or get a year-end wrap-up on the Wrapped page. Export your data at any time as a database backup or as a .CSV for putting in a spreadsheet.
+
+## Spicetify Extension
+
+Trackspot can keep track of your albums even if you don't use Spotify, but is most useful alongside its Spicetify extension. Install Spicetify [here](https://spicetify.app/#install).
+
+Once you have Spicetify installed in Spotify, open up the Spicetify Marketplace by clicking on the shopping cart button in the upper-left.
+
+![Spicetify Marketplace button](readme-files/spicetify-marketplace-button.png)
+
+Once in the Marketplace, search for Trackspot. If you don't see it, hit "Load more" and it should come up. Then, hit "Install".
+
+![Spicetify marketplace search](readme-files/spicetify-marketplace-search.png)
+
+Or, if you like doing things the old-fashioned way, you can install `trackspot-spicetify.js` manually via the instructions [here](https://spicetify.app/docs/customization/extensions).
 
 ## Installation on Windows
 
 The easiest way to install Trackspot on Windows is to download a portable ZIP from the releases page.
+
+(Insert instructions here)
 
 Open the extracted Trackspot folder and double-click `Windows - Start Trackspot.bat`.
 
@@ -54,17 +77,7 @@ brew install git node
 
 Then clone the repository, run `npm install`, and start the server with `npm start` as shown above.
 
-## Spicetify Extension
 
-Trackspot is most useful when used with its Spicetify extension. Install Spicetify [here](https://spicetify.app/#install).
-
-Once you have Spicetify installed in Spotify, open up the Spicetify Marketplace by clicking on the shopping cart button in the upper-left.
-
-![Spicetify Marketplace button](readme-files/spicetify-marketplace-button.png)
-
-Once in the Marketplace, search for Trackspot. If you don't see it, hit "Load more" and it should come up. Then, hit "Install".
-
-![Spicetify marketplace search](readme-files/spicetify-marketplace-search.png)
 
 ## Configuration
 
