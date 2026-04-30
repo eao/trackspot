@@ -101,6 +101,48 @@ function Get-TrackspotErrorLogFile {
   return Join-Path (Get-TrackspotDataDir) 'trackspot-server-error.log'
 }
 
+function Get-TrackspotBundledNodePath {
+  return Join-Path $Script:TrackspotRoot 'runtime\node\node.exe'
+}
+
+function Get-TrackspotBundledNpmPath {
+  return Join-Path $Script:TrackspotRoot 'runtime\node\npm.cmd'
+}
+
+function Get-TrackspotRuntime {
+  $bundledNodePath = Get-TrackspotBundledNodePath
+  $bundledNpmPath = Get-TrackspotBundledNpmPath
+
+  if (Test-Path -LiteralPath $bundledNodePath) {
+    return [pscustomobject] @{
+      NodePath = $bundledNodePath
+      NpmPath = if (Test-Path -LiteralPath $bundledNpmPath) { $bundledNpmPath } else { $null }
+      IsBundled = $true
+      Description = 'bundled Node.js runtime'
+    }
+  }
+
+  try {
+    $nodeCommand = Get-Command node -ErrorAction Stop
+  } catch {
+    return $null
+  }
+
+  $npmPath = $null
+  try {
+    $npmPath = (Get-Command npm -ErrorAction Stop).Source
+  } catch {
+    $npmPath = $null
+  }
+
+  return [pscustomobject] @{
+    NodePath = $nodeCommand.Source
+    NpmPath = $npmPath
+    IsBundled = $false
+    Description = 'installed Node.js'
+  }
+}
+
 function Test-TrackspotServer {
   param(
     [Parameter(Mandatory = $true)]

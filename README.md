@@ -6,7 +6,9 @@ Use it to keep a personal album collection, import albums from Spotify, browse y
 
 ## Installation on Windows
 
-Install [Node.js](https://nodejs.org/en/download#:~:text=Or%20get%20a%20prebuilt%20Node%2Ejs,architecture%2E). It will be easiest to download and run the Windows Installer (.msi). You may need to restart your computer afterward.
+If you downloaded a Trackspot Windows portable ZIP from the releases page, you do not need to install Node.js. Extract it to where you want Trackspot to live.
+
+If you downloaded the source ZIP from GitHub, install [Node.js](https://nodejs.org/en/download#:~:text=Or%20get%20a%20prebuilt%20Node%2Ejs,architecture%2E) first. It will be easiest to download and run the Windows Installer (.msi). You may need to restart your computer afterward.
 
 ![Windows Node download](readme-files/windows-node-download.png)
 

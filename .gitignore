@@ -7,6 +7,10 @@ node_modules/
 # Runtime database, uploads, and user-created local state
 data/
 
+# Local portable runtime and packaged release artifacts
+runtime/
+dist/
+
 # Local agent/tooling state
 .claude/
 

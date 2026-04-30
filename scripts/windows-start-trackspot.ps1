@@ -34,53 +34,61 @@ if (Test-TrackspotServer -Url $url) {
   exit 0
 }
 
-if (-not (Test-Path -LiteralPath (Join-Path $TrackspotRoot 'package.json'))) {
+$packageJsonPath = Join-Path $TrackspotRoot 'package.json'
+if (-not (Test-Path -LiteralPath $packageJsonPath)) {
   Exit-WithError 'package.json was not found. Make sure this file is still inside the extracted Trackspot folder.'
 }
 
-try {
-  $nodeCommand = Get-Command node -ErrorAction Stop
-} catch {
+$runtime = Get-TrackspotRuntime
+if (-not $runtime) {
   Exit-WithError @'
 Node.js was not found.
 
-Install the Windows Installer from:
+Use the Trackspot Windows portable ZIP, or install the Windows Installer from:
 https://nodejs.org/en/download
 
 After installing Node.js, double-click this file again.
 '@
 }
 
-try {
-  $null = Get-Command npm -ErrorAction Stop
-} catch {
-  Exit-WithError @'
-npm was not found. npm normally installs with Node.js.
-
-Reinstall Node.js from https://nodejs.org/en/download, then try again.
-'@
-}
-
-$nodeVersion = & $nodeCommand.Source -p "process.versions.node"
+$nodeVersion = & $runtime.NodePath -p "process.versions.node"
 $parts = $nodeVersion.Split('.') | ForEach-Object { [int] $_ }
 $isSupportedNode = (($parts[0] -gt 20) -or ($parts[0] -eq 20 -and $parts[1] -ge 19)) -and $parts[0] -lt 26
 
 if (-not $isSupportedNode) {
+  $runtimeLabel = if ($runtime.IsBundled) { 'bundled Node.js runtime' } else { 'installed Node.js' }
   Exit-WithError @"
 Trackspot needs Node.js version 20.19 or newer, but below 26.
-Your Node.js version is $nodeVersion.
+The $runtimeLabel is version $nodeVersion.
 
-Install the current LTS version from:
+Use a Trackspot release with a supported runtime, or install the current LTS version from:
 https://nodejs.org/en/download
 "@
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $TrackspotRoot 'node_modules'))) {
+  if (-not $runtime.NpmPath) {
+    $installHint = if ($runtime.IsBundled) {
+      'This bundled Node.js runtime does not include npm.cmd.'
+    } else {
+      'npm was not found. npm normally installs with Node.js.'
+    }
+
+    Exit-WithError @"
+Trackspot dependencies are not installed.
+
+$installHint
+
+Use the Trackspot Windows portable ZIP, or install Node.js with npm and double-click this file again.
+"@
+  }
+
   Write-Host 'Installing Trackspot dependencies. This may take a few minutes the first time.'
+  Write-Host "Using $($runtime.Description)."
   Write-Host ''
   Push-Location $TrackspotRoot
   try {
-    & npm install
+    & $runtime.NpmPath install
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
     }
@@ -93,7 +101,7 @@ New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 $serverPath = Join-Path $TrackspotRoot 'server\index.js'
 $process = Start-Process `
-  -FilePath $nodeCommand.Source `
+  -FilePath $runtime.NodePath `
   -ArgumentList @($serverPath) `
   -WorkingDirectory $TrackspotRoot `
   -WindowStyle Hidden `
@@ -105,6 +113,8 @@ $process = Start-Process `
   pid = $process.Id
   root = [string] $TrackspotRoot
   url = $url
+  nodePath = $runtime.NodePath
+  bundledRuntime = $runtime.IsBundled
   startedAt = (Get-Date).ToString('o')
 } | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
 
@@ -128,6 +138,7 @@ if (-not $started) {
 }
 
 Write-Host "Trackspot is running at $url"
+Write-Host "Using $($runtime.Description)."
 Write-Host 'Use "Windows - Stop Trackspot.bat" when you want to stop the server.'
 if (-not $NoBrowser) {
   Open-TrackspotBrowser -Url $url
