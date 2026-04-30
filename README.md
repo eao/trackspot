@@ -27,17 +27,19 @@ Or, if you like doing things the old-fashioned way, you can install `trackspot-s
 
 ## Installation on Windows
 
-The easiest way to install Trackspot on Windows is to download a portable ZIP from the releases page.
+Download the latest Windows Trackspot release by clicking [HERE](https://github.com/eao/trackspot/releases/latest/download/Trackspot-Windows-x64.zip). After it downloads, extract the contents of the .zip file to where you want Trackspot to live.
 
-(Insert instructions here)
+Then, open the extracted Trackspot folder and double-click `Windows - Start Trackspot.bat`.
 
-Open the extracted Trackspot folder and double-click `Windows - Start Trackspot.bat`.
+![Windows bat files](readme-files/windows-bat-files.png)
 
-The first run will install Trackspot's dependencies, which can take a few minutes. After that, the same file starts Trackspot in the background and opens it in your default browser. If Trackspot is already running, it just opens the browser again.
+The first run will install Trackspot's dependencies, which can take a few minutes. If Windows asks whether Node.js can access the network, allow it for private networks. 
 
-Trackspot should now be running on port 1060. Connect at `http://localhost:1060` in your browser. When you want to stop the server, double-click `Windows - Stop Trackspot.bat`.
+After that, Trackspot will start in the background and open it in your default browser. If you double-click `Windows - Start Trackspot.bat` when Trackspot is already running, it will just open the browser to Trackspot again.
 
-If Windows asks whether Node.js can access the network, allow it for private networks.
+And, when you want to stop Trackspot, double-click `Windows - Stop Trackspot.bat`.
+
+
 
 ## Installation on Linux
 
