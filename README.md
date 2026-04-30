@@ -24,6 +24,16 @@ Trackspot should now be running on port 1060. Connect at `http://localhost:1060`
 
 If Windows asks whether Node.js can access the network, allow it for private networks.
 
+### Creating a Windows portable ZIP
+
+To build a Windows x64 ZIP that includes portable Node.js, download the Node.js Windows x64 standalone ZIP, then run:
+
+```powershell
+npm run package:windows -- -NodeZipPath "C:\Users\Erik\Downloads\node-v24.15.0-win-x64.zip"
+```
+
+The package will be created at `dist/Trackspot-Windows-x64.zip`.
+
 ## Installation on Linux
 
 Install [Node.js](https://nodejs.org/en/download). Trackspot supports `>=20.19 <26` and was tested with v24 LTS.

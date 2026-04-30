@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node server/index.js",
+    "package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows-portable.ps1",
     "db:export-json": "node scripts/export-db-json.js",
     "styles:sync": "node scripts/sync-color-scheme-presets.js",
     "pretest": "npm run styles:sync",
