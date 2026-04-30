@@ -14,9 +14,11 @@ Clone the repo if you know how, or, download the code as a ZIP file and extract 
 
 ![Windows zip download](readme-files/windows-zip-download.png)
 
-insert further instructions here
+Open the extracted Trackspot folder and double-click `Windows - Start Trackspot.bat`.
 
-Trackspot should now be running on port 1060. Connect at `http://localhost:1060` in your browser. Keep the PowerShell window open while you use Trackspot, and press `Ctrl+C` in PowerShell when you want to stop the server.
+The first run will install Trackspot's dependencies, which can take a few minutes. After that, the same file starts Trackspot in the background and opens it in your default browser. If Trackspot is already running, it just opens the browser again.
+
+Trackspot should now be running on port 1060. Connect at `http://localhost:1060` in your browser. When you want to stop the server, double-click `Windows - Stop Trackspot.bat`.
 
 If Windows asks whether Node.js can access the network, allow it for private networks.
 
