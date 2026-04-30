@@ -795,11 +795,11 @@ function showTourError(message) {
   }
 }
 
-async function chooseTourEnding(addSamplesChoice) {
+function chooseTourEnding(addSamplesChoice) {
   if (isStepTransitioning || isFinishingTour) return;
   endingSampleChoice = addSamplesChoice ? 'samples' : 'empty';
-  await preloadWelcomeTourAssets();
-  await showStep(currentStepIndex + 1);
+  void preloadWelcomeTourAssets();
+  void showStep(currentStepIndex + 1);
 }
 
 function setTourControlsDisabled(disabled) {
