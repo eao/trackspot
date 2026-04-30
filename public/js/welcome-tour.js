@@ -22,6 +22,38 @@ import { syncAppShellLayout } from './app-shell.js';
 const MOBILE_WARNING_WIDTH = 780;
 const LOCK_HEARTBEAT_MS = 10000;
 const TOP_BAR_TOUR_ANCHOR = '#btn-view-grid';
+const WELCOME_TOUR_ALBUM_ACTIONS_IMAGE_SRC = '/assets/welcome/album-actions.png';
+
+let welcomeTourAssetPreloadPromise = null;
+
+function ensureWelcomeTourAssetPreloadLink(src) {
+  if (document.querySelector(`link[rel="preload"][href="${src}"]`)) return;
+  const link = document.createElement('link');
+  link.setAttribute('rel', 'preload');
+  link.setAttribute('as', 'image');
+  link.setAttribute('href', src);
+  link.dataset.welcomeTourAsset = 'true';
+  document.head.appendChild(link);
+}
+
+function preloadWelcomeTourAssets() {
+  ensureWelcomeTourAssetPreloadLink(WELCOME_TOUR_ALBUM_ACTIONS_IMAGE_SRC);
+  if (welcomeTourAssetPreloadPromise || typeof Image !== 'function') {
+    return welcomeTourAssetPreloadPromise || Promise.resolve();
+  }
+
+  welcomeTourAssetPreloadPromise = new Promise(resolve => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = WELCOME_TOUR_ALBUM_ACTIONS_IMAGE_SRC;
+    if (typeof image.decode === 'function') {
+      image.decode().then(resolve).catch(resolve);
+      return;
+    }
+    resolve();
+  });
+  return welcomeTourAssetPreloadPromise;
+}
 
 function nextAnimationFrame() {
   return new Promise(resolve => {
@@ -305,7 +337,7 @@ const TOUR_STEPS = [
   {
     id: 'spicetify',
     title: 'Spicetify Setup',
-    body: 'Trackspot is most useful when used with its Spicetify extension, which adds Trackspot functionality directly into Spotify. Install Spicetify <a href="https://spicetify.app/#install" target="_blank" rel="noopener noreferrer">here</a>, then install the Trackspot extension from the Spicetify Marketplace.<img class="welcome-tour-inline-image" src="/assets/welcome/album-actions.png" alt="Trackspot album actions in Spotify">For more detailed instructions, see the GitHub repo <a href="https://github.com/eao/trackspot#spicetify-extension" target="_blank" rel="noopener noreferrer">here</a>.',
+    body: `Trackspot is most useful when used with its Spicetify extension, which adds Trackspot functionality directly into Spotify.<img class="welcome-tour-inline-image" src="${WELCOME_TOUR_ALBUM_ACTIONS_IMAGE_SRC}" alt="Trackspot album actions in Spotify">Install Spicetify <a href="https://spicetify.app/#install" target="_blank" rel="noopener noreferrer">here</a>, then install the Trackspot extension from the Spicetify Marketplace.<br><br>For more detailed instructions, see the GitHub repo <a href="https://github.com/eao/trackspot#spicetify-extension" target="_blank" rel="noopener noreferrer">here</a>.`,
     placement: 'center',
     final: true,
     effect: prepareCollectionList,
@@ -763,10 +795,11 @@ function showTourError(message) {
   }
 }
 
-function chooseTourEnding(addSamplesChoice) {
+async function chooseTourEnding(addSamplesChoice) {
   if (isStepTransitioning || isFinishingTour) return;
   endingSampleChoice = addSamplesChoice ? 'samples' : 'empty';
-  void showStep(currentStepIndex + 1);
+  await preloadWelcomeTourAssets();
+  await showStep(currentStepIndex + 1);
 }
 
 function setTourControlsDisabled(disabled) {
@@ -1414,6 +1447,7 @@ export async function startWelcomeTour(options = {}) {
   const { replay = false, initialStatus = null } = options;
   if (state.welcomeTour.active) return;
 
+  void preloadWelcomeTourAssets();
   captureFocusRestoreTarget();
   state.welcomeTour.active = true;
   state.welcomeTour.replay = replay;

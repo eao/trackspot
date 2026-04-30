@@ -188,6 +188,7 @@ describe('welcome tour UI preparation', () => {
     applyCollectionViewStateMock.mockClear();
     localStorage.clear();
     globalThis.document.body.className = '';
+    globalThis.document.head.innerHTML = '';
     globalThis.scrollTo = vi.fn();
     globalThis.document.body.innerHTML = `
       <header class="header">
@@ -224,6 +225,16 @@ describe('welcome tour UI preparation', () => {
       sampleCount: 0,
       useRealDashboardData: false,
     };
+  });
+
+  it('preloads the final Spicetify setup image when the tour starts', async () => {
+    const { startWelcomeTour } = await import('../public/js/welcome-tour.js');
+
+    await startWelcomeTour({ replay: true });
+
+    const preload = globalThis.document.head.querySelector('link[rel="preload"][as="image"]');
+    expect(preload?.getAttribute('href')).toBe('/assets/welcome/album-actions.png');
+    expect(preload?.dataset.welcomeTourAsset).toBe('true');
   });
 
   it('keeps quick actions disabled while preparing the grid-view step', async () => {

@@ -246,6 +246,8 @@ a:hover {
   display: block;
   width: 100%;
   height: auto;
+  aspect-ratio: 935 / 120;
+  object-fit: contain;
   margin: 14px 0;
   border: 1px solid var(--border);
   border-radius: 8px;
