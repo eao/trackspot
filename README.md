@@ -17,11 +17,11 @@ Trackspot can keep track of your albums even if you don't use Spotify, but is mo
 
 Once you have Spicetify installed in Spotify, open up the Spicetify Marketplace by clicking on the shopping cart button in the upper-left.
 
-<img src="readme-files/spicetify-marketplace-button.png" alt="Spicetify Marketplace button" width="320">
+<img src="readme-files/spicetify-marketplace-button.png" alt="Spicetify Marketplace button" width="200">
 
 Once in the Marketplace, search for Trackspot. If you don't see it, hit "Load more" and it should come up. Then, hit "Install".
 
-<img src="readme-files/spicetify-marketplace-search.png" alt="Spicetify marketplace search" width="500">
+<img src="readme-files/spicetify-marketplace-search.png" alt="Spicetify marketplace search" width="400">
 
 Or, if you like doing things the old-fashioned way, you can install `trackspot-spicetify.js` manually via the instructions [here](https://spicetify.app/docs/customization/extensions).
 
@@ -31,7 +31,7 @@ Download the latest Windows Trackspot release by clicking [HERE](https://github.
 
 Then, open the extracted Trackspot folder and double-click `Windows - Start Trackspot.bat`.
 
-<img src="readme-files/windows-bat-files.png" alt="Windows bat files" width="320">
+<img src="readme-files/windows-bat-files.png" alt="Windows bat files" width="317">
 
 The first run will install Trackspot's dependencies, which can take a few minutes. If Windows asks whether Node.js can access the network, allow it for private networks. 
 
