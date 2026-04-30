@@ -305,7 +305,7 @@ const TOUR_STEPS = [
   {
     id: 'spicetify',
     title: 'Spicetify Setup',
-    body: 'Trackspot is most useful when used with its Spicetify extension. Install Spicetify for Spotify <a href="https://spicetify.app/#install" target="_blank" rel="noopener noreferrer">here</a>, then install the Trackspot extension from the Spicetify Marketplace.<br><br>For more detailed instructions, see the GitHub repo <a href="https://github.com/eao/trackspot#spicetify-extension" target="_blank" rel="noopener noreferrer">here</a>.',
+    body: 'Trackspot is most useful when used with its Spicetify extension, which adds Trackspot functionality directly into Spotify. Install Spicetify <a href="https://spicetify.app/#install" target="_blank" rel="noopener noreferrer">here</a>, then install the Trackspot extension from the Spicetify Marketplace.<img class="welcome-tour-inline-image" src="assets/welcome/album-actions.png" alt="Trackspot album actions in Spotify">For more detailed instructions, see the GitHub repo <a href="https://github.com/eao/trackspot#spicetify-extension" target="_blank" rel="noopener noreferrer">here</a>.',
     placement: 'center',
     final: true,
     effect: prepareCollectionList,

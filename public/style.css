@@ -242,6 +242,15 @@ a:hover {
   line-height: 1.45;
 }
 
+.welcome-tour-inline-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 14px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
 .welcome-tour-actions {
   display: flex;
   justify-content: flex-end;
