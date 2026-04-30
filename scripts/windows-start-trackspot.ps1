@@ -100,9 +100,10 @@ Use the Trackspot Windows portable ZIP, or install Node.js with npm and double-c
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 $serverPath = Join-Path $TrackspotRoot 'server\index.js'
+$serverArgument = '"{0}"' -f $serverPath
 $process = Start-Process `
   -FilePath $runtime.NodePath `
-  -ArgumentList @($serverPath) `
+  -ArgumentList @($serverArgument) `
   -WorkingDirectory $TrackspotRoot `
   -WindowStyle Hidden `
   -RedirectStandardOutput $logFile `
