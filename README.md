@@ -57,7 +57,7 @@ Then download/clone the repository somewhere and run npm install.
 It is recommended to install Trackspot under a new Linux account. The following command is for a Linux user account with the name "spotty". If you are running the command as-is, either create that account first, or replace `/home/spotty/trackspot` with your preferred install path.
 
 ```bash
-git clone -b master https://github.com/eao/trackspot.git /home/spotty/trackspot && cd /home/spotty/trackspot && npm install
+git clone -b main https://github.com/eao/trackspot.git /home/spotty/trackspot && cd /home/spotty/trackspot && npm install
 ```
 
 Then start the server:
@@ -66,7 +66,7 @@ Then start the server:
 npm start
 ```
 
-Trackspot should now be running on port 1060. Connect at `http://localhost:1060` if you are running this on desktop Linux. For more detailed configuration info, see the [Configuration](#configuration) section.
+Trackspot should now be running on port 1060. Connect at `http://localhost:1060` if you are running this on desktop Linux, or `http://<server-ip>:1060` from another machine.
 
 ### Installation note for macOS
 
