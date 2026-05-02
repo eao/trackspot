@@ -138,6 +138,7 @@ https://tailscale.com/docs/reference/tailscale-cli/serve
 
 If you don't already have a `.env` file in your Trackspot install directory, copy `.env.example` to `.env` to get a template for one. Then, in your `.env` file, immediately after `CORS_ALLOWED_ORIGINS=`, add `https://trackspot.your-tailnet.ts.net`. If you forget to do this, you will be able to see Trackspot, but trying to actually edit anything will throw an error having to do with cross-origin mutation.
 
+While editing `.env`, you may want to also set your `DATA_DIR=` to somewhere like `/var/lib/trackspot`. See [CONFIG.md](CONFIG.md) for details.
 
 ## Configure Spicetify extension
 
