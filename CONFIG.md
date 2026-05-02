@@ -79,12 +79,32 @@ For trusted LAN or Tailscale use, `HOST=0.0.0.0` is usually appropriate as long 
 
 ## CORS
 
-With `HOST=0.0.0.0`, same-origin access through LAN and Tailscale hostnames works without listing each address in `CORS_ALLOWED_ORIGINS`.
+`CORS_ALLOWED_ORIGINS` controls which browser origins may make state-changing API requests to Trackspot when the browser page origin is different from the Trackspot server origin.
 
-Use `CORS_ALLOWED_ORIGINS` only for separate browser origins that need to call Trackspot APIs, such as nonstandard integrations:
+For direct same-origin access, you usually do not need to list anything. For example, if you open Trackspot directly at one of these URLs, the browser page and the API requests share the same origin:
 
 ```text
-CORS_ALLOWED_ORIGINS=
+http://192.168.1.50:1060
+http://100.x.y.z:1060
+http://trackspot.your-tailnet.ts.net:1060
+```
+
+If Trackspot is exposed through HTTPS by Tailscale Serve or another reverse proxy, the browser origin changes. For example, Tailscale Serve might expose Trackspot at:
+
+```text
+https://trackspot.your-tailnet.ts.net
+```
+
+In that case, add the exact HTTPS origin to `CORS_ALLOWED_ORIGINS`:
+
+```text
+CORS_ALLOWED_ORIGINS=https://trackspot.your-tailnet.ts.net
+```
+
+Use a comma-separated list if you need to allow more than one extra origin:
+
+```text
+CORS_ALLOWED_ORIGINS=https://trackspot.your-tailnet.ts.net,https://other.example.test
 ```
 
 The app always allows Spotify Desktop origins and local loopback origins.
@@ -113,13 +133,27 @@ The default is `5368709120`, which is 5 GiB.
 
 ## Spicetify With A Home Server
 
-If Spotify Desktop is on Windows and Trackspot runs on a Linux server, open the Trackspot settings menu in the Spicetify extension, set the server URL to:
+If Spotify Desktop and Trackspot run on the same machine, the Spicetify extension can usually use the local HTTP URL:
 
 ```text
-http://<server-hostname-or-ip>:1060
+http://localhost:1060
 ```
 
-Then import one album and open Trackspot from the extension to confirm the path.
+If Spotify Desktop runs on a different machine from Trackspot, the extension should use an HTTPS URL. Spotify Desktop loads its app UI over HTTPS, so calls from Spicetify to a remote `http://...` Trackspot server can be blocked by the browser as mixed content.
+
+For a Tailscale Serve setup, set the Spicetify extension server URL to:
+
+```text
+https://trackspot.your-tailnet.ts.net
+```
+
+Then add that same origin to `.env`:
+
+```text
+CORS_ALLOWED_ORIGINS=https://trackspot.your-tailnet.ts.net
+```
+
+Restart Trackspot after editing `.env`, then import one album and open Trackspot from the extension to confirm the path.
 
 ## Style Presets
 
