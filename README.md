@@ -134,11 +134,16 @@ Tailscale Serve documentation, if you're interested:
 https://tailscale.com/docs/features/tailscale-serve  
 https://tailscale.com/docs/reference/tailscale-cli/serve  
 
+## Configure .env
+
+If you don't already have a `.env` file in your Trackspot install directory, copy `.env.example` to `.env` to get a template for one. Then, in your `.env` file, immediately after `CORS_ALLOWED_ORIGINS=`, add `https://trackspot.your-tailnet.ts.net`. If you forget to do this, you will be able to see Trackspot, but trying to actually edit anything will throw an error having to do with cross-origin mutation.
+
+
 ## Configure Spicetify extension
 
-After doing all this, don't forget to go into the Trackspot Spicetify extension settings and change the default server URL to `https://trackspot.your-tailnet.ts.net`.
+After doing all this, don't forget to go also into the Trackspot Spicetify extension settings and change the default server URL to `https://trackspot.your-tailnet.ts.net`.
 
-And that should be it!
+And that should finally be it!
 
 ## Bonus: Fixing Tailscale SMB speeds with Windows
 
