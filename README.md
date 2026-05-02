@@ -105,7 +105,7 @@ Create a Debian LXC either manually or by running the community script from http
 
 If you run the community script, it is highly recommended to do the **Advanced Install** so that you can set the hostname to `trackspot` rather than the default of `debian`, since the hostname is annoying to change later. You can also configure the disk size and RAM size with the Advanced Install.
 
-Don't worry about stuff you don't understand in the Advanced Install; the defaults should work, so just hit Enter whenever in doubt. The default disk size and RAM size values are probably fine initially, but I personally gave Trackspot 10 GB disk size and 2 GB RAM to start.
+Don't worry about stuff you don't understand in the Advanced Install; the defaults should work, so just hit Enter whenever in doubt. The default disk size is okay, but you should probably give Trackspot at least 1 GB RAM. I personally gave Trackspot 10 GB disk size and 2 GB RAM to start.
 
 If you go with the defaults, but later end up with a big album collection, you will want to increase the disk size. This can be done via the Proxmox GUI by going to Container → Resources → Volume Action → Resize, then entering how many GiB you want to add. (2 GiB ≈ 1000 albums.) And if you have RAM to spare in this economy, you can edit that by going to Container → Resources → click Memory → click Edit.
 
