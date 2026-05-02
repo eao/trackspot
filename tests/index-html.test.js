@@ -35,6 +35,10 @@ describe('index.html boot assets', () => {
 });
 
 describe('index.html DOM contract', () => {
+  it('describes sidebar search as matching album, artist, and notes text', () => {
+    expect(getAttributeValue('#filter-search', 'placeholder')).toBe('Album, artist, notes...');
+  });
+
   it('contains every literal element ID referenced by state.js', () => {
     const doc = new DOMParser().parseFromString(indexHtml, 'text/html');
     const intentionallyOptionalIds = new Set([

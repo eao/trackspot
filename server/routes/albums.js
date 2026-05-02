@@ -661,6 +661,7 @@ function buildAlbumListQuery(reqQuery = {}) {
     conditions.push(`(
       LOWER(album_name) LIKE :search
       OR ${buildArtistNamePredicate('LIKE', 'search')}
+      OR LOWER(notes) LIKE :search
     )`);
     params.search = `%${searchQuery}%`;
   }
@@ -799,7 +800,7 @@ function buildAlbumListMeta({ totalCount, filteredCount, page, perPage }) {
 //                 date_logged, date_edited, release_date, rating, artist, album,
 //                 duration, track_count, notes, notes_length, repeats, priority
 //   order       — asc | desc (default: desc)
-//   search      — case-insensitive substring match on album or artist
+//   search      — case-insensitive substring match on album, artist, or notes
 //   artist      — case-insensitive artist match
 //   artist_exact — exact artist-name match when true
 //   year        — exact year or inclusive range (e.g. 1999-2004)

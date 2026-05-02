@@ -22,6 +22,10 @@ function getAlbumName(album) {
   return typeof album.album_name === 'string' ? album.album_name : '';
 }
 
+function getAlbumNotes(album) {
+  return typeof album.notes === 'string' ? album.notes : '';
+}
+
 export function applyAlbumFilters(albums, filters, complexStatuses = []) {
   const {
     search = '',
@@ -43,12 +47,14 @@ export function applyAlbumFilters(albums, filters, complexStatuses = []) {
   return albums.filter(album => {
     const artistNames = getArtistNames(album);
     const albumName = getAlbumName(album);
+    const albumNotes = getAlbumNotes(album);
 
     if (search) {
       const q = search.toLowerCase();
       const inAlbum = albumName.toLowerCase().includes(q);
       const inArtist = artistNames.some(a => a.toLowerCase().includes(q));
-      if (!inAlbum && !inArtist) return false;
+      const inNotes = albumNotes.toLowerCase().includes(q);
+      if (!inAlbum && !inArtist && !inNotes) return false;
     }
 
     if (artist) {

@@ -720,6 +720,40 @@ describe('albums route helpers', () => {
     expect(res.jsonBody.albums.map(album => album.id)).toEqual([2]);
   });
 
+  it('searches album notes in the server-side album list filter', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    [
+      { id: 1, album_name: 'Needles', notes: 'A late night headphones record.' },
+      { id: 2, album_name: 'Headphones', notes: 'No matching note needed.' },
+    ].forEach(album => {
+      db.prepare(`
+        INSERT INTO albums (
+          id, album_name, artists, notes, status, source, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        album.id,
+        album.album_name,
+        JSON.stringify([{ name: 'Unrelated Artist' }]),
+        album.notes,
+        'completed',
+        'manual',
+        '2026-04-15 10:00:00',
+        '2026-04-15 10:00:00',
+      );
+    });
+
+    const handler = getRouteHandler(albumsRouter, 'get', '/');
+    const res = createResponse();
+
+    handler({ query: { search: 'late night' } }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.jsonBody.albums.map(album => album.id)).toEqual([1]);
+  });
+
   it('returns a compact Spotify album index with a deterministic revision and ETag', () => {
     const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
     const { db } = dbModule;

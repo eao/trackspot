@@ -20,6 +20,23 @@ describe('applyAlbumFilters', () => {
     expect(applyAlbumFilters([rawAlbum], { artist: 'nujabes', artistMatchExact: true, statusFilter: '', importTypeFilter: 'all' })).toHaveLength(1);
   });
 
+  it('matches search filters against album notes', () => {
+    const album = {
+      id: 1,
+      album_name: 'Unrelated Title',
+      artist_names: ['Unrelated Artist'],
+      notes: 'A late night headphones record.',
+      status: 'completed',
+      rating: 90,
+      album_type: 'ALBUM',
+      source: 'manual',
+      release_year: 2025,
+    };
+
+    expect(applyAlbumFilters([album], { search: 'headphones', statusFilter: '', importTypeFilter: 'all' })).toHaveLength(1);
+    expect(applyAlbumFilters([album], { search: 'missing', statusFilter: '', importTypeFilter: 'all' })).toHaveLength(0);
+  });
+
   it('derives artist_names when normalizing albums for client state', () => {
     const normalized = normalizeAlbumClientShape({
       id: 2,
