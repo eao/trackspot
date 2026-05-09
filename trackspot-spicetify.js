@@ -6051,7 +6051,7 @@ function isSameFinalTrackCompletedAtEnd(armedState, playerState = SpicetifyApi.P
     return false;
   }
   if (
-    now < expectedEndAtMs ||
+    now < expectedEndAtMs - ALBUM_PLAYBACK_END_TRANSITION_EARLY_TOLERANCE_MS ||
     now > expectedEndAtMs + ALBUM_PLAYBACK_END_TRANSITION_GRACE_MS
   ) {
     return false;
@@ -6109,6 +6109,17 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
     now >= expectedEndAtMs - ALBUM_PLAYBACK_END_TRANSITION_EARLY_TOLERANCE_MS &&
     now <= expectedEndAtMs + ALBUM_PLAYBACK_END_TRANSITION_GRACE_MS
   );
+  const estimatedFinalProgressMs = (
+    Number.isFinite(durationMs) &&
+    Number.isFinite(lastProgressMs) &&
+    Number.isFinite(lastSeenAtMs)
+  )
+    ? Math.min(durationMs, lastProgressMs + Math.max(0, now - lastSeenAtMs))
+    : null;
+  const finalTrackWasProbablyComplete = isAlbumPlaybackProgressComplete(
+    durationMs,
+    estimatedFinalProgressMs
+  );
 
   if (currentTrackUri === armedState.finalTrackUri) {
     const currentProgressMs = getPlayerProgressMs(playerState, now);
@@ -6128,6 +6139,8 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
 
   return progressWasNearEnd &&
     transitionIsNearExpectedEnd &&
+    finalTrackWasProbablyComplete &&
+    now >= expectedEndAtMs &&
     isSameAlbumPlaybackSession(armedState, playerState);
 }
 
