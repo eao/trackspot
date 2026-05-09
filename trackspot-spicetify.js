@@ -6127,11 +6127,14 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
       && currentProgressMs <= ALBUM_PLAYBACK_END_RESTART_PROGRESS_WINDOW_MS
       && Number.isFinite(lastProgressMs)
       && currentProgressMs < lastProgressMs;
+    const restartLooksLikeCompletedSession = currentProgressLooksRestarted &&
+      now >= expectedEndAtMs &&
+      isSameAlbumPlaybackSession(armedState, playerState);
     const currentProgressLooksCompleted = playerState.is_paused &&
       isSameFinalTrackCompletedAtEnd(armedState, playerState, now);
     return progressWasNearEnd &&
       transitionIsNearExpectedEnd &&
-      (currentProgressLooksRestarted || currentProgressLooksCompleted);
+      (restartLooksLikeCompletedSession || currentProgressLooksCompleted);
   }
 
   const isStillOnArmedTrack = currentSignature && currentSignature === armedState.signature;

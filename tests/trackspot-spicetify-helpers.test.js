@@ -2003,6 +2003,36 @@ describe('trackspot spicetify helpers', () => {
       },
     }, 101000)).toBe(true);
 
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      expectedEndAtMs: 101500,
+      lastSeenAtMs: 100000,
+    }, {
+      context_uri: 'spotify:album:album123',
+      session_id: 'session-1',
+      duration: 180000,
+      is_paused: false,
+      position_as_of_timestamp: 400,
+      timestamp: 100700,
+      track: {
+        uri: 'spotify:track:last-track',
+        metadata: { album_uri: 'spotify:album:album123' },
+      },
+    }, 100700)).toBe(false);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition(armedState, {
+      context_uri: 'spotify:album:album123',
+      session_id: 'session-user-restart',
+      duration: 180000,
+      is_paused: false,
+      position_as_of_timestamp: 400,
+      timestamp: 101000,
+      track: {
+        uri: 'spotify:track:last-track',
+        metadata: { album_uri: 'spotify:album:album123' },
+      },
+    }, 101000)).toBe(false);
+
     expect(helpers.isAlbumPlaybackCompletionTransition(armedState, {
       context_uri: 'spotify:album:album123',
       session_id: 'session-1',
