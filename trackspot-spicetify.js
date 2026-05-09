@@ -5905,6 +5905,15 @@ function clearAlbumPlaybackEndArmedState() {
   albumPlaybackEndArmedState = null;
 }
 
+function isAlbumPlaybackProgressComplete(durationMs, progressMs) {
+  const numericDurationMs = Number(durationMs);
+  const numericProgressMs = Number(progressMs);
+  return Number.isFinite(numericDurationMs) &&
+    numericDurationMs > 0 &&
+    Number.isFinite(numericProgressMs) &&
+    numericProgressMs >= Math.max(0, numericDurationMs - ALBUM_PLAYBACK_END_COMPLETE_PROGRESS_TOLERANCE_MS);
+}
+
 function createAlbumPlaybackEndPlayerStateSnapshot(playerState) {
   const track = getPlayerStateTrack(playerState);
   const metadata = track?.metadata && typeof track.metadata === 'object'
@@ -5951,8 +5960,13 @@ function updateAlbumPlaybackEndArmedState({
   const existingLastProgressMs = Number(existing?.lastProgressMs);
   const progressMovedBackward = Number.isFinite(existingLastProgressMs) &&
     boundedProgressMs + ALBUM_PLAYBACK_STOP_RESCHEDULE_TOLERANCE_MS < existingLastProgressMs;
+  const progressLooksComplete = isAlbumPlaybackProgressComplete(durationMs, boundedProgressMs);
+  const expectedEndMovedLater = Number.isFinite(existingExpectedEndAtMs) &&
+    nextExpectedEndAtMs > existingExpectedEndAtMs;
   const expectedEndAtMs = existing && !progressMovedBackward && Number.isFinite(existingExpectedEndAtMs)
-    ? Math.min(existingExpectedEndAtMs, nextExpectedEndAtMs)
+    ? (expectedEndMovedLater && !progressLooksComplete
+        ? nextExpectedEndAtMs
+        : Math.min(existingExpectedEndAtMs, nextExpectedEndAtMs))
     : nextExpectedEndAtMs;
 
   albumPlaybackEndArmedState = {
@@ -6028,8 +6042,7 @@ function isSameFinalTrackCompletedAtEnd(armedState, playerState = SpicetifyApi.P
   }
 
   const currentProgressMs = getPlayerProgressMs(playerState, now);
-  return Number.isFinite(currentProgressMs) &&
-    currentProgressMs >= Math.max(0, durationMs - ALBUM_PLAYBACK_END_COMPLETE_PROGRESS_TOLERANCE_MS);
+  return isAlbumPlaybackProgressComplete(durationMs, currentProgressMs);
 }
 
 function isCompletedAlbumEndActionStillSafe(armedState, playerState = SpicetifyApi.Player?.data, now = Date.now()) {
@@ -6394,7 +6407,7 @@ function syncAlbumPlaybackStopMonitor() {
   }
 
   const desiredTargetAtMs = armedState.expectedEndAtMs + ALBUM_PLAYBACK_END_FALLBACK_DELAY_MS;
-  if (Date.now() >= desiredTargetAtMs) {
+  if (Date.now() >= desiredTargetAtMs && isAlbumPlaybackProgressComplete(durationMs, progressMs)) {
     triggerAlbumPlaybackEndActions(signature, albumUri);
     return;
   }

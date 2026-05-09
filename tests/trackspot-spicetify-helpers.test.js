@@ -1526,6 +1526,70 @@ describe('trackspot spicetify helpers', () => {
     expect(monitor.platformPause).toHaveBeenCalledTimes(1);
   });
 
+  it('reschedules fallback album-end actions when live progress pushes expected end later', () => {
+    helpers = loadHelpers();
+    vi.useFakeTimers();
+    vi.setSystemTime(100000);
+    const playerState = {
+      context_uri: 'spotify:album:SLOWFINAL123',
+      session_id: 'session-slow-final',
+      duration: 180000,
+      is_paused: false,
+      position_as_of_timestamp: 100000,
+      timestamp: 100000,
+      track: {
+        uri: 'spotify:track:lastSLOWFINAL',
+        metadata: {
+          album_uri: 'spotify:album:SLOWFINAL123',
+          album_disc_number: '1',
+          album_disc_count: '1',
+          album_track_number: '10',
+          album_track_count: '10',
+        },
+      },
+      next_tracks: [],
+    };
+    const monitor = installAlbumPlaybackMonitorSpicetify({
+      playerState,
+      progress: 100000,
+    });
+
+    helpers.syncAlbumPlaybackStopMonitor();
+
+    vi.setSystemTime(160000);
+    monitor.setProgress(110000);
+    monitor.setPlayerState({
+      ...playerState,
+      position_as_of_timestamp: 160000,
+      timestamp: 100000,
+    });
+    helpers.syncAlbumPlaybackStopMonitor();
+
+    vi.setSystemTime(180350);
+    monitor.setProgress(130000);
+    monitor.setPlayerState({
+      ...playerState,
+      position_as_of_timestamp: 180000,
+      timestamp: 100000,
+    });
+    helpers.syncAlbumPlaybackStopMonitor();
+
+    expect(monitor.pause).not.toHaveBeenCalled();
+    expect(monitor.platformPause).not.toHaveBeenCalled();
+
+    vi.setSystemTime(230800);
+    monitor.setProgress(180000);
+    monitor.setPlayerState({
+      ...playerState,
+      position_as_of_timestamp: 180000,
+      timestamp: 230800,
+    });
+    helpers.syncAlbumPlaybackStopMonitor();
+
+    expect(monitor.pause).toHaveBeenCalledTimes(1);
+    expect(monitor.platformPause).toHaveBeenCalledTimes(1);
+  });
+
   it('does not complete the album when a stale final-track arm is followed by an earlier track selection', () => {
     helpers = loadHelpers();
     vi.useFakeTimers();
