@@ -1317,6 +1317,97 @@ describe('trackspot spicetify helpers', () => {
     expect(request).toHaveBeenCalledTimes(1);
   });
 
+  it('uses GraphQL final-track metadata when Spotify has already queued autoplay tracks', async () => {
+    const request = installAlbumEndExceptionSpicetify({
+      exceptionType: 'all',
+      minutes: '8',
+      request: vi.fn().mockResolvedValue({
+        data: {
+          albumUnion: {
+            type: 'ALBUM',
+            tracksV2: {
+              totalCount: 2,
+              items: [
+                { track: { uri: 'spotify:track:firstGRAPHQLFINAL', duration: { totalMilliseconds: 360000 } } },
+                { track: { uri: 'spotify:track:lastGRAPHQLFINAL', duration: { totalMilliseconds: 360000 } } },
+              ],
+            },
+          },
+        },
+      }),
+    });
+    const playerState = {
+      context_uri: 'spotify:album:GRAPHQLFINAL123',
+      session_id: 'session-graphql-final',
+      duration: 360000,
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:lastGRAPHQLFINAL',
+        metadata: {
+          album_uri: 'spotify:album:GRAPHQLFINAL123',
+          album_disc_number: '1',
+          album_disc_count: '1',
+        },
+      },
+      next_tracks: [{ uri: 'spotify:track:autoplayTRACK', metadata: {} }],
+    };
+
+    expect(helpers.getAlbumPlaybackAtEndCandidateState(playerState)).toBe('pending');
+    expect(request).toHaveBeenCalledTimes(1);
+
+    await vi.waitFor(() => {
+      expect(helpers.getAlbumPlaybackAtEndCandidateState(playerState)).toBe('candidate');
+    });
+    expect(helpers.shouldStopAlbumPlaybackAtEnd(playerState)).toBe(true);
+  });
+
+  it('recognizes album completion after Spotify advances away from the armed final track', () => {
+    const armedState = {
+      signature: 'session-1|spotify:album:album123|spotify:track:last-track',
+      albumUri: 'spotify:album:album123',
+      finalTrackUri: 'spotify:track:last-track',
+      durationMs: 180000,
+      lastProgressMs: 178500,
+      expectedEndAtMs: 100000,
+      lastSeenAtMs: 98500,
+    };
+
+    expect(helpers.isAlbumPlaybackCompletionTransition(armedState, {
+      context_uri: 'spotify:playlist:autoplay',
+      session_id: 'session-1',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:autoplay-track',
+        metadata: { album_uri: 'spotify:album:autoplay-album' },
+      },
+    }, 101000)).toBe(true);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition(armedState, {
+      context_uri: 'spotify:album:album123',
+      session_id: 'session-1',
+      is_paused: true,
+      track: {
+        uri: 'spotify:track:first-track',
+        metadata: { album_uri: 'spotify:album:album123' },
+      },
+    }, 101000)).toBe(true);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      lastProgressMs: 30000,
+      expectedEndAtMs: 250000,
+      lastSeenAtMs: 50000,
+    }, {
+      context_uri: 'spotify:album:album123',
+      session_id: 'session-1',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:middle-track',
+        metadata: { album_uri: 'spotify:album:album123' },
+      },
+    }, 52000)).toBe(false);
+  });
+
   it('suppresses only the immediate repeated auto-pause for the same finished album track', () => {
     expect(helpers.shouldSuppressRepeatedAlbumPlaybackStop({
       signature: 'session-1|spotify:album:album123|spotify:track:last-track',

@@ -92,7 +92,10 @@ const STARTUP_LIBRARY_API_MAX_ATTEMPTS = 10;
 const STARTUP_LIBRARY_API_RETRY_DELAY_MS = 1500;
 const STARTUP_SERVER_RETRY_ATTEMPTS = 3;
 const STARTUP_SERVER_RETRY_DELAY_MS = 2000;
-const ALBUM_PLAYBACK_STOP_LEAD_MS = 120;
+const ALBUM_PLAYBACK_END_FALLBACK_DELAY_MS = 350;
+const ALBUM_PLAYBACK_END_PROGRESS_WINDOW_MS = 5000;
+const ALBUM_PLAYBACK_END_TRANSITION_EARLY_TOLERANCE_MS = 1000;
+const ALBUM_PLAYBACK_END_TRANSITION_GRACE_MS = 7000;
 const ALBUM_PLAYBACK_STOP_RESCHEDULE_TOLERANCE_MS = 750;
 const ALBUM_PLAYBACK_STOP_REPEAT_SUPPRESSION_MS = 2000;
 const ALBUM_END_PLAYBACK_EXCEPTION_FETCH_RETRY_MS = 15000;
@@ -881,7 +884,7 @@ function getPlayerProgressMs(playerState = SpicetifyApi.Player?.data) {
   const boundedNextProgress = Math.min(duration, nextProgress);
 
   if (Number.isFinite(boundedFallbackProgress) && Math.abs(boundedFallbackProgress - boundedNextProgress) > 1000) {
-    return boundedFallbackProgress;
+    return Math.max(boundedFallbackProgress, boundedNextProgress);
   }
 
   return boundedNextProgress;
@@ -967,6 +970,43 @@ function readDurationMsFromGraphqlTrackItem(item) {
   return null;
 }
 
+function readTrackUriFromGraphqlTrackItem(item) {
+  const candidatePaths = [
+    ['track', 'uri'],
+    ['track', 'playability', 'playableTrack', 'uri'],
+    ['itemV2', 'data', 'uri'],
+    ['itemV2', 'data', 'track', 'uri'],
+    ['data', 'uri'],
+    ['data', 'track', 'uri'],
+    ['uri'],
+  ];
+
+  for (const path of candidatePaths) {
+    const trackUri = extractTrackUri(getNestedValue(item, path));
+    if (trackUri) return trackUri;
+  }
+
+  return deepSearchForTrackUri(item);
+}
+
+function readFirstTrackUriFromGraphqlTrackItems(items) {
+  for (const item of items) {
+    const trackUri = readTrackUriFromGraphqlTrackItem(item);
+    if (trackUri) return trackUri;
+  }
+
+  return null;
+}
+
+function readFinalTrackUriFromGraphqlTrackItems(items) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const trackUri = readTrackUriFromGraphqlTrackItem(items[index]);
+    if (trackUri) return trackUri;
+  }
+
+  return null;
+}
+
 function extractAlbumEndPlaybackExceptionInfoFromGraphql(graphqlData) {
   const albumUnion = graphqlData?.data?.albumUnion;
   const items = Array.isArray(albumUnion?.tracksV2?.items)
@@ -986,6 +1026,8 @@ function extractAlbumEndPlaybackExceptionInfoFromGraphql(graphqlData) {
 
   return {
     albumType: readAlbumReleaseTypeFromMetadata(albumUnion),
+    firstTrackUri: readFirstTrackUriFromGraphqlTrackItems(items),
+    finalTrackUri: readFinalTrackUriFromGraphqlTrackItems(items),
     totalDurationMs: hasAllTrackDurations && totalDurationMs > 0
       ? totalDurationMs
       : null,
@@ -1019,9 +1061,8 @@ function getAlbumEndPlaybackExceptionLiveInfo(playerState = SpicetifyApi.Player?
 const albumEndPlaybackExceptionInfoByUri = new Map();
 
 function requestAlbumEndPlaybackExceptionInfo(playerState = SpicetifyApi.Player?.data) {
-  const thresholdMs = getAlbumEndPlaybackExceptionThresholdMs();
   const albumUri = getAlbumEndPlaybackExceptionAlbumUri(playerState);
-  if (thresholdMs <= 0 || !isAlbumContextUri(albumUri)) return null;
+  if (!isAlbumContextUri(albumUri)) return null;
   if (!(SpicetifyApi?.GraphQL?.Request && SpicetifyApi?.GraphQL?.Definitions?.getAlbum)) {
     return null;
   }
@@ -1043,6 +1084,8 @@ function requestAlbumEndPlaybackExceptionInfo(playerState = SpicetifyApi.Player?
   const nextEntry = {
     status: 'pending',
     albumType: liveInfo.albumType,
+    firstTrackUri: existing?.firstTrackUri ?? null,
+    finalTrackUri: existing?.finalTrackUri ?? null,
     totalDurationMs: existing?.totalDurationMs ?? null,
     lastRequestedAtMs: Date.now(),
     promise: null,
@@ -1054,6 +1097,8 @@ function requestAlbumEndPlaybackExceptionInfo(playerState = SpicetifyApi.Player?
       const graphqlInfo = extractAlbumEndPlaybackExceptionInfoFromGraphql(graphqlData);
       nextEntry.status = 'resolved';
       nextEntry.albumType = graphqlInfo.albumType ?? nextEntry.albumType ?? null;
+      nextEntry.firstTrackUri = graphqlInfo.firstTrackUri ?? nextEntry.firstTrackUri ?? null;
+      nextEntry.finalTrackUri = graphqlInfo.finalTrackUri ?? nextEntry.finalTrackUri ?? null;
       nextEntry.totalDurationMs = graphqlInfo.totalDurationMs ?? nextEntry.totalDurationMs ?? null;
       return nextEntry;
     })
@@ -1113,32 +1158,47 @@ function shouldSuppressAlbumEndPlaybackActions(playerState = SpicetifyApi.Player
   return getAlbumEndPlaybackActionSuppressionState(playerState) === 'suppress';
 }
 
-function isAlbumPlaybackAtEndCandidate(playerState = SpicetifyApi.Player?.data) {
+function getAlbumPlaybackAtEndCandidateState(playerState = SpicetifyApi.Player?.data) {
   const track = getPlayerStateTrack(playerState);
   const metadata = track?.metadata ?? {};
   const contextUri = playerState?.context_uri ?? metadata.context_uri ?? null;
   const albumUri = metadata.album_uri ?? null;
 
   if (!track?.uri || !isAlbumContextUri(contextUri) || albumUri !== contextUri) {
-    return false;
+    return 'not-candidate';
   }
 
   const albumDiscNumber = parsePositiveInteger(metadata.album_disc_number);
   const albumDiscCount = parsePositiveInteger(metadata.album_disc_count);
   if (albumDiscNumber !== null && albumDiscCount !== null && albumDiscNumber !== albumDiscCount) {
-    return false;
+    return 'not-candidate';
   }
 
   const albumTrackNumber = parsePositiveInteger(metadata.album_track_number);
   const albumTrackCount = parsePositiveInteger(metadata.album_track_count);
   if (albumTrackNumber !== null && albumTrackCount !== null) {
-    return albumTrackNumber === albumTrackCount;
+    return albumTrackNumber === albumTrackCount ? 'candidate' : 'not-candidate';
+  }
+
+  const cachedInfo = albumEndPlaybackExceptionInfoByUri.get(albumUri);
+  if (cachedInfo?.finalTrackUri) {
+    return track.uri === cachedInfo.finalTrackUri ? 'candidate' : 'not-candidate';
+  }
+
+  const promise = requestAlbumEndPlaybackExceptionInfo(playerState);
+  const nextInfo = albumEndPlaybackExceptionInfoByUri.get(albumUri);
+  if (promise || nextInfo?.status === 'pending') {
+    return 'pending';
   }
 
   const nextTracks = Array.isArray(playerState?.next_tracks)
     ? playerState.next_tracks
     : [];
-  return nextTracks.length === 0;
+  return nextTracks.length === 0 ? 'candidate' : 'not-candidate';
+}
+
+function isAlbumPlaybackAtEndCandidate(playerState = SpicetifyApi.Player?.data) {
+  return getAlbumPlaybackAtEndCandidateState(playerState) === 'candidate';
 }
 
 function shouldStopAlbumPlaybackAtEnd(playerState = SpicetifyApi.Player?.data) {
@@ -1837,6 +1897,7 @@ let libraryBackfillInFlight = false;
 let albumPlaybackStopTimeoutId = null;
 let albumPlaybackStopTargetAtMs = null;
 let albumPlaybackStopSignature = null;
+let albumPlaybackEndArmedState = null;
 let albumPlaybackStopSuppressedSignature = null;
 let albumPlaybackAutoLogSuppressedSignature = null;
 let hasAlbumPlaybackStopListeners = false;
@@ -5830,6 +5891,64 @@ function hasAlbumEndPlaybackActionEnabled() {
   return getAutoStopAlbumPlaybackAtEndEnabled() || getAutoLogAlbumAtEndEnabled();
 }
 
+function clearAlbumPlaybackEndArmedState() {
+  albumPlaybackEndArmedState = null;
+}
+
+function createAlbumPlaybackEndPlayerStateSnapshot(playerState) {
+  const track = getPlayerStateTrack(playerState);
+  const metadata = track?.metadata && typeof track.metadata === 'object'
+    ? { ...track.metadata }
+    : {};
+
+  return {
+    context_uri: playerState?.context_uri ?? metadata.context_uri ?? null,
+    context_metadata: playerState?.context_metadata && typeof playerState.context_metadata === 'object'
+      ? { ...playerState.context_metadata }
+      : null,
+    page_metadata: playerState?.page_metadata && typeof playerState.page_metadata === 'object'
+      ? { ...playerState.page_metadata }
+      : null,
+    session_id: playerState?.session_id ?? null,
+    duration: playerState?.duration ?? null,
+    is_paused: false,
+    track: track
+      ? {
+          uri: track.uri ?? null,
+          metadata,
+        }
+      : null,
+  };
+}
+
+function updateAlbumPlaybackEndArmedState({
+  playerState,
+  signature,
+  albumUri,
+  durationMs,
+  progressMs,
+}) {
+  const now = Date.now();
+  const boundedProgressMs = Math.max(0, Math.min(durationMs, progressMs));
+  const existing = albumPlaybackEndArmedState?.signature === signature
+    ? albumPlaybackEndArmedState
+    : null;
+
+  albumPlaybackEndArmedState = {
+    signature,
+    albumUri,
+    finalTrackUri: getPlayerStateTrack(playerState)?.uri ?? null,
+    durationMs,
+    lastProgressMs: boundedProgressMs,
+    expectedEndAtMs: now + Math.max(0, durationMs - boundedProgressMs),
+    lastSeenAtMs: now,
+    playerState: createAlbumPlaybackEndPlayerStateSnapshot(playerState),
+    completionObservedAtMs: existing?.completionObservedAtMs ?? null,
+  };
+
+  return albumPlaybackEndArmedState;
+}
+
 function syncSuppressedAlbumEndActionSignature({
   signature,
   suppressedSignature,
@@ -5848,6 +5967,39 @@ function syncSuppressedAlbumEndActionSignature({
   }
 
   return suppressedSignature === signature ? null : suppressedSignature;
+}
+
+function isAlbumPlaybackCompletionTransition(armedState, playerState = SpicetifyApi.Player?.data, now = Date.now()) {
+  if (!armedState?.signature || !playerState) return false;
+  if (Number.isFinite(Number(armedState.completionObservedAtMs))) return true;
+
+  const currentSignature = buildAlbumPlaybackStopSignature(playerState);
+  const currentTrackUri = getPlayerStateTrack(playerState)?.uri ?? null;
+  const isStillOnArmedTrack =
+    currentTrackUri === armedState.finalTrackUri ||
+    (currentSignature && currentSignature === armedState.signature);
+  if (isStillOnArmedTrack) return false;
+
+  const durationMs = Number(armedState.durationMs);
+  const lastProgressMs = Number(armedState.lastProgressMs);
+  const lastSeenAtMs = Number(armedState.lastSeenAtMs);
+  const expectedEndAtMs = Number(armedState.expectedEndAtMs);
+  const progressWasRecentlyObserved = Number.isFinite(lastSeenAtMs)
+    && now - lastSeenAtMs <= ALBUM_PLAYBACK_END_TRANSITION_GRACE_MS;
+  const progressWasNearEnd = (
+    Number.isFinite(durationMs) &&
+    durationMs > 0 &&
+    Number.isFinite(lastProgressMs) &&
+    lastProgressMs >= Math.max(0, durationMs - ALBUM_PLAYBACK_END_PROGRESS_WINDOW_MS) &&
+    progressWasRecentlyObserved
+  );
+  const transitionIsNearExpectedEnd = (
+    Number.isFinite(expectedEndAtMs) &&
+    now >= expectedEndAtMs - ALBUM_PLAYBACK_END_TRANSITION_EARLY_TOLERANCE_MS &&
+    now <= expectedEndAtMs + ALBUM_PLAYBACK_END_TRANSITION_GRACE_MS
+  );
+
+  return progressWasNearEnd || transitionIsNearExpectedEnd;
 }
 
 async function maybeAutoOpenLogModalAtAlbumEnd(signature, albumUri) {
@@ -5880,6 +6032,56 @@ async function maybeAutoOpenLogModalAtAlbumEnd(signature, albumUri) {
   }
 }
 
+async function maybeAutoOpenLogModalForCompletedAlbum(signature, albumUri) {
+  if (
+    !getAutoLogAlbumAtEndEnabled() ||
+    !signature ||
+    !albumUri ||
+    albumPlaybackAutoLogSuppressedSignature === signature
+  ) {
+    return;
+  }
+
+  albumPlaybackAutoLogSuppressedSignature = signature;
+
+  try {
+    await openLogFlowForAlbum(albumUri, { silentConnectionFailures: true });
+  } catch (error) {
+    SpicetifyApi.showNotification(
+      `Couldn't auto-open the ${APP_NAME} log modal: ${error.message}`,
+      true,
+      3200
+    );
+  }
+}
+
+function pauseCurrentPlaybackForCompletedAlbum(signature, playerState = SpicetifyApi.Player?.data) {
+  if (
+    !getAutoStopAlbumPlaybackAtEndEnabled() ||
+    !signature ||
+    albumPlaybackStopSuppressedSignature === signature
+  ) {
+    return;
+  }
+
+  albumPlaybackStopSuppressedSignature = signature;
+  if (playerState?.is_paused) return;
+
+  try {
+    if (typeof SpicetifyApi.Player?.pause === 'function') {
+      SpicetifyApi.Player.pause();
+    }
+  } catch (error) {
+    console.warn('[Trackspot] Player.pause failed during album-end handling.', error);
+  }
+
+  try {
+    void SpicetifyApi.Platform?.PlayerAPI?.pause?.();
+  } catch (error) {
+    console.warn('[Trackspot] Platform.PlayerAPI.pause failed during album-end handling.', error);
+  }
+}
+
 function pauseAlbumPlaybackAtEnd(expectedSignature) {
   const playerState = SpicetifyApi.Player?.data;
   if (
@@ -5893,14 +6095,7 @@ function pauseAlbumPlaybackAtEnd(expectedSignature) {
   }
 
   clearAlbumPlaybackStopTimer();
-  albumPlaybackStopSuppressedSignature = expectedSignature;
-
-  if (typeof SpicetifyApi.Player?.pause === 'function') {
-    SpicetifyApi.Player.pause();
-    return;
-  }
-
-  void SpicetifyApi.Platform?.PlayerAPI?.pause?.();
+  pauseCurrentPlaybackForCompletedAlbum(expectedSignature, playerState);
 }
 
 function triggerAlbumPlaybackEndActions(signature, albumUri) {
@@ -5915,19 +6110,92 @@ function triggerAlbumPlaybackEndActions(signature, albumUri) {
   } else {
     clearAlbumPlaybackStopTimer();
   }
+
+  clearAlbumPlaybackEndArmedState();
+}
+
+function triggerCompletedAlbumPlaybackEndActions(armedState, playerState = SpicetifyApi.Player?.data) {
+  const signature = armedState?.signature;
+  const albumUri = armedState?.albumUri;
+  if (!signature || !albumUri) return;
+
+  if (getAutoLogAlbumAtEndEnabled()) {
+    void maybeAutoOpenLogModalForCompletedAlbum(signature, albumUri);
+  }
+
+  pauseCurrentPlaybackForCompletedAlbum(signature, playerState);
+  clearAlbumPlaybackStopTimer();
+  clearAlbumPlaybackEndArmedState();
+}
+
+function maybeTriggerAlbumPlaybackCompletionTransition(playerState = SpicetifyApi.Player?.data) {
+  const armedState = albumPlaybackEndArmedState;
+  if (!armedState) return false;
+  if (!playerState) return false;
+
+  const currentSignature = buildAlbumPlaybackStopSignature(playerState);
+  const currentTrackUri = getPlayerStateTrack(playerState)?.uri ?? null;
+  const isStillOnArmedTrack =
+    currentTrackUri === armedState.finalTrackUri ||
+    (currentSignature && currentSignature === armedState.signature);
+  if (isStillOnArmedTrack) return false;
+
+  const now = Date.now();
+  if (!isAlbumPlaybackCompletionTransition(armedState, playerState, now)) {
+    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackEndArmedState();
+    return false;
+  }
+
+  if (!armedState.completionObservedAtMs) {
+    albumPlaybackEndArmedState = {
+      ...armedState,
+      completionObservedAtMs: now,
+    };
+  }
+
+  const observedCompletionState = albumPlaybackEndArmedState;
+  const suppressionState = getAlbumEndPlaybackActionSuppressionState(observedCompletionState.playerState);
+  if (suppressionState === 'pending') {
+    clearAlbumPlaybackStopTimer();
+    return true;
+  }
+
+  if (suppressionState === 'suppress') {
+    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackEndArmedState();
+    return true;
+  }
+
+  triggerCompletedAlbumPlaybackEndActions(observedCompletionState, playerState);
+  return true;
 }
 
 function syncAlbumPlaybackStopMonitor() {
   if (!hasAlbumEndPlaybackActionEnabled()) {
     clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackEndArmedState();
     albumPlaybackStopSuppressedSignature = null;
     albumPlaybackAutoLogSuppressedSignature = null;
     return;
   }
 
   const playerState = SpicetifyApi.Player?.data;
-  if (!playerState || playerState.is_paused || !shouldStopAlbumPlaybackAtEnd(playerState)) {
+  if (maybeTriggerAlbumPlaybackCompletionTransition(playerState)) {
+    return;
+  }
+
+  if (!playerState || playerState.is_paused) {
     clearAlbumPlaybackStopTimer();
+    return;
+  }
+
+  const candidateState = getAlbumPlaybackAtEndCandidateState(playerState);
+  if (candidateState !== 'candidate') {
+    clearAlbumPlaybackStopTimer();
+    if (candidateState === 'not-candidate') {
+      clearAlbumPlaybackEndArmedState();
+    }
     return;
   }
 
@@ -5942,6 +6210,14 @@ function syncAlbumPlaybackStopMonitor() {
   const remainingMs = Math.max(0, durationMs - progressMs);
   const track = getPlayerStateTrack(playerState);
   const albumUri = track?.metadata?.album_uri ?? playerState?.context_uri ?? null;
+  const armedState = updateAlbumPlaybackEndArmedState({
+    playerState,
+    signature,
+    albumUri,
+    durationMs,
+    progressMs,
+  });
+  const suppressionState = getAlbumEndPlaybackActionSuppressionState(playerState);
 
   albumPlaybackStopSuppressedSignature = syncSuppressedAlbumEndActionSignature({
     signature,
@@ -5961,17 +6237,25 @@ function syncAlbumPlaybackStopMonitor() {
     !getAutoLogAlbumAtEndEnabled()
     || albumPlaybackAutoLogSuppressedSignature === signature;
 
-  if (isStopActionSuppressed && isLogActionSuppressed) {
+  if (suppressionState === 'suppress' || (isStopActionSuppressed && isLogActionSuppressed)) {
+    clearAlbumPlaybackStopTimer();
+    if (suppressionState === 'suppress') {
+      clearAlbumPlaybackEndArmedState();
+    }
+    return;
+  }
+
+  if (suppressionState === 'pending') {
     clearAlbumPlaybackStopTimer();
     return;
   }
 
-  if (remainingMs <= ALBUM_PLAYBACK_STOP_LEAD_MS) {
+  const desiredTargetAtMs = armedState.expectedEndAtMs + ALBUM_PLAYBACK_END_FALLBACK_DELAY_MS;
+  if (Date.now() >= desiredTargetAtMs) {
     triggerAlbumPlaybackEndActions(signature, albumUri);
     return;
   }
 
-  const desiredTargetAtMs = Date.now() + remainingMs - ALBUM_PLAYBACK_STOP_LEAD_MS;
   const shouldReschedule =
     albumPlaybackStopSignature !== signature ||
     albumPlaybackStopTargetAtMs === null ||
@@ -6099,6 +6383,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getLibraryBackfillStatusText,
     getCsvWorkerId,
     getAlbumEndPlaybackExceptionAlbumUri,
+    getAlbumPlaybackAtEndCandidateState,
     getActionTooltip,
     getActionBehavior,
     hideTrackspotTooltips,
@@ -6111,6 +6396,7 @@ if (typeof module !== 'undefined' && module.exports) {
     handleLogModalNavigation,
     getServerUrlFromRequestUrl,
     isSpicetifyReadyForInit,
+    isAlbumPlaybackCompletionTransition,
     isConnectionFailureError,
     isAlbumSavedInLibraryFromGraphql,
     mergeLogModalDraftValues,
