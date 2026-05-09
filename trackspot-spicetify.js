@@ -6126,7 +6126,9 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
   const isStillOnArmedTrack = currentSignature && currentSignature === armedState.signature;
   if (isStillOnArmedTrack) return false;
 
-  return isSameAlbumPlaybackSession(armedState, playerState) && transitionIsNearExpectedEnd;
+  return progressWasNearEnd &&
+    transitionIsNearExpectedEnd &&
+    isSameAlbumPlaybackSession(armedState, playerState);
 }
 
 function isAlbumPlaybackStillOnArmedTrack(armedState, playerState = SpicetifyApi.Player?.data) {

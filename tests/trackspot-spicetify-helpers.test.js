@@ -1992,6 +1992,36 @@ describe('trackspot spicetify helpers', () => {
     expect(helpers.isAlbumPlaybackCompletionTransition({
       ...armedState,
       lastProgressMs: 30000,
+      expectedEndAtMs: 100500,
+      lastSeenAtMs: 99500,
+    }, {
+      context_uri: 'spotify:playlist:same-session-later',
+      session_id: 'session-1',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:same-session-later',
+        metadata: { album_uri: 'spotify:album:same-session-later' },
+      },
+    }, 100000)).toBe(false);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      lastProgressMs: 178500,
+      expectedEndAtMs: 100500,
+      lastSeenAtMs: 90000,
+    }, {
+      context_uri: 'spotify:playlist:same-session-stale',
+      session_id: 'session-1',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:same-session-stale',
+        metadata: { album_uri: 'spotify:album:same-session-stale' },
+      },
+    }, 100000)).toBe(false);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      lastProgressMs: 30000,
       expectedEndAtMs: 250000,
       lastSeenAtMs: 50000,
     }, {
