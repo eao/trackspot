@@ -1461,6 +1461,35 @@ describe('trackspot spicetify helpers', () => {
     expect(monitor.platformPause).not.toHaveBeenCalled();
   });
 
+  it('prefers live progress when stale timestamp progress is mid-track', () => {
+    helpers = loadHelpers();
+    const playerState = {
+      context_uri: 'spotify:album:STALEMID123',
+      session_id: 'session-stale-mid',
+      duration: 180000,
+      is_paused: false,
+      position_as_of_timestamp: 90000,
+      timestamp: 100000,
+      track: {
+        uri: 'spotify:track:lastSTALEMID',
+        metadata: {
+          album_uri: 'spotify:album:STALEMID123',
+          album_disc_number: '1',
+          album_disc_count: '1',
+          album_track_number: '10',
+          album_track_count: '10',
+        },
+      },
+      next_tracks: [],
+    };
+    installAlbumPlaybackMonitorSpicetify({
+      playerState,
+      progress: 400,
+    });
+
+    expect(helpers.getPlayerProgressMs(playerState, 100000)).toBe(400);
+  });
+
   it('runs fallback album-end actions when Spotify stays on the completed final track', () => {
     helpers = loadHelpers();
     vi.useFakeTimers();
@@ -1621,6 +1650,86 @@ describe('trackspot spicetify helpers', () => {
     });
   });
 
+  it('drops delayed album-end actions if playback leaves the observed transition target', async () => {
+    helpers = loadHelpers();
+    let nowMs = 100000;
+    vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+    let resolveAlbumRequest;
+    const request = vi.fn().mockImplementation(() => new Promise((resolve) => {
+      resolveAlbumRequest = resolve;
+    }));
+    const finalTrackState = {
+      context_uri: 'spotify:album:STALEPENDING123',
+      session_id: 'session-stale-pending',
+      duration: 180000,
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:lastSTALEPENDING',
+        metadata: {
+          album_uri: 'spotify:album:STALEPENDING123',
+          album_disc_number: '1',
+          album_disc_count: '1',
+        },
+      },
+      next_tracks: [{ uri: 'spotify:track:autoplaySTALEPENDING', metadata: {} }],
+    };
+    const monitor = installAlbumPlaybackMonitorSpicetify({
+      playerState: finalTrackState,
+      progress: 178500,
+      request,
+    });
+
+    helpers.syncAlbumPlaybackStopMonitor();
+    expect(request).toHaveBeenCalledTimes(1);
+
+    nowMs = 101500;
+    monitor.setPlayerState({
+      context_uri: 'spotify:playlist:autoplay',
+      session_id: 'session-stale-pending',
+      duration: 200000,
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:autoplaySTALEPENDING',
+        metadata: { album_uri: 'spotify:album:autoplaySTALEPENDING' },
+      },
+      next_tracks: [],
+    });
+    monitor.setProgress(0);
+    helpers.syncAlbumPlaybackStopMonitor();
+
+    nowMs = 102000;
+    monitor.setPlayerState({
+      context_uri: 'spotify:playlist:user-choice',
+      session_id: 'session-user-choice',
+      duration: 210000,
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:userChoiceSTALEPENDING',
+        metadata: { album_uri: 'spotify:album:userChoiceSTALEPENDING' },
+      },
+      next_tracks: [],
+    });
+
+    resolveAlbumRequest({
+      data: {
+        albumUnion: {
+          type: 'ALBUM',
+          tracksV2: {
+            totalCount: 2,
+            items: [
+              { track: { uri: 'spotify:track:firstSTALEPENDING', duration: { totalMilliseconds: 90000 } } },
+              { track: { uri: 'spotify:track:lastSTALEPENDING', duration: { totalMilliseconds: 90000 } } },
+            ],
+          },
+        },
+      },
+    });
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(monitor.pause).not.toHaveBeenCalled();
+    expect(monitor.platformPause).not.toHaveBeenCalled();
+  });
+
   it('recognizes album completion after Spotify advances away from the armed final track', () => {
     const armedState = {
       signature: 'session-1|spotify:album:album123|spotify:track:last-track',
@@ -1658,6 +1767,19 @@ describe('trackspot spicetify helpers', () => {
       duration: 180000,
       is_paused: false,
       position_as_of_timestamp: 400,
+      timestamp: 101000,
+      track: {
+        uri: 'spotify:track:last-track',
+        metadata: { album_uri: 'spotify:album:album123' },
+      },
+    }, 101000)).toBe(true);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition(armedState, {
+      context_uri: 'spotify:album:album123',
+      session_id: 'session-1',
+      duration: 180000,
+      is_paused: true,
+      position_as_of_timestamp: 180000,
       timestamp: 101000,
       track: {
         uri: 'spotify:track:last-track',
