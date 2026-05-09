@@ -1645,6 +1645,67 @@ describe('trackspot spicetify helpers', () => {
     expect(monitor.platformPause).not.toHaveBeenCalled();
   });
 
+  it('drops a pending album-end arm when playback pauses before completion', () => {
+    helpers = loadHelpers();
+    vi.useFakeTimers();
+    vi.setSystemTime(100000);
+    const finalTrackState = {
+      context_uri: 'spotify:album:PAUSEBEFOREEND123',
+      session_id: 'session-pause-before-end',
+      duration: 180000,
+      is_paused: false,
+      position_as_of_timestamp: 179000,
+      timestamp: 100000,
+      track: {
+        uri: 'spotify:track:lastPAUSEBEFOREEND',
+        metadata: {
+          album_uri: 'spotify:album:PAUSEBEFOREEND123',
+          album_disc_number: '1',
+          album_disc_count: '1',
+          album_track_number: '10',
+          album_track_count: '10',
+        },
+      },
+      next_tracks: [],
+    };
+    const monitor = installAlbumPlaybackMonitorSpicetify({
+      playerState: finalTrackState,
+      progress: 179000,
+    });
+
+    helpers.syncAlbumPlaybackStopMonitor();
+
+    vi.setSystemTime(100100);
+    monitor.setProgress(179100);
+    monitor.setPlayerState({
+      ...finalTrackState,
+      is_paused: true,
+      position_as_of_timestamp: 179100,
+      timestamp: 100100,
+    });
+    helpers.syncAlbumPlaybackStopMonitor();
+
+    vi.setSystemTime(101500);
+    monitor.setProgress(0);
+    monitor.setPlayerState({
+      context_uri: 'spotify:playlist:user-choice',
+      session_id: 'session-user-choice',
+      duration: 200000,
+      is_paused: false,
+      position_as_of_timestamp: 0,
+      timestamp: 101500,
+      track: {
+        uri: 'spotify:track:userChoicePAUSEBEFOREEND',
+        metadata: { album_uri: 'spotify:album:userChoicePAUSEBEFOREEND' },
+      },
+      next_tracks: [],
+    });
+    helpers.syncAlbumPlaybackStopMonitor();
+
+    expect(monitor.pause).not.toHaveBeenCalled();
+    expect(monitor.platformPause).not.toHaveBeenCalled();
+  });
+
   it('keeps pending final-track lookups armed across Spotify autoplay transitions', async () => {
     helpers = loadHelpers();
     let nowMs = 100000;

@@ -6332,8 +6332,14 @@ function syncAlbumPlaybackStopMonitor() {
     return;
   }
 
-  if (!playerState || playerState.is_paused) {
+  if (!playerState) {
     clearAlbumPlaybackStopTimer();
+    return;
+  }
+
+  if (playerState.is_paused) {
+    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackEndArmedState();
     return;
   }
 
