@@ -5943,6 +5943,14 @@ function updateAlbumPlaybackEndArmedState({
   const existing = albumPlaybackEndArmedState?.signature === signature
     ? albumPlaybackEndArmedState
     : null;
+  const nextExpectedEndAtMs = now + Math.max(0, durationMs - boundedProgressMs);
+  const existingExpectedEndAtMs = Number(existing?.expectedEndAtMs);
+  const existingLastProgressMs = Number(existing?.lastProgressMs);
+  const progressMovedBackward = Number.isFinite(existingLastProgressMs) &&
+    boundedProgressMs + ALBUM_PLAYBACK_STOP_RESCHEDULE_TOLERANCE_MS < existingLastProgressMs;
+  const expectedEndAtMs = existing && !progressMovedBackward && Number.isFinite(existingExpectedEndAtMs)
+    ? Math.min(existingExpectedEndAtMs, nextExpectedEndAtMs)
+    : nextExpectedEndAtMs;
 
   albumPlaybackEndArmedState = {
     signature,
@@ -5950,10 +5958,10 @@ function updateAlbumPlaybackEndArmedState({
     finalTrackUri: getPlayerStateTrack(playerState)?.uri ?? null,
     durationMs,
     lastProgressMs: boundedProgressMs,
-    expectedEndAtMs: now + Math.max(0, durationMs - boundedProgressMs),
+    expectedEndAtMs,
     lastSeenAtMs: now,
     playerState: createAlbumPlaybackEndPlayerStateSnapshot(playerState),
-    completionObservedAtMs: existing?.completionObservedAtMs ?? null,
+    completionObservedAtMs: progressMovedBackward ? null : (existing?.completionObservedAtMs ?? null),
   };
 
   return albumPlaybackEndArmedState;
@@ -6023,6 +6031,17 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
   if (isStillOnArmedTrack) return false;
 
   return transitionIsNearExpectedEnd;
+}
+
+function isAlbumPlaybackStillOnArmedTrack(armedState, playerState = SpicetifyApi.Player?.data) {
+  if (!armedState?.signature || !playerState) return false;
+
+  const currentSignature = buildAlbumPlaybackStopSignature(playerState);
+  const currentTrackUri = getPlayerStateTrack(playerState)?.uri ?? null;
+  return Boolean(
+    (currentTrackUri && currentTrackUri === armedState.finalTrackUri) ||
+    (currentSignature && currentSignature === armedState.signature)
+  );
 }
 
 async function maybeAutoOpenLogModalAtAlbumEnd(signature, albumUri) {
@@ -6158,6 +6177,10 @@ function maybeTriggerAlbumPlaybackCompletionTransition(playerState = SpicetifyAp
 
   const now = Date.now();
   if (!isAlbumPlaybackCompletionTransition(armedState, playerState, now)) {
+    if (isAlbumPlaybackStillOnArmedTrack(armedState, playerState)) {
+      return false;
+    }
+
     clearAlbumPlaybackStopTimer();
     clearAlbumPlaybackEndArmedState();
     return false;

@@ -1461,6 +1461,42 @@ describe('trackspot spicetify helpers', () => {
     expect(monitor.platformPause).not.toHaveBeenCalled();
   });
 
+  it('runs fallback album-end actions when Spotify stays on the completed final track', () => {
+    helpers = loadHelpers();
+    vi.useFakeTimers();
+    vi.setSystemTime(100000);
+    const playerState = {
+      context_uri: 'spotify:album:SAMEFINAL123',
+      session_id: 'session-same-final',
+      duration: 180000,
+      is_paused: false,
+      position_as_of_timestamp: 179800,
+      timestamp: 100000,
+      track: {
+        uri: 'spotify:track:lastSAMEFINAL',
+        metadata: {
+          album_uri: 'spotify:album:SAMEFINAL123',
+          album_disc_number: '1',
+          album_disc_count: '1',
+          album_track_number: '10',
+          album_track_count: '10',
+        },
+      },
+      next_tracks: [],
+    };
+    const monitor = installAlbumPlaybackMonitorSpicetify({
+      playerState,
+      progress: 179800,
+    });
+
+    helpers.syncAlbumPlaybackStopMonitor();
+    monitor.setProgress(180000);
+    vi.advanceTimersByTime(550);
+
+    expect(monitor.pause).toHaveBeenCalledTimes(1);
+    expect(monitor.platformPause).toHaveBeenCalledTimes(1);
+  });
+
   it('does not complete the album when a stale final-track arm is followed by an earlier track selection', () => {
     helpers = loadHelpers();
     vi.useFakeTimers();
