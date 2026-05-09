@@ -94,6 +94,7 @@ const STARTUP_SERVER_RETRY_ATTEMPTS = 3;
 const STARTUP_SERVER_RETRY_DELAY_MS = 2000;
 const ALBUM_PLAYBACK_END_FALLBACK_DELAY_MS = 350;
 const ALBUM_PLAYBACK_END_PROGRESS_WINDOW_MS = 5000;
+const ALBUM_PLAYBACK_END_RESTART_PROGRESS_WINDOW_MS = 3000;
 const ALBUM_PLAYBACK_END_TRANSITION_EARLY_TOLERANCE_MS = 1000;
 const ALBUM_PLAYBACK_END_TRANSITION_GRACE_MS = 7000;
 const ALBUM_PLAYBACK_STOP_RESCHEDULE_TOLERANCE_MS = 750;
@@ -854,7 +855,7 @@ function getPlayerStateTrack(playerState = SpicetifyApi.Player?.data) {
   return playerState.track ?? playerState.item ?? null;
 }
 
-function getPlayerProgressMs(playerState = SpicetifyApi.Player?.data) {
+function getPlayerProgressMs(playerState = SpicetifyApi.Player?.data, now = Date.now()) {
   if (!playerState || typeof playerState !== 'object') {
     return Number(SpicetifyApi.Player?.getProgress?.()) || 0;
   }
@@ -870,7 +871,7 @@ function getPlayerProgressMs(playerState = SpicetifyApi.Player?.data) {
 
   const driftMs = playerState.is_paused
     ? 0
-    : Math.max(0, Date.now() - timestamp);
+    : Math.max(0, now - timestamp);
   const nextProgress = position + driftMs;
 
   if (!Number.isFinite(duration) || duration <= 0) {
@@ -884,6 +885,12 @@ function getPlayerProgressMs(playerState = SpicetifyApi.Player?.data) {
   const boundedNextProgress = Math.min(duration, nextProgress);
 
   if (Number.isFinite(boundedFallbackProgress) && Math.abs(boundedFallbackProgress - boundedNextProgress) > 1000) {
+    const nearEndBoundaryMs = Math.max(0, duration - ALBUM_PLAYBACK_END_PROGRESS_WINDOW_MS);
+    const fallbackIsNearEnd = boundedFallbackProgress >= nearEndBoundaryMs;
+    const timestampProgressIsNearEnd = boundedNextProgress >= nearEndBoundaryMs;
+    if (timestampProgressIsNearEnd && !fallbackIsNearEnd) {
+      return boundedFallbackProgress;
+    }
     return Math.max(boundedFallbackProgress, boundedNextProgress);
   }
 
@@ -5912,6 +5919,9 @@ function createAlbumPlaybackEndPlayerStateSnapshot(playerState) {
     session_id: playerState?.session_id ?? null,
     duration: playerState?.duration ?? null,
     is_paused: false,
+    next_tracks: Array.isArray(playerState?.next_tracks)
+      ? [...playerState.next_tracks]
+      : [],
     track: track
       ? {
           uri: track.uri ?? null,
@@ -5971,15 +5981,16 @@ function syncSuppressedAlbumEndActionSignature({
 
 function isAlbumPlaybackCompletionTransition(armedState, playerState = SpicetifyApi.Player?.data, now = Date.now()) {
   if (!armedState?.signature || !playerState) return false;
-  if (Number.isFinite(Number(armedState.completionObservedAtMs))) return true;
+  if (
+    armedState.completionObservedAtMs !== null &&
+    typeof armedState.completionObservedAtMs !== 'undefined' &&
+    Number.isFinite(Number(armedState.completionObservedAtMs))
+  ) {
+    return true;
+  }
 
   const currentSignature = buildAlbumPlaybackStopSignature(playerState);
   const currentTrackUri = getPlayerStateTrack(playerState)?.uri ?? null;
-  const isStillOnArmedTrack =
-    currentTrackUri === armedState.finalTrackUri ||
-    (currentSignature && currentSignature === armedState.signature);
-  if (isStillOnArmedTrack) return false;
-
   const durationMs = Number(armedState.durationMs);
   const lastProgressMs = Number(armedState.lastProgressMs);
   const lastSeenAtMs = Number(armedState.lastSeenAtMs);
@@ -5999,7 +6010,19 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
     now <= expectedEndAtMs + ALBUM_PLAYBACK_END_TRANSITION_GRACE_MS
   );
 
-  return progressWasNearEnd || transitionIsNearExpectedEnd;
+  if (currentTrackUri === armedState.finalTrackUri) {
+    const currentProgressMs = getPlayerProgressMs(playerState, now);
+    const currentProgressLooksRestarted = Number.isFinite(currentProgressMs)
+      && currentProgressMs <= ALBUM_PLAYBACK_END_RESTART_PROGRESS_WINDOW_MS
+      && Number.isFinite(lastProgressMs)
+      && currentProgressMs < lastProgressMs;
+    return progressWasNearEnd && transitionIsNearExpectedEnd && currentProgressLooksRestarted;
+  }
+
+  const isStillOnArmedTrack = currentSignature && currentSignature === armedState.signature;
+  if (isStillOnArmedTrack) return false;
+
+  return transitionIsNearExpectedEnd;
 }
 
 async function maybeAutoOpenLogModalAtAlbumEnd(signature, albumUri) {
@@ -6133,13 +6156,6 @@ function maybeTriggerAlbumPlaybackCompletionTransition(playerState = SpicetifyAp
   if (!armedState) return false;
   if (!playerState) return false;
 
-  const currentSignature = buildAlbumPlaybackStopSignature(playerState);
-  const currentTrackUri = getPlayerStateTrack(playerState)?.uri ?? null;
-  const isStillOnArmedTrack =
-    currentTrackUri === armedState.finalTrackUri ||
-    (currentSignature && currentSignature === armedState.signature);
-  if (isStillOnArmedTrack) return false;
-
   const now = Date.now();
   if (!isAlbumPlaybackCompletionTransition(armedState, playerState, now)) {
     clearAlbumPlaybackStopTimer();
@@ -6155,6 +6171,18 @@ function maybeTriggerAlbumPlaybackCompletionTransition(playerState = SpicetifyAp
   }
 
   const observedCompletionState = albumPlaybackEndArmedState;
+  const observedCandidateState = getAlbumPlaybackAtEndCandidateState(observedCompletionState.playerState);
+  if (observedCandidateState === 'pending') {
+    clearAlbumPlaybackStopTimer();
+    return true;
+  }
+
+  if (observedCandidateState !== 'candidate') {
+    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackEndArmedState();
+    return true;
+  }
+
   const suppressionState = getAlbumEndPlaybackActionSuppressionState(observedCompletionState.playerState);
   if (suppressionState === 'pending') {
     clearAlbumPlaybackStopTimer();
@@ -6191,11 +6219,14 @@ function syncAlbumPlaybackStopMonitor() {
   }
 
   const candidateState = getAlbumPlaybackAtEndCandidateState(playerState);
-  if (candidateState !== 'candidate') {
+  if (candidateState === 'not-candidate') {
     clearAlbumPlaybackStopTimer();
-    if (candidateState === 'not-candidate') {
-      clearAlbumPlaybackEndArmedState();
-    }
+    clearAlbumPlaybackEndArmedState();
+    return;
+  }
+
+  if (candidateState !== 'candidate' && candidateState !== 'pending') {
+    clearAlbumPlaybackStopTimer();
     return;
   }
 
@@ -6217,6 +6248,12 @@ function syncAlbumPlaybackStopMonitor() {
     durationMs,
     progressMs,
   });
+
+  if (candidateState === 'pending') {
+    clearAlbumPlaybackStopTimer();
+    return;
+  }
+
   const suppressionState = getAlbumEndPlaybackActionSuppressionState(playerState);
 
   albumPlaybackStopSuppressedSignature = syncSuppressedAlbumEndActionSignature({
@@ -6384,6 +6421,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getCsvWorkerId,
     getAlbumEndPlaybackExceptionAlbumUri,
     getAlbumPlaybackAtEndCandidateState,
+    getPlayerProgressMs,
     getActionTooltip,
     getActionBehavior,
     hideTrackspotTooltips,
@@ -6419,6 +6457,7 @@ if (typeof module !== 'undefined' && module.exports) {
     shouldAutoDeleteRemovedAlbum,
     shouldAutoPlanLibraryAlbum,
     shouldTriggerNavigationBulkSync,
+    syncAlbumPlaybackStopMonitor,
     syncTrackLinkCopyTitleUi,
     updateLogModalDraftForAlbum,
     todayLocalISO,
