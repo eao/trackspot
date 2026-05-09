@@ -5972,6 +5972,7 @@ function updateAlbumPlaybackEndArmedState({
   albumPlaybackEndArmedState = {
     signature,
     albumUri,
+    sessionId: playerState?.session_id ?? null,
     finalTrackUri: getPlayerStateTrack(playerState)?.uri ?? null,
     durationMs,
     lastProgressMs: boundedProgressMs,
@@ -5985,6 +5986,21 @@ function updateAlbumPlaybackEndArmedState({
   };
 
   return albumPlaybackEndArmedState;
+}
+
+function getAlbumPlaybackArmedSessionId(armedState) {
+  if (armedState?.sessionId) return armedState.sessionId;
+  if (armedState?.playerState?.session_id) return armedState.playerState.session_id;
+  if (typeof armedState?.signature === 'string') {
+    return armedState.signature.split('|')[0] || null;
+  }
+  return null;
+}
+
+function isSameAlbumPlaybackSession(armedState, playerState) {
+  const armedSessionId = getAlbumPlaybackArmedSessionId(armedState);
+  const currentSessionId = playerState?.session_id ?? null;
+  return Boolean(armedSessionId && currentSessionId && armedSessionId === currentSessionId);
 }
 
 function syncSuppressedAlbumEndActionSignature({
@@ -6110,7 +6126,7 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
   const isStillOnArmedTrack = currentSignature && currentSignature === armedState.signature;
   if (isStillOnArmedTrack) return false;
 
-  return transitionIsNearExpectedEnd;
+  return isSameAlbumPlaybackSession(armedState, playerState) && transitionIsNearExpectedEnd;
 }
 
 function isAlbumPlaybackStillOnArmedTrack(armedState, playerState = SpicetifyApi.Player?.data) {

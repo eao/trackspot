@@ -1706,6 +1706,58 @@ describe('trackspot spicetify helpers', () => {
     expect(monitor.platformPause).not.toHaveBeenCalled();
   });
 
+  it('does not run album-end actions after a near-end manual jump to another playback session', () => {
+    helpers = loadHelpers();
+    vi.useFakeTimers();
+    vi.setSystemTime(100000);
+    const finalTrackState = {
+      context_uri: 'spotify:album:MANUALJUMP123',
+      session_id: 'session-manual-jump',
+      duration: 180000,
+      is_paused: false,
+      position_as_of_timestamp: 178500,
+      timestamp: 100000,
+      track: {
+        uri: 'spotify:track:lastMANUALJUMP',
+        metadata: {
+          album_uri: 'spotify:album:MANUALJUMP123',
+          album_disc_number: '1',
+          album_disc_count: '1',
+          album_track_number: '10',
+          album_track_count: '10',
+        },
+      },
+      next_tracks: [],
+    };
+    const monitor = installAlbumPlaybackMonitorSpicetify({
+      playerState: finalTrackState,
+      progress: 178500,
+    });
+
+    helpers.syncAlbumPlaybackStopMonitor();
+
+    vi.setSystemTime(101000);
+    monitor.setProgress(0);
+    monitor.setPlayerState({
+      context_uri: 'spotify:playlist:user-choice',
+      session_id: 'session-user-choice',
+      duration: 210000,
+      is_paused: false,
+      position_as_of_timestamp: 0,
+      timestamp: 101000,
+      track: {
+        uri: 'spotify:track:userChoiceMANUALJUMP',
+        metadata: { album_uri: 'spotify:album:userChoiceMANUALJUMP' },
+      },
+      next_tracks: [],
+    });
+    helpers.syncAlbumPlaybackStopMonitor();
+    vi.advanceTimersByTime(1000);
+
+    expect(monitor.pause).not.toHaveBeenCalled();
+    expect(monitor.platformPause).not.toHaveBeenCalled();
+  });
+
   it('keeps pending final-track lookups armed across Spotify autoplay transitions', async () => {
     helpers = loadHelpers();
     let nowMs = 100000;
@@ -1926,6 +1978,16 @@ describe('trackspot spicetify helpers', () => {
         metadata: { album_uri: 'spotify:album:album123' },
       },
     }, 100000)).toBe(false);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition(armedState, {
+      context_uri: 'spotify:playlist:user-choice',
+      session_id: 'session-user-choice',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:user-choice',
+        metadata: { album_uri: 'spotify:album:user-choice' },
+      },
+    }, 99100)).toBe(false);
 
     expect(helpers.isAlbumPlaybackCompletionTransition({
       ...armedState,
