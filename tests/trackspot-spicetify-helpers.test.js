@@ -2231,6 +2231,56 @@ describe('trackspot spicetify helpers', () => {
         metadata: { album_uri: 'spotify:album:radio-album' },
       },
     }, 101000)).toBe(false);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      signature: '|spotify:album:album123|spotify:track:last-track',
+      sessionId: null,
+      durationMs: 234828,
+      lastProgressMs: 85390,
+      expectedEndAtMs: 249438,
+      lastSeenAtMs: 100000,
+    }, {
+      context_uri: 'spotify:playlist:autoplay',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:autoplay-after-unfocused-end',
+        metadata: { album_uri: 'spotify:album:autoplay-album' },
+      },
+    }, 249438)).toBe(true);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      signature: '|spotify:album:album123|spotify:track:last-track',
+      sessionId: null,
+      durationMs: 234828,
+      lastProgressMs: 85390,
+      expectedEndAtMs: 249438,
+      lastSeenAtMs: 100000,
+    }, {
+      context_uri: 'spotify:playlist:user-choice',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:user-choice-before-expected-end',
+        metadata: { album_uri: 'spotify:album:user-choice' },
+      },
+    }, 200000)).toBe(false);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      durationMs: 234828,
+      lastProgressMs: 85390,
+      expectedEndAtMs: 249438,
+      lastSeenAtMs: 100000,
+    }, {
+      context_uri: 'spotify:playlist:other-session',
+      session_id: 'session-user-choice',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:other-session-after-expected-end',
+        metadata: { album_uri: 'spotify:album:user-choice' },
+      },
+    }, 249438)).toBe(false);
   });
 
   it('suppresses only the immediate repeated auto-pause for the same finished album track', () => {

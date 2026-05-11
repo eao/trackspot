@@ -6265,6 +6265,7 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
   if (isStillOnArmedTrack) return false;
 
   const sameSession = isSameAlbumPlaybackSession(armedState, playerState);
+  const sameOrUnavailableSession = isSameOrUnavailableAlbumPlaybackSession(armedState, playerState);
   const strictCompletionTransition = progressWasNearEnd &&
     transitionIsNearExpectedEnd &&
     finalTrackWasProbablyComplete &&
@@ -6272,7 +6273,13 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
     sameSession;
   if (strictCompletionTransition) return true;
 
-  return isSameOrUnavailableAlbumPlaybackSession(armedState, playerState) &&
+  const estimatedCompletionTransition = transitionIsNearExpectedEnd &&
+    finalTrackWasProbablyComplete &&
+    now >= expectedEndAtMs &&
+    sameOrUnavailableSession;
+  if (estimatedCompletionTransition) return true;
+
+  return sameOrUnavailableSession &&
     isAlbumAutoplayContextForArmedAlbum(armedState, playerState) &&
     finalTrackWasRecentlyNearEnoughForAutoplay;
 }
