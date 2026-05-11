@@ -36,6 +36,8 @@ For a Trackspot server running on another machine, you will also need to set up 
 
 So if you haven't already, install Trackspot by following the instructions at https://github.com/eao/trackspot, and get tracking!
 
-## Version
+## Changelog
 
-Current extension version number is 1.01.
+v1.02: Make end-of-album actions even more robust.  
+v1.01: Make end-of-album actions more robust.  
+v1.00: Initial release.
