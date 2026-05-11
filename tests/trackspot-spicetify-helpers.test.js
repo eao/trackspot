@@ -2161,6 +2161,73 @@ describe('trackspot spicetify helpers', () => {
     })).toBe(false);
   });
 
+  it('clears album-end action suppression after autoplay leaves the completed album', () => {
+    helpers = loadHelpers();
+    vi.useFakeTimers();
+    vi.setSystemTime(100000);
+    const finalTrackState = {
+      context_uri: 'spotify:album:REPLAYSTOP123',
+      session_id: 'session-replay-stop',
+      duration: 180000,
+      is_paused: false,
+      position_as_of_timestamp: 179800,
+      timestamp: 100000,
+      track: {
+        uri: 'spotify:track:lastREPLAYSTOP',
+        metadata: {
+          album_uri: 'spotify:album:REPLAYSTOP123',
+          album_disc_number: '1',
+          album_disc_count: '1',
+          album_track_number: '10',
+          album_track_count: '10',
+        },
+      },
+      next_tracks: [],
+    };
+    const monitor = installAlbumPlaybackMonitorSpicetify({
+      playerState: finalTrackState,
+      progress: 179800,
+    });
+
+    helpers.syncAlbumPlaybackStopMonitor();
+    monitor.setProgress(180000);
+    vi.advanceTimersByTime(550);
+
+    expect(monitor.pause).toHaveBeenCalledTimes(1);
+    expect(monitor.platformPause).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(101000);
+    monitor.setProgress(5000);
+    monitor.setPlayerState({
+      context_uri: 'spotify:playlist:autoplay',
+      session_id: 'session-replay-stop',
+      duration: 210000,
+      is_paused: false,
+      position_as_of_timestamp: 5000,
+      timestamp: 101000,
+      track: {
+        uri: 'spotify:track:autoplayREPLAYSTOP',
+        metadata: { album_uri: 'spotify:album:autoplayREPLAYSTOP' },
+      },
+      next_tracks: [],
+    });
+    helpers.syncAlbumPlaybackStopMonitor();
+
+    vi.setSystemTime(102000);
+    monitor.setProgress(179800);
+    monitor.setPlayerState({
+      ...finalTrackState,
+      position_as_of_timestamp: 179800,
+      timestamp: 102000,
+    });
+    helpers.syncAlbumPlaybackStopMonitor();
+    monitor.setProgress(180000);
+    vi.advanceTimersByTime(550);
+
+    expect(monitor.pause).toHaveBeenCalledTimes(2);
+    expect(monitor.platformPause).toHaveBeenCalledTimes(2);
+  });
+
   it('allows init to proceed without Player.pause as long as the core APIs are ready', () => {
     expect(helpers.isSpicetifyReadyForInit({
       Platform: {

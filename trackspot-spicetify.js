@@ -5888,8 +5888,15 @@ function onNavigate(location) {
 // ALBUM PLAYBACK STOP MONITOR
 // ===========================================================================
 
-function clearAlbumPlaybackStopTimer() {
+function clearAlbumPlaybackStopTimer(reason = null) {
   if (albumPlaybackStopTimeoutId !== null) {
+    if (reason) {
+      logAlbumPlaybackEndMonitor('clearing fallback timer', {
+        reason,
+        signature: albumPlaybackStopSignature,
+        targetAtMs: albumPlaybackStopTargetAtMs,
+      });
+    }
     clearTimeout(albumPlaybackStopTimeoutId);
     albumPlaybackStopTimeoutId = null;
   }
@@ -5901,7 +5908,51 @@ function hasAlbumEndPlaybackActionEnabled() {
   return getAutoStopAlbumPlaybackAtEndEnabled() || getAutoLogAlbumAtEndEnabled();
 }
 
-function clearAlbumPlaybackEndArmedState() {
+function logAlbumPlaybackEndMonitor(event, details = {}) {
+  try {
+    console.info('[Trackspot] Album-end playback:', event, details);
+  } catch {
+    // Logging should never affect playback handling.
+  }
+}
+
+function summarizeAlbumPlaybackState(playerState = SpicetifyApi.Player?.data) {
+  const track = getPlayerStateTrack(playerState);
+  return {
+    signature: buildAlbumPlaybackStopSignature(playerState),
+    contextUri: playerState?.context_uri ?? track?.metadata?.context_uri ?? null,
+    albumUri: track?.metadata?.album_uri ?? null,
+    trackUri: track?.uri ?? null,
+    sessionId: playerState?.session_id ?? null,
+    paused: Boolean(playerState?.is_paused),
+    durationMs: Number.isFinite(Number(playerState?.duration)) ? Number(playerState.duration) : null,
+    progressMs: playerState ? getPlayerProgressMs(playerState) : null,
+  };
+}
+
+function summarizeAlbumPlaybackArmedState(armedState = albumPlaybackEndArmedState) {
+  if (!armedState) return null;
+  return {
+    signature: armedState.signature ?? null,
+    albumUri: armedState.albumUri ?? null,
+    finalTrackUri: armedState.finalTrackUri ?? null,
+    sessionId: armedState.sessionId ?? null,
+    durationMs: armedState.durationMs ?? null,
+    lastProgressMs: armedState.lastProgressMs ?? null,
+    expectedEndAtMs: armedState.expectedEndAtMs ?? null,
+    lastSeenAtMs: armedState.lastSeenAtMs ?? null,
+    completionObservedAtMs: armedState.completionObservedAtMs ?? null,
+    completionObservedSignature: armedState.completionObservedSignature ?? null,
+  };
+}
+
+function clearAlbumPlaybackEndArmedState(reason = null) {
+  if (albumPlaybackEndArmedState && reason) {
+    logAlbumPlaybackEndMonitor('clearing armed state', {
+      reason,
+      armedState: summarizeAlbumPlaybackArmedState(albumPlaybackEndArmedState),
+    });
+  }
   albumPlaybackEndArmedState = null;
 }
 
@@ -5985,6 +6036,29 @@ function updateAlbumPlaybackEndArmedState({
     completionObservedSessionId: progressMovedBackward ? null : (existing?.completionObservedSessionId ?? null),
   };
 
+  if (!existing) {
+    logAlbumPlaybackEndMonitor('armed final track', {
+      armedState: summarizeAlbumPlaybackArmedState(albumPlaybackEndArmedState),
+      playerState: summarizeAlbumPlaybackState(playerState),
+    });
+  } else if (progressMovedBackward) {
+    logAlbumPlaybackEndMonitor('rearmed final track after progress moved backward', {
+      previousProgressMs: existingLastProgressMs,
+      currentProgressMs: boundedProgressMs,
+      armedState: summarizeAlbumPlaybackArmedState(albumPlaybackEndArmedState),
+    });
+  } else if (
+    Number.isFinite(existingExpectedEndAtMs) &&
+    Math.abs(expectedEndAtMs - existingExpectedEndAtMs) > ALBUM_PLAYBACK_STOP_RESCHEDULE_TOLERANCE_MS
+  ) {
+    logAlbumPlaybackEndMonitor('adjusted expected final-track end', {
+      previousExpectedEndAtMs: existingExpectedEndAtMs,
+      expectedEndAtMs,
+      progressMs: boundedProgressMs,
+      durationMs,
+    });
+  }
+
   return albumPlaybackEndArmedState;
 }
 
@@ -6021,6 +6095,28 @@ function syncSuppressedAlbumEndActionSignature({
   }
 
   return suppressedSignature === signature ? null : suppressedSignature;
+}
+
+function clearStaleAlbumPlaybackActionSuppressions(signature, reason) {
+  if (!signature) return;
+
+  const cleared = {};
+  if (albumPlaybackStopSuppressedSignature && albumPlaybackStopSuppressedSignature !== signature) {
+    cleared.stop = albumPlaybackStopSuppressedSignature;
+    albumPlaybackStopSuppressedSignature = null;
+  }
+  if (albumPlaybackAutoLogSuppressedSignature && albumPlaybackAutoLogSuppressedSignature !== signature) {
+    cleared.log = albumPlaybackAutoLogSuppressedSignature;
+    albumPlaybackAutoLogSuppressedSignature = null;
+  }
+
+  if (cleared.stop || cleared.log) {
+    logAlbumPlaybackEndMonitor('cleared stale action suppression', {
+      reason,
+      currentSignature: signature,
+      cleared,
+    });
+  }
 }
 
 function createAlbumPlaybackCompletionObservedState(playerState) {
@@ -6162,20 +6258,34 @@ async function maybeAutoOpenLogModalAtAlbumEnd(signature, albumUri) {
   const playerState = SpicetifyApi.Player?.data;
   const liveTrack = getPlayerStateTrack(playerState);
   const liveAlbumUri = liveTrack?.metadata?.album_uri ?? playerState?.context_uri ?? null;
+  const currentSignature = buildAlbumPlaybackStopSignature(playerState);
 
   if (
     !getAutoLogAlbumAtEndEnabled() ||
     !signature ||
     !albumUri ||
     playerState?.is_paused ||
-    buildAlbumPlaybackStopSignature(playerState) !== signature ||
+    currentSignature !== signature ||
     !shouldStopAlbumPlaybackAtEnd(playerState) ||
     liveAlbumUri !== albumUri
   ) {
+    logAlbumPlaybackEndMonitor('skipped live auto-log check', {
+      requestedSignature: signature,
+      currentSignature,
+      albumUri,
+      liveAlbumUri,
+      autoLogEnabled: getAutoLogAlbumAtEndEnabled(),
+      paused: Boolean(playerState?.is_paused),
+      shouldStop: shouldStopAlbumPlaybackAtEnd(playerState),
+    });
     return;
   }
 
   albumPlaybackAutoLogSuppressedSignature = signature;
+  logAlbumPlaybackEndMonitor('opening auto-log modal at live album end', {
+    signature,
+    albumUri,
+  });
 
   try {
     await openLogFlowForAlbum(albumUri, { silentConnectionFailures: true });
@@ -6199,6 +6309,10 @@ async function maybeAutoOpenLogModalForCompletedAlbum(signature, albumUri) {
   }
 
   albumPlaybackAutoLogSuppressedSignature = signature;
+  logAlbumPlaybackEndMonitor('opening auto-log modal for completed album transition', {
+    signature,
+    albumUri,
+  });
 
   try {
     await openLogFlowForAlbum(albumUri, { silentConnectionFailures: true });
@@ -6217,10 +6331,19 @@ function pauseCurrentPlaybackForCompletedAlbum(signature, playerState = Spicetif
     !signature ||
     albumPlaybackStopSuppressedSignature === signature
   ) {
+    logAlbumPlaybackEndMonitor('skipped pause for completed album', {
+      signature,
+      autoStopEnabled: getAutoStopAlbumPlaybackAtEndEnabled(),
+      suppressed: albumPlaybackStopSuppressedSignature === signature,
+    });
     return;
   }
 
   albumPlaybackStopSuppressedSignature = signature;
+  logAlbumPlaybackEndMonitor('pausing playback for completed album', {
+    signature,
+    playerState: summarizeAlbumPlaybackState(playerState),
+  });
   if (playerState?.is_paused) return;
 
   try {
@@ -6240,22 +6363,37 @@ function pauseCurrentPlaybackForCompletedAlbum(signature, playerState = Spicetif
 
 function pauseAlbumPlaybackAtEnd(expectedSignature) {
   const playerState = SpicetifyApi.Player?.data;
+  const currentSignature = buildAlbumPlaybackStopSignature(playerState);
   if (
     !getAutoStopAlbumPlaybackAtEndEnabled() ||
     !expectedSignature ||
-    buildAlbumPlaybackStopSignature(playerState) !== expectedSignature ||
+    currentSignature !== expectedSignature ||
     !shouldStopAlbumPlaybackAtEnd(playerState)
   ) {
-    clearAlbumPlaybackStopTimer();
+    logAlbumPlaybackEndMonitor('skipped fallback pause at album end', {
+      expectedSignature,
+      currentSignature,
+      autoStopEnabled: getAutoStopAlbumPlaybackAtEndEnabled(),
+      shouldStop: shouldStopAlbumPlaybackAtEnd(playerState),
+      playerState: summarizeAlbumPlaybackState(playerState),
+    });
+    clearAlbumPlaybackStopTimer('fallback pause preconditions failed');
     return;
   }
 
-  clearAlbumPlaybackStopTimer();
+  clearAlbumPlaybackStopTimer('fallback pause firing');
   pauseCurrentPlaybackForCompletedAlbum(expectedSignature, playerState);
 }
 
 function triggerAlbumPlaybackEndActions(signature, albumUri) {
   if (!signature || !albumUri) return;
+
+  logAlbumPlaybackEndMonitor('triggering live album-end actions', {
+    signature,
+    albumUri,
+    autoLogEnabled: getAutoLogAlbumAtEndEnabled(),
+    autoStopEnabled: getAutoStopAlbumPlaybackAtEndEnabled(),
+  });
 
   if (getAutoLogAlbumAtEndEnabled()) {
     void maybeAutoOpenLogModalAtAlbumEnd(signature, albumUri);
@@ -6264,10 +6402,10 @@ function triggerAlbumPlaybackEndActions(signature, albumUri) {
   if (getAutoStopAlbumPlaybackAtEndEnabled()) {
     pauseAlbumPlaybackAtEnd(signature);
   } else {
-    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackStopTimer('auto-stop disabled during live trigger');
   }
 
-  clearAlbumPlaybackEndArmedState();
+  clearAlbumPlaybackEndArmedState('live album-end actions triggered');
 }
 
 function triggerCompletedAlbumPlaybackEndActions(armedState, playerState = SpicetifyApi.Player?.data) {
@@ -6275,13 +6413,22 @@ function triggerCompletedAlbumPlaybackEndActions(armedState, playerState = Spice
   const albumUri = armedState?.albumUri;
   if (!signature || !albumUri) return;
 
+  logAlbumPlaybackEndMonitor('triggering completed-transition album-end actions', {
+    signature,
+    albumUri,
+    autoLogEnabled: getAutoLogAlbumAtEndEnabled(),
+    autoStopEnabled: getAutoStopAlbumPlaybackAtEndEnabled(),
+    armedState: summarizeAlbumPlaybackArmedState(armedState),
+    playerState: summarizeAlbumPlaybackState(playerState),
+  });
+
   if (getAutoLogAlbumAtEndEnabled()) {
     void maybeAutoOpenLogModalForCompletedAlbum(signature, albumUri);
   }
 
   pauseCurrentPlaybackForCompletedAlbum(signature, playerState);
-  clearAlbumPlaybackStopTimer();
-  clearAlbumPlaybackEndArmedState();
+  clearAlbumPlaybackStopTimer('completed-transition actions triggered');
+  clearAlbumPlaybackEndArmedState('completed-transition actions triggered');
 }
 
 function maybeTriggerAlbumPlaybackCompletionTransition(playerState = SpicetifyApi.Player?.data) {
@@ -6295,8 +6442,8 @@ function maybeTriggerAlbumPlaybackCompletionTransition(playerState = SpicetifyAp
       return false;
     }
 
-    clearAlbumPlaybackStopTimer();
-    clearAlbumPlaybackEndArmedState();
+    clearAlbumPlaybackStopTimer('playback left armed final track before completion');
+    clearAlbumPlaybackEndArmedState('playback left armed final track before completion');
     return false;
   }
 
@@ -6309,42 +6456,56 @@ function maybeTriggerAlbumPlaybackCompletionTransition(playerState = SpicetifyAp
       completionObservedTrackUri: observedState.trackUri,
       completionObservedSessionId: observedState.sessionId,
     };
+    logAlbumPlaybackEndMonitor('observed album completion transition', {
+      observedState,
+      armedState: summarizeAlbumPlaybackArmedState(albumPlaybackEndArmedState),
+      playerState: summarizeAlbumPlaybackState(playerState),
+    });
   }
 
   const observedCompletionState = albumPlaybackEndArmedState;
   if (!isCompletedAlbumEndActionStillSafe(observedCompletionState, playerState, now)) {
-    clearAlbumPlaybackStopTimer();
-    clearAlbumPlaybackEndArmedState();
+    clearAlbumPlaybackStopTimer('completed transition no longer safe');
+    clearAlbumPlaybackEndArmedState('completed transition no longer safe');
     return false;
   }
 
   const observedCandidateState = getAlbumPlaybackAtEndCandidateState(observedCompletionState.playerState);
   if (observedCandidateState === 'pending') {
-    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackStopTimer('completed transition candidate lookup pending');
+    logAlbumPlaybackEndMonitor('waiting on completed-transition candidate lookup', {
+      armedState: summarizeAlbumPlaybackArmedState(observedCompletionState),
+    });
     return true;
   }
 
   if (observedCandidateState !== 'candidate') {
-    clearAlbumPlaybackStopTimer();
-    clearAlbumPlaybackEndArmedState();
+    clearAlbumPlaybackStopTimer('completed transition was not a final-track candidate');
+    clearAlbumPlaybackEndArmedState('completed transition was not a final-track candidate');
     return true;
   }
 
   const suppressionState = getAlbumEndPlaybackActionSuppressionState(observedCompletionState.playerState);
   if (suppressionState === 'pending') {
-    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackStopTimer('completed transition suppression lookup pending');
+    logAlbumPlaybackEndMonitor('waiting on completed-transition suppression lookup', {
+      armedState: summarizeAlbumPlaybackArmedState(observedCompletionState),
+    });
     return true;
   }
 
   if (suppressionState === 'suppress') {
-    clearAlbumPlaybackStopTimer();
-    clearAlbumPlaybackEndArmedState();
+    logAlbumPlaybackEndMonitor('suppressed completed-transition album-end actions', {
+      armedState: summarizeAlbumPlaybackArmedState(observedCompletionState),
+    });
+    clearAlbumPlaybackStopTimer('completed transition suppressed by exception settings');
+    clearAlbumPlaybackEndArmedState('completed transition suppressed by exception settings');
     return true;
   }
 
   if (!isCompletedAlbumEndActionStillSafe(observedCompletionState, playerState, Date.now())) {
-    clearAlbumPlaybackStopTimer();
-    clearAlbumPlaybackEndArmedState();
+    clearAlbumPlaybackStopTimer('completed transition became unsafe before actions');
+    clearAlbumPlaybackEndArmedState('completed transition became unsafe before actions');
     return false;
   }
 
@@ -6354,8 +6515,8 @@ function maybeTriggerAlbumPlaybackCompletionTransition(playerState = SpicetifyAp
 
 function syncAlbumPlaybackStopMonitor() {
   if (!hasAlbumEndPlaybackActionEnabled()) {
-    clearAlbumPlaybackStopTimer();
-    clearAlbumPlaybackEndArmedState();
+    clearAlbumPlaybackStopTimer('album-end actions disabled');
+    clearAlbumPlaybackEndArmedState('album-end actions disabled');
     albumPlaybackStopSuppressedSignature = null;
     albumPlaybackAutoLogSuppressedSignature = null;
     return;
@@ -6367,33 +6528,35 @@ function syncAlbumPlaybackStopMonitor() {
   }
 
   if (!playerState) {
-    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackStopTimer('missing player state');
     return;
   }
 
+  const signature = buildAlbumPlaybackStopSignature(playerState);
+  clearStaleAlbumPlaybackActionSuppressions(signature, 'playback moved away from suppressed album-end signature');
+
   if (playerState.is_paused) {
-    clearAlbumPlaybackStopTimer();
-    clearAlbumPlaybackEndArmedState();
+    clearAlbumPlaybackStopTimer('playback paused before album-end completion');
+    clearAlbumPlaybackEndArmedState('playback paused before album-end completion');
     return;
   }
 
   const candidateState = getAlbumPlaybackAtEndCandidateState(playerState);
   if (candidateState === 'not-candidate') {
-    clearAlbumPlaybackStopTimer();
-    clearAlbumPlaybackEndArmedState();
+    clearAlbumPlaybackStopTimer('current playback is not an album-end candidate');
+    clearAlbumPlaybackEndArmedState('current playback is not an album-end candidate');
     return;
   }
 
   if (candidateState !== 'candidate' && candidateState !== 'pending') {
-    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackStopTimer('unknown album-end candidate state');
     return;
   }
 
-  const signature = buildAlbumPlaybackStopSignature(playerState);
   const durationMs = Number(playerState.duration);
   const progressMs = getPlayerProgressMs(playerState);
   if (!signature || !Number.isFinite(durationMs) || durationMs <= 0) {
-    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackStopTimer('missing signature or duration');
     return;
   }
 
@@ -6409,7 +6572,12 @@ function syncAlbumPlaybackStopMonitor() {
   });
 
   if (candidateState === 'pending') {
-    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackStopTimer('candidate lookup pending');
+    logAlbumPlaybackEndMonitor('waiting on album-end candidate lookup', {
+      signature,
+      albumUri,
+      playerState: summarizeAlbumPlaybackState(playerState),
+    });
     return;
   }
 
@@ -6434,15 +6602,28 @@ function syncAlbumPlaybackStopMonitor() {
     || albumPlaybackAutoLogSuppressedSignature === signature;
 
   if (suppressionState === 'suppress' || (isStopActionSuppressed && isLogActionSuppressed)) {
-    clearAlbumPlaybackStopTimer();
+    logAlbumPlaybackEndMonitor('album-end actions suppressed for current final track', {
+      signature,
+      albumUri,
+      suppressionState,
+      stopSuppressed: isStopActionSuppressed,
+      logSuppressed: isLogActionSuppressed,
+      remainingMs,
+    });
+    clearAlbumPlaybackStopTimer('album-end actions suppressed for current final track');
     if (suppressionState === 'suppress') {
-      clearAlbumPlaybackEndArmedState();
+      clearAlbumPlaybackEndArmedState('album-end actions suppressed by exception settings');
     }
     return;
   }
 
   if (suppressionState === 'pending') {
-    clearAlbumPlaybackStopTimer();
+    clearAlbumPlaybackStopTimer('suppression lookup pending');
+    logAlbumPlaybackEndMonitor('waiting on album-end suppression lookup', {
+      signature,
+      albumUri,
+      playerState: summarizeAlbumPlaybackState(playerState),
+    });
     return;
   }
 
@@ -6459,9 +6640,17 @@ function syncAlbumPlaybackStopMonitor() {
 
   if (!shouldReschedule) return;
 
-  clearAlbumPlaybackStopTimer();
+  clearAlbumPlaybackStopTimer('rescheduling fallback album-end timer');
   albumPlaybackStopSignature = signature;
   albumPlaybackStopTargetAtMs = desiredTargetAtMs;
+  logAlbumPlaybackEndMonitor('scheduled fallback album-end timer', {
+    signature,
+    albumUri,
+    progressMs,
+    durationMs,
+    remainingMs,
+    targetInMs: Math.max(0, desiredTargetAtMs - Date.now()),
+  });
   albumPlaybackStopTimeoutId = setTimeout(() => {
     albumPlaybackStopTimeoutId = null;
     syncAlbumPlaybackStopMonitor();
