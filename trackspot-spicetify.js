@@ -99,6 +99,7 @@ const ALBUM_PLAYBACK_END_COMPLETE_PROGRESS_TOLERANCE_MS = 500;
 const ALBUM_PLAYBACK_END_TRANSITION_EARLY_TOLERANCE_MS = 1000;
 const ALBUM_PLAYBACK_END_TRANSITION_GRACE_MS = 7000;
 const ALBUM_PLAYBACK_END_ACTION_GRACE_MS = 7000;
+const ALBUM_PLAYBACK_END_AUTOPLAY_STALE_PROGRESS_WINDOW_MS = 20000;
 const ALBUM_PLAYBACK_STOP_RESCHEDULE_TOLERANCE_MS = 750;
 const ALBUM_PLAYBACK_STOP_REPEAT_SUPPRESSION_MS = 2000;
 const ALBUM_END_PLAYBACK_EXCEPTION_FETCH_RETRY_MS = 15000;
@@ -6077,6 +6078,15 @@ function isSameAlbumPlaybackSession(armedState, playerState) {
   return Boolean(armedSessionId && currentSessionId && armedSessionId === currentSessionId);
 }
 
+function isAlbumAutoplayContextForArmedAlbum(armedState, playerState = SpicetifyApi.Player?.data) {
+  const albumId = albumIdFromUri(armedState?.albumUri);
+  if (!albumId) return false;
+
+  const track = getPlayerStateTrack(playerState);
+  const contextUri = playerState?.context_uri ?? track?.metadata?.context_uri ?? null;
+  return contextUri === `spotify:station:album:${albumId}`;
+}
+
 function syncSuppressedAlbumEndActionSignature({
   signature,
   suppressedSignature,
@@ -6216,6 +6226,18 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
     durationMs,
     estimatedFinalProgressMs
   );
+  const finalTrackWasRecentlyNearEnoughForAutoplay = (
+    Number.isFinite(durationMs) &&
+    durationMs > 0 &&
+    Number.isFinite(lastProgressMs) &&
+    Number.isFinite(lastSeenAtMs) &&
+    lastProgressMs >= Math.max(0, durationMs - ALBUM_PLAYBACK_END_AUTOPLAY_STALE_PROGRESS_WINDOW_MS) &&
+    now >= lastSeenAtMs &&
+    now - lastSeenAtMs <= (
+      ALBUM_PLAYBACK_END_AUTOPLAY_STALE_PROGRESS_WINDOW_MS +
+      ALBUM_PLAYBACK_END_TRANSITION_GRACE_MS
+    )
+  );
 
   if (currentTrackUri === armedState.finalTrackUri) {
     const currentProgressMs = getPlayerProgressMs(playerState, now);
@@ -6236,11 +6258,17 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
   const isStillOnArmedTrack = currentSignature && currentSignature === armedState.signature;
   if (isStillOnArmedTrack) return false;
 
-  return progressWasNearEnd &&
+  const sameSession = isSameAlbumPlaybackSession(armedState, playerState);
+  const strictCompletionTransition = progressWasNearEnd &&
     transitionIsNearExpectedEnd &&
     finalTrackWasProbablyComplete &&
     now >= expectedEndAtMs &&
-    isSameAlbumPlaybackSession(armedState, playerState);
+    sameSession;
+  if (strictCompletionTransition) return true;
+
+  return sameSession &&
+    isAlbumAutoplayContextForArmedAlbum(armedState, playerState) &&
+    finalTrackWasRecentlyNearEnoughForAutoplay;
 }
 
 function isAlbumPlaybackStillOnArmedTrack(armedState, playerState = SpicetifyApi.Player?.data) {
@@ -6783,6 +6811,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getServerUrlFromRequestUrl,
     isSpicetifyReadyForInit,
     isAlbumPlaybackCompletionTransition,
+    isAlbumAutoplayContextForArmedAlbum,
     isConnectionFailureError,
     isAlbumSavedInLibraryFromGraphql,
     mergeLogModalDraftValues,

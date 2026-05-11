@@ -2133,6 +2133,54 @@ describe('trackspot spicetify helpers', () => {
         metadata: { album_uri: 'spotify:album:album123' },
       },
     }, 52000)).toBe(false);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      durationMs: 351786,
+      lastProgressMs: 338749,
+      expectedEndAtMs: 113037,
+      lastSeenAtMs: 100000,
+    }, {
+      context_uri: 'spotify:station:album:album123',
+      session_id: 'session-1',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:album-radio-track',
+        metadata: { album_uri: 'spotify:album:radio-album' },
+      },
+    }, 101000)).toBe(true);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      durationMs: 351786,
+      lastProgressMs: 338749,
+      expectedEndAtMs: 113037,
+      lastSeenAtMs: 100000,
+    }, {
+      context_uri: 'spotify:playlist:user-choice',
+      session_id: 'session-1',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:user-choice-near-end',
+        metadata: { album_uri: 'spotify:album:user-choice' },
+      },
+    }, 101000)).toBe(false);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      durationMs: 351786,
+      lastProgressMs: 320000,
+      expectedEndAtMs: 131786,
+      lastSeenAtMs: 100000,
+    }, {
+      context_uri: 'spotify:station:album:album123',
+      session_id: 'session-1',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:album-radio-too-early',
+        metadata: { album_uri: 'spotify:album:radio-album' },
+      },
+    }, 101000)).toBe(false);
   });
 
   it('suppresses only the immediate repeated auto-pause for the same finished album track', () => {
