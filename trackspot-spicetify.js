@@ -6078,6 +6078,12 @@ function isSameAlbumPlaybackSession(armedState, playerState) {
   return Boolean(armedSessionId && currentSessionId && armedSessionId === currentSessionId);
 }
 
+function isSameOrUnavailableAlbumPlaybackSession(armedState, playerState) {
+  const armedSessionId = getAlbumPlaybackArmedSessionId(armedState);
+  const currentSessionId = playerState?.session_id ?? null;
+  return !armedSessionId || !currentSessionId || armedSessionId === currentSessionId;
+}
+
 function isAlbumAutoplayContextForArmedAlbum(armedState, playerState = SpicetifyApi.Player?.data) {
   const albumId = albumIdFromUri(armedState?.albumUri);
   if (!albumId) return false;
@@ -6266,7 +6272,7 @@ function isAlbumPlaybackCompletionTransition(armedState, playerState = Spicetify
     sameSession;
   if (strictCompletionTransition) return true;
 
-  return sameSession &&
+  return isSameOrUnavailableAlbumPlaybackSession(armedState, playerState) &&
     isAlbumAutoplayContextForArmedAlbum(armedState, playerState) &&
     finalTrackWasRecentlyNearEnoughForAutoplay;
 }

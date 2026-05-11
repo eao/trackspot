@@ -2152,6 +2152,39 @@ describe('trackspot spicetify helpers', () => {
 
     expect(helpers.isAlbumPlaybackCompletionTransition({
       ...armedState,
+      signature: '|spotify:album:album123|spotify:track:last-track',
+      sessionId: null,
+      durationMs: 359053,
+      lastProgressMs: 344916,
+      expectedEndAtMs: 114137,
+      lastSeenAtMs: 100000,
+    }, {
+      context_uri: 'spotify:station:album:album123',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:album-radio-no-session',
+        metadata: { album_uri: 'spotify:album:radio-album' },
+      },
+    }, 101000)).toBe(true);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      durationMs: 359053,
+      lastProgressMs: 344916,
+      expectedEndAtMs: 114137,
+      lastSeenAtMs: 100000,
+    }, {
+      context_uri: 'spotify:station:album:album123',
+      session_id: 'session-user-choice',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:album-radio-wrong-session',
+        metadata: { album_uri: 'spotify:album:radio-album' },
+      },
+    }, 101000)).toBe(false);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
       durationMs: 351786,
       lastProgressMs: 338749,
       expectedEndAtMs: 113037,
@@ -2162,6 +2195,23 @@ describe('trackspot spicetify helpers', () => {
       is_paused: false,
       track: {
         uri: 'spotify:track:user-choice-near-end',
+        metadata: { album_uri: 'spotify:album:user-choice' },
+      },
+    }, 101000)).toBe(false);
+
+    expect(helpers.isAlbumPlaybackCompletionTransition({
+      ...armedState,
+      signature: '|spotify:album:album123|spotify:track:last-track',
+      sessionId: null,
+      durationMs: 359053,
+      lastProgressMs: 344916,
+      expectedEndAtMs: 114137,
+      lastSeenAtMs: 100000,
+    }, {
+      context_uri: 'spotify:playlist:user-choice',
+      is_paused: false,
+      track: {
+        uri: 'spotify:track:user-choice-no-session',
         metadata: { album_uri: 'spotify:album:user-choice' },
       },
     }, 101000)).toBe(false);
