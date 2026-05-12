@@ -720,6 +720,66 @@ describe('albums route helpers', () => {
     expect(res.jsonBody.albums.map(album => album.id)).toEqual([2]);
   });
 
+  it('updates status_changed_at only when album status changes', async () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, source, status_changed_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Mutable Status',
+      JSON.stringify([{ name: 'Status Artist' }]),
+      'planned',
+      'manual',
+      '2000-01-01 00:00:00',
+      '2000-01-01 00:00:00',
+      '2000-01-01 00:00:00',
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'patch', '/:id');
+
+    const statusRes = createResponse();
+    await handler({
+      params: { id: '1' },
+      body: {
+        status: 'completed',
+        listened_at: '2026-05-11',
+      },
+    }, statusRes);
+    expect(statusRes.statusCode).toBe(200);
+
+    const afterStatusChange = db.prepare(`
+      SELECT status, listened_at, status_changed_at
+      FROM albums
+      WHERE id = ?
+    `).get(1);
+    expect(afterStatusChange.status).toBe('completed');
+    expect(afterStatusChange.listened_at).toBe('2026-05-11');
+    expect(afterStatusChange.status_changed_at).not.toBe('2000-01-01 00:00:00');
+
+    const notesRes = createResponse();
+    await handler({
+      params: { id: '1' },
+      body: {
+        notes: 'Status stayed put.',
+      },
+    }, notesRes);
+    expect(notesRes.statusCode).toBe(200);
+
+    const afterNotesChange = db.prepare(`
+      SELECT status, notes, status_changed_at
+      FROM albums
+      WHERE id = ?
+    `).get(1);
+    expect(afterNotesChange.status).toBe('completed');
+    expect(afterNotesChange.notes).toBe('Status stayed put.');
+    expect(afterNotesChange.status_changed_at).toBe(afterStatusChange.status_changed_at);
+  });
+
   it('searches album notes in the server-side album list filter', () => {
     const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
     const { db } = dbModule;
@@ -1035,7 +1095,7 @@ describe('albums route helpers', () => {
     });
   });
 
-  it('sorts by planned date and listened/planned fallback with created_at as a tiebreaker', () => {
+  it('sorts by planned date and listened/planned fallback', () => {
     const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
     const { db } = dbModule;
     openDbs.push(db);
@@ -1099,6 +1159,74 @@ describe('albums route helpers', () => {
     handler({ query: { sort: 'date_listened_planned', order: 'desc' } }, combinedSortRes);
     expect(combinedSortRes.statusCode).toBe(200);
     expect(combinedSortRes.jsonBody.albums.map(album => album.id)).toEqual([3, 2, 1]);
+  });
+
+  it('uses status_changed_at as a same-day tiebreaker for human date sorts', () => {
+    const { dbModule, albumsRouter } = loadAlbumsRouteTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, planned_at, listened_at, source,
+        status_changed_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      1,
+      'Created Later',
+      JSON.stringify([{ name: 'Artist One' }]),
+      'completed',
+      '2026-05-01',
+      '2026-05-11',
+      'manual',
+      '2026-05-11 10:00:00',
+      '2026-05-11 23:00:00',
+      '2026-05-11 23:00:00',
+    );
+    db.prepare(`
+      INSERT INTO albums (
+        id, album_name, artists, status, planned_at, listened_at, source,
+        status_changed_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      2,
+      'Changed Later',
+      JSON.stringify([{ name: 'Artist Two' }]),
+      'completed',
+      '2026-05-01',
+      '2026-05-11',
+      'manual',
+      '2026-05-11 22:00:00',
+      '2026-05-02 10:00:00',
+      '2026-05-11 22:00:00',
+    );
+
+    const handler = getRouteHandler(albumsRouter, 'get', '/');
+
+    const listenedRes = createResponse();
+    handler({ query: { sort: 'date_listened', order: 'desc' } }, listenedRes);
+    expect(listenedRes.statusCode).toBe(200);
+    expect(listenedRes.jsonBody.albums.map(album => album.id)).toEqual([2, 1]);
+
+    const plannedRes = createResponse();
+    handler({ query: { sort: 'date_planned', order: 'desc' } }, plannedRes);
+    expect(plannedRes.statusCode).toBe(200);
+    expect(plannedRes.jsonBody.albums.map(album => album.id)).toEqual([2, 1]);
+
+    const loggedRes = createResponse();
+    handler({ query: { sort: 'date_listened_planned', order: 'desc' } }, loggedRes);
+    expect(loggedRes.statusCode).toBe(200);
+    expect(loggedRes.jsonBody.albums.map(album => album.id)).toEqual([2, 1]);
+
+    const defaultSortRes = createResponse();
+    handler({ query: {} }, defaultSortRes);
+    expect(defaultSortRes.statusCode).toBe(200);
+    expect(defaultSortRes.jsonBody.albums.map(album => album.id)).toEqual([2, 1]);
+
+    const serverTimestampRes = createResponse();
+    handler({ query: { sort: 'date_logged', order: 'desc' } }, serverTimestampRes);
+    expect(serverTimestampRes.statusCode).toBe(200);
+    expect(serverTimestampRes.jsonBody.albums.map(album => album.id)).toEqual([1, 2]);
   });
 
   it('sorts by track count with duration and album-name tiebreakers', () => {

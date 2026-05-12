@@ -121,6 +121,7 @@ const ALBUM_COLLECTION_REVISION_COLUMNS = Object.freeze([
   'album_link',
   'artist_link',
   'welcome_sample_key',
+  'status_changed_at',
   'created_at',
   'updated_at',
 ]);
@@ -742,16 +743,21 @@ function buildAlbumListQuery(reqQuery = {}) {
     repeats:       'repeats',
     priority:      'priority',
   };
-  const sortCol = sortMap[sort] || 'COALESCE(listened_at, planned_at)';
+  const sortField = Object.prototype.hasOwnProperty.call(sortMap, sort) ? sort : 'date_listened_planned';
+  const sortCol = sortMap[sortField];
   const sortDir = order === 'asc' ? 'ASC' : 'DESC';
-  const orderClause = `ORDER BY CASE WHEN ${sortCol} IS NULL THEN 1 ELSE 0 END, ${sortCol} ${sortDir}, created_at ${sortDir}, id ${sortDir}`;
+  const useStatusChangedTiebreaker = ['date_listened', 'date_planned', 'date_listened_planned'].includes(sortField);
+  const statusChangedTiebreaker = useStatusChangedTiebreaker
+    ? `, status_changed_at ${sortDir}`
+    : '';
+  const orderClause = `ORDER BY CASE WHEN ${sortCol} IS NULL THEN 1 ELSE 0 END, ${sortCol} ${sortDir}${statusChangedTiebreaker}, created_at ${sortDir}, id ${sortDir}`;
 
   return {
     where,
     params,
     orderClause,
     sortCol,
-    sortField: sort,
+    sortField,
     sortDir,
     page: parsePositiveInt(page, 1),
     perPage: parsePositiveInt(per_page, null),
@@ -1121,6 +1127,7 @@ router.patch('/:id', async (req, res) => {
 
   db.prepare(`
     UPDATE albums SET
+      status_changed_at = CASE WHEN status <> :status THEN datetime('now') ELSE status_changed_at END,
       status      = :status,
       rating      = :rating,
       notes       = :notes,

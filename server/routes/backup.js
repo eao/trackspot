@@ -1295,6 +1295,9 @@ function getBackupAlbumValue(columnName, row) {
   if (columnName === 'repeats') return normalizeBackupNonNegativeInteger(row.repeats);
   if (columnName === 'priority') return normalizeBackupNonNegativeInteger(row.priority);
   if (columnName === 'source') return row.source ?? 'manual';
+  if (columnName === 'status_changed_at') {
+    return row.status_changed_at || row.updated_at || row.created_at || sqliteDatetimeNow();
+  }
   if (columnName === 'created_at' || columnName === 'updated_at') {
     return row[columnName] || sqliteDatetimeNow();
   }

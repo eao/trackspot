@@ -67,6 +67,7 @@ const CURRENT_TABLE_COLUMNS = Object.freeze({
     'album_link',
     'artist_link',
     'welcome_sample_key',
+    'status_changed_at',
     'created_at',
     'updated_at',
   ]),
@@ -166,6 +167,7 @@ const DEFAULT_COPY_EXPRESSIONS = Object.freeze({
     album_link: 'NULL',
     artist_link: 'NULL',
     welcome_sample_key: 'NULL',
+    status_changed_at: "datetime('now')",
     created_at: "datetime('now')",
     updated_at: "datetime('now')",
   }),
@@ -270,6 +272,7 @@ function createAlbumsTableSql(tableName, { ifNotExists = false } = {}) {
       welcome_sample_key   TEXT,
 
       -- Timestamps
+      status_changed_at    TEXT NOT NULL DEFAULT (datetime('now')),
       created_at           TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
     )
@@ -487,6 +490,15 @@ function copyExpression(tableName, legacyTableName, columnName, existingColumnNa
         ELSE NULL
       END
     `;
+  }
+
+  if (columnName === 'status_changed_at' && tableName === 'albums') {
+    const candidates = [];
+    if (existingColumnNames.has('status_changed_at')) candidates.push(`NULLIF(${legacyColumn}, '')`);
+    if (existingColumnNames.has('updated_at')) candidates.push(`NULLIF(legacy.${quoteIdentifier('updated_at')}, '')`);
+    if (existingColumnNames.has('created_at')) candidates.push(`NULLIF(legacy.${quoteIdentifier('created_at')}, '')`);
+    candidates.push("datetime('now')");
+    return `COALESCE(${candidates.join(', ')})`;
   }
 
   if (columnName === 'created_at' || columnName === 'updated_at') {
