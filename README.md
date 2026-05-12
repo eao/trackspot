@@ -267,7 +267,6 @@ systemctl restart trackspot.service
 
 If `systemctl status trackspot.service` shows `status=203/EXEC`, systemd probably cannot find the Node path in `ExecStart=`, so re-check `which node` and make sure the service file uses that exact path.
 
-
 ## Bonus 3: Updating Trackspot on the LXC
 
 First, make a backup of your data. Then, run the code below. If `git status --short` prints anything, stop and resolve or back up those changes before pulling.
