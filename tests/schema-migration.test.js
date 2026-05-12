@@ -55,6 +55,7 @@ const EXPECTED_COLUMNS = {
     'album_link',
     'artist_link',
     'welcome_sample_key',
+    'status_changed_at',
     'created_at',
     'updated_at',
   ],
@@ -149,6 +150,54 @@ function createSparseLegacyDatabase() {
     INSERT INTO import_job_rows (id, job_id, row_index, status)
     VALUES (?, ?, ?, ?)
   `).run(1, 1, 1, 'queued');
+}
+
+function createLegacyStatusTimestampDatabase() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackspot-schema-status-timestamp-test-'));
+  tempDirs.push(dataDir);
+  process.env.DATA_DIR = dataDir;
+
+  const dbPath = path.join(dataDir, 'albums.db');
+  const legacyDb = new BetterSqlite(dbPath);
+  openDbs.push(legacyDb);
+
+  legacyDb.exec(`
+    CREATE TABLE albums (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      album_name TEXT NOT NULL,
+      artists TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'completed',
+      source TEXT NOT NULL DEFAULT 'manual',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  legacyDb.prepare(`
+    INSERT INTO albums (id, album_name, artists, status, source, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    1,
+    'Updated Legacy Album',
+    JSON.stringify([{ name: 'Legacy Artist' }]),
+    'completed',
+    'manual',
+    '2026-01-01 10:00:00',
+    '2026-02-03 12:34:56',
+  );
+
+  legacyDb.prepare(`
+    INSERT INTO albums (id, album_name, artists, status, source, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    2,
+    'Created Legacy Album',
+    JSON.stringify([{ name: 'Legacy Artist' }]),
+    'planned',
+    'manual',
+    '2026-03-04 08:15:00',
+    '',
+  );
 }
 
 function createConstraintDriftDatabase() {
@@ -594,6 +643,32 @@ describe('legacy schema migration', () => {
     db.prepare('DELETE FROM import_jobs WHERE id = ?').run(insertedJob.lastInsertRowid);
     expect(db.prepare('SELECT COUNT(*) AS count FROM import_job_rows WHERE job_id = ?')
       .get(insertedJob.lastInsertRowid).count).toBe(0);
+  });
+
+  it('backfills status_changed_at from legacy updated or created timestamps', () => {
+    createLegacyStatusTimestampDatabase();
+    resetServerModules();
+
+    const dbModule = require('../server/db.js');
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const rows = db.prepare(`
+      SELECT id, status_changed_at
+      FROM albums
+      ORDER BY id ASC
+    `).all();
+
+    expect(rows).toEqual([
+      {
+        id: 1,
+        status_changed_at: '2026-02-03 12:34:56',
+      },
+      {
+        id: 2,
+        status_changed_at: '2026-03-04 08:15:00',
+      },
+    ]);
   });
 
   it('rebuilds tables whose columns exist but constraints drifted', () => {

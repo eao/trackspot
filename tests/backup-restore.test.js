@@ -1475,6 +1475,42 @@ describe('backup and restore', () => {
     });
   }, 15000);
 
+  it('backfills status_changed_at from legacy backup timestamps during merge', async () => {
+    const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
+    const { db } = dbModule;
+    openDbs.push(db);
+
+    const zip = new AdmZip();
+    addLegacyAlbumsDatabase(zip, dataDir, [
+      {
+        id: 101,
+        spotify_album_id: 'legacy-status-timestamp',
+        album_name: 'Legacy Status Timestamp Album',
+        artists: JSON.stringify([{ name: 'Legacy Artist' }]),
+        created_at: '2026-01-02 03:04:05',
+        updated_at: '2026-03-04 05:06:07',
+      },
+    ]);
+
+    const result = await backupRouter.__private.importFromZip(zip, false);
+    const restored = db.prepare(`
+      SELECT album_name, status_changed_at, created_at, updated_at
+      FROM albums
+      WHERE spotify_album_id = ?
+    `).get('legacy-status-timestamp');
+
+    expect(result).toMatchObject({
+      added: 1,
+      skipped: 0,
+    });
+    expect(restored).toEqual({
+      album_name: 'Legacy Status Timestamp Album',
+      status_changed_at: '2026-03-04 05:06:07',
+      created_at: '2026-01-02 03:04:05',
+      updated_at: '2026-03-04 05:06:07',
+    });
+  }, 15000);
+
   it('blocks merges while a restore is in progress', async () => {
     const { dbModule, backupRouter, dataDir } = loadBackupTestContext();
     openDbs.push(dbModule.db);

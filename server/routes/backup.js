@@ -2378,7 +2378,7 @@ async function importFromZip(zip) {
       sanitizedLinks = sanitizeBackupExternalLinks(srcDb);
       const backupAlbums = srcDb.prepare('SELECT * FROM albums').all().map(normalizeBackupAlbumRow);
       const { insertColumns, statement: insertStmt } = buildAlbumInsertStatement(srcDb, {
-        extraColumns: ['image_path'],
+        extraColumns: ['image_path', 'status_changed_at'],
       });
       const selectedRows = selectMergeCandidateRows(backupAlbums);
       skipped = selectedRows.skipped;

@@ -476,6 +476,17 @@ function tableNeedsRebuild(connection, tableName) {
 function copyExpression(tableName, legacyTableName, columnName, existingColumnNames) {
   const legacyColumn = `legacy.${quoteIdentifier(columnName)}`;
   const fallback = DEFAULT_COPY_EXPRESSIONS[tableName]?.[columnName] ?? 'NULL';
+
+  if (columnName === 'status_changed_at' && tableName === 'albums') {
+    const candidates = [];
+    if (existingColumnNames.has('status_changed_at')) candidates.push(`NULLIF(${legacyColumn}, '')`);
+    if (existingColumnNames.has('updated_at')) candidates.push(`NULLIF(legacy.${quoteIdentifier('updated_at')}, '')`);
+    if (existingColumnNames.has('created_at')) candidates.push(`NULLIF(legacy.${quoteIdentifier('created_at')}, '')`);
+    if (!candidates.length) return fallback;
+    candidates.push(fallback);
+    return `COALESCE(${candidates.join(', ')})`;
+  }
+
   if (!existingColumnNames.has(columnName)) return fallback;
 
   if (columnName === 'spotify_album_id' && tableName === 'albums') {
@@ -490,15 +501,6 @@ function copyExpression(tableName, legacyTableName, columnName, existingColumnNa
         ELSE NULL
       END
     `;
-  }
-
-  if (columnName === 'status_changed_at' && tableName === 'albums') {
-    const candidates = [];
-    if (existingColumnNames.has('status_changed_at')) candidates.push(`NULLIF(${legacyColumn}, '')`);
-    if (existingColumnNames.has('updated_at')) candidates.push(`NULLIF(legacy.${quoteIdentifier('updated_at')}, '')`);
-    if (existingColumnNames.has('created_at')) candidates.push(`NULLIF(legacy.${quoteIdentifier('created_at')}, '')`);
-    candidates.push("datetime('now')");
-    return `COALESCE(${candidates.join(', ')})`;
   }
 
   if (columnName === 'created_at' || columnName === 'updated_at') {
