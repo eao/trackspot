@@ -15,7 +15,13 @@ Trackspot makes it easy to keep track of the albums you listen to, with 100-poin
 
 Trackspot can keep track of your albums even if you don't use Spotify, but is most useful alongside its Spicetify extension. Install Spicetify [here](https://spicetify.app/#install).
 
-Once you have Spicetify installed in Spotify, open up the Spicetify Marketplace by clicking on the shopping cart button in the upper-left.
+### Spotify compatibility note
+
+If you are on the very latest version of Spotify, Spicetify may not work with that version yet. Check your Spotify version by hitting `...` in the upper-left, then `Help`, then `About Spotify`. Then check Spicetify's Compatibility section [here](https://github.com/spicetify/cli/releases/latest) to see if your version is supported. The Microsoft Store version is not recommended.
+
+If you need an older version of Spotify, you can get one [here](https://loadspot.pages.dev).
+
+Anyway, once you have Spicetify installed in a compatible version of Spotify, open up the Spicetify Marketplace by clicking on the shopping cart button in the upper-left.
 
 <img src="readme-files/spicetify-marketplace-button.png" alt="Spicetify Marketplace button" width="200">
 
