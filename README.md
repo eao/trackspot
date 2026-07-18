@@ -294,6 +294,10 @@ git fetch --tags origin
 git switch --detach v1.x.x  # replace with the release you want
 ```
 
+# AI use disclaimer
+
+Trackspot was created with heavy assistance from LLMs.
+
 # License
 
 Trackspot is licensed under the MIT License. See [LICENSE.md](LICENSE.md).
